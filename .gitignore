@@ -1,0 +1,41 @@
+# Dependencias
+node_modules/
+.pnpm-store/
+
+# Archivos de compilación
+dist/
+build/
+out/
+
+# Variables de entorno (¡CRÍTICO!)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Bases de datos locales
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos del sistema operativo y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Herramientas de IA y Editores
+.cursor/
+.cursorrules
+.claude/
+agents/
+devin/

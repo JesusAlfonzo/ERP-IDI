@@ -1,0 +1,599 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// 1. ENUMS
+// ==========================================
+
+enum LocationType {
+  ALMACEN_GENERAL
+  LABORATORIO
+  OFICINA
+  DEPOSITO
+}
+
+enum FridgeStatus {
+  OPERATIVO
+  MANTENIMIENTO
+  DEFECTUOSO
+  FUERA_DE_SERVICIO
+}
+
+enum OrderStatus {
+  BORRADOR
+  ENVIADA
+  PARCIAL
+  COMPLETADA
+  CANCELADA
+}
+
+enum PaymentStatus {
+  PENDIENTE
+  PAGADO_PARCIAL
+  PAGADO
+  EXONERADO
+}
+
+enum ReceptionStatus {
+  PENDIENTE
+  PARCIAL
+  COMPLETO
+}
+
+enum PaymentMethod {
+  TRANSFERENCIA_NACIONAL
+  PAGO_MOVIL
+  TRANSFERENCIA_INTERNACIONAL
+  EFECTIVO_USD
+  EFECTIVO_BS
+}
+
+enum BatchStatus {
+  DISPONIBLE
+  EN_CUARENTENA
+  DEFECTUOSO
+  VENCIDO
+  AGOTADO
+}
+
+enum StockMovementType {
+  ENTRADA_COMPRA
+  TRASLADO_A_LABORATORIO
+  DESPACHO_SOLICITUD
+  AJUSTE_INVENTARIO
+  DESCARTE_MERMA
+}
+
+enum LabUnitStatus {
+  SELLADO
+  EN_USO
+  AGOTADO
+  DESCARTADO
+}
+
+enum LabMovementType {
+  CONSUMO_PRUEBAS
+  TRASLADO_NEVERA
+  DESCARTE
+}
+
+enum RequestStatus {
+  PENDIENTE
+  APROBADA
+  DESPACHADA_PARCIAL
+  COMPLETADA
+  RECHAZADA
+}
+
+enum IncidentType {
+  FALLA_CONTROL_CALIDAD
+  CADENA_FRIO_ROTA
+  DANO_FISICO
+  CONTAMINACION_PRECIPITADO
+  VENCIMIENTO_PREMATURO
+  OTRO
+}
+
+enum IncidentStatus {
+  ABIERTA
+  CONFIRMADA
+  DESCARTADA
+}
+
+// ==========================================
+// 2. SEGURIDAD Y ACCESO (RBAC + AUTH)
+// ==========================================
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  fullName     String   @map("full_name")
+  department   String   @map("department")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  userRoles               UserRole[]
+  refreshTokens           RefreshToken[]
+  createdExchanges        CurrencyExchange[]
+  createdOrders           Order[]
+  createdStockMovements   StockMovement[]
+  openedLabUnits          LabReagentUnit[]   @relation("LabUnitOpenedBy")
+  executedLabMovements    LabStockMovement[]
+  requests                Request[]          @relation("UserRequests")
+  approvedRequests        Request[]          @relation("UserApprovedRequests")
+  registeredPayments      OrderPayment[]
+  reportedIncidents       BatchIncident[]    @relation("ReportedIncidents")
+  resolvedIncidents       BatchIncident[]    @relation("ResolvedIncidents")
+
+  @@map("users")
+}
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       Int        @map("role_id")
+  permissionId Int        @map("permission_id")
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId Int  @map("user_id")
+  roleId Int  @map("role_id")
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    Int      @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// ==========================================
+// 3. MONEDAS Y TASAS DE CAMBIO
+// ==========================================
+
+model Currency {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  name      String
+  symbol    String
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  exchanges CurrencyExchange[]
+  orders    Order[]
+  payments  OrderPayment[]
+
+  @@map("currencies")
+}
+
+model CurrencyExchange {
+  id            BigInt   @id @default(autoincrement())
+  currencyId    Int      @map("currency_id")
+  rate          Decimal  @db.Decimal(18, 4)
+  effectiveDate DateTime @map("effective_date") @db.Date
+  createdById   Int      @map("created_by_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  currency  Currency @relation(fields: [currencyId], references: [id])
+  createdBy User     @relation(fields: [createdById], references: [id])
+
+  @@map("currency_exchanges")
+}
+
+// ==========================================
+// 4. CATÁLOGO DE PRODUCTOS
+// ==========================================
+
+model Category {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?
+  products    Product[]
+
+  @@map("categories")
+}
+
+model Brand {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  products Product[]
+
+  @@map("brands")
+}
+
+model Unit {
+  id           Int       @id @default(autoincrement())
+  name         String
+  abbreviation String    @unique
+  baseProducts Product[] @relation("BaseUnitRelation")
+  purchProducts Product[] @relation("PurchaseUnitRelation")
+  orderItems   OrderItem[]
+
+  @@map("units")
+}
+
+model Supplier {
+  id          Int      @id @default(autoincrement())
+  rifOrId     String   @unique @map("rif_or_id")
+  name        String
+  contactName String?  @map("contact_name")
+  phone       String?
+  email       String?
+  address     String?  @db.Text
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  orders Order[]
+
+  @@map("suppliers")
+}
+
+model Product {
+  id               BigInt   @id @default(autoincrement())
+  categoryId       Int      @map("category_id")
+  brandId          Int?     @map("brand_id")
+  baseUnitId       Int      @map("base_unit_id")
+  purchaseUnitId   Int?     @map("purchase_unit_id")
+  conversionFactor Decimal  @default(1.00) @map("conversion_factor") @db.Decimal(10, 2)
+  name             String
+  sku              String   @unique
+  barcode          String?  @unique
+  description      String?  @db.Text
+  isTaxExempt      Boolean  @default(false) @map("is_tax_exempt")
+  minStockAlert    Int      @default(0) @map("min_stock_alert")
+  isReagent        Boolean  @default(false) @map("is_reagent")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  category        Category         @relation(fields: [categoryId], references: [id])
+  brand           Brand?           @relation(fields: [brandId], references: [id])
+  baseUnit        Unit             @relation("BaseUnitRelation", fields: [baseUnitId], references: [id])
+  purchaseUnit    Unit?            @relation("PurchaseUnitRelation", fields: [purchaseUnitId], references: [id])
+  orderItems      OrderItem[]
+  stockBatches    StockBatch[]
+  labReagentUnits LabReagentUnit[]
+  requestItems    RequestItem[]
+
+  @@map("products")
+}
+
+// ==========================================
+// 5. INFRAESTRUCTURA FÍSICA
+// ==========================================
+
+model Location {
+  id          Int          @id @default(autoincrement())
+  name        String
+  type        LocationType
+  description String?
+
+  fridges                 Fridge[]
+  stockBatches            StockBatch[]
+  originStockMovements    StockMovement[] @relation("OriginLocation")
+  destStockMovements      StockMovement[] @relation("DestinationLocation")
+
+  @@map("locations")
+}
+
+model Fridge {
+  id                Int          @id @default(autoincrement())
+  locationId        Int          @map("location_id")
+  code              String       @unique
+  name              String
+  targetTempCelsius Decimal?     @map("target_temp_celsius") @db.Decimal(5, 2)
+  status            FridgeStatus @default(OPERATIVO)
+  description       String?
+
+  location         Location           @relation(fields: [locationId], references: [id])
+  labReagentUnits  LabReagentUnit[]
+  originTransfers  LabStockMovement[] @relation("FromFridge")
+  destTransfers    LabStockMovement[] @relation("ToFridge")
+
+  @@map("fridges")
+}
+
+// ==========================================
+// 6. COMPRAS, PAGOS Y FACTURACIÓN
+// ==========================================
+
+model Order {
+  id              BigInt          @id @default(autoincrement())
+  orderNumber     String          @unique @map("order_number")
+  supplierId      Int?            @map("supplier_id")
+  currencyId      Int             @map("currency_id")
+  exchangeRate    Decimal         @map("exchange_rate") @db.Decimal(18, 4)
+  status          OrderStatus     @default(BORRADOR)
+  paymentStatus   PaymentStatus   @default(PENDIENTE) @map("payment_status")
+  receptionStatus ReceptionStatus @default(PENDIENTE) @map("reception_status")
+  subtotal        Decimal         @db.Decimal(18, 2)
+  taxTotal        Decimal         @map("tax_total") @db.Decimal(18, 2)
+  total           Decimal         @db.Decimal(18, 2)
+  notes           String?         @db.Text
+  createdById     Int             @map("created_by_id")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  supplier       Supplier?       @relation(fields: [supplierId], references: [id])
+  currency       Currency        @relation(fields: [currencyId], references: [id])
+  createdBy      User            @relation(fields: [createdById], references: [id])
+  items          OrderItem[]
+  payments       OrderPayment[]
+  invoices       OrderInvoice[]
+  stockMovements StockMovement[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id               BigInt   @id @default(autoincrement())
+  orderId          BigInt   @map("order_id")
+  productId        BigInt   @map("product_id")
+  unitId           Int      @map("unit_id")
+  quantityOrdered  Decimal  @map("quantity_ordered") @db.Decimal(12, 2)
+  quantityReceived Decimal  @default(0) @map("quantity_received") @db.Decimal(12, 2)
+  quantityRejected Decimal  @default(0) @map("quantity_rejected") @db.Decimal(12, 2)
+  multiplier       Decimal  @default(1.00) @map("multiplier") @db.Decimal(10, 2)
+  baseQuantity     Decimal  @map("base_quantity") @db.Decimal(12, 2)
+  unitPrice        Decimal  @map("unit_price") @db.Decimal(18, 4)
+  taxRate          Decimal  @default(16.00) @map("tax_rate") @db.Decimal(5, 2)
+  totalLine        Decimal  @map("total_line") @db.Decimal(18, 2)
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+  unit    Unit    @relation(fields: [unitId], references: [id])
+
+  @@map("order_items")
+}
+
+model OrderPayment {
+  id               BigInt        @id @default(autoincrement())
+  orderId          BigInt        @map("order_id")
+  paymentMethod    PaymentMethod @map("payment_method")
+  bankName         String?       @map("bank_name")
+  referenceNumber  String?       @map("reference_number")
+  currencyId       Int           @map("currency_id")
+  exchangeRate     Decimal       @map("exchange_rate") @db.Decimal(18, 4)
+  amount           Decimal       @db.Decimal(18, 2)
+  paymentDate      DateTime      @map("payment_date")
+  receiptImageUrl  String?       @map("receipt_image_url")
+  registeredById   Int           @map("registered_by_id")
+  createdAt        DateTime      @default(now()) @map("created_at")
+
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  currency     Currency @relation(fields: [currencyId], references: [id])
+  registeredBy User     @relation(fields: [registeredById], references: [id])
+
+  @@map("order_payments")
+}
+
+model OrderInvoice {
+  id            BigInt    @id @default(autoincrement())
+  orderId       BigInt    @map("order_id")
+  invoiceNumber String    @map("invoice_number")
+  controlNumber String?   @map("control_number")
+  invoiceDate   DateTime  @map("invoice_date") @db.Date
+  fileUrl       String?   @map("file_url")
+  taxAmount     Decimal   @map("tax_amount") @db.Decimal(18, 2)
+  totalAmount   Decimal   @map("total_amount") @db.Decimal(18, 2)
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_invoices")
+}
+
+// ==========================================
+// 7. STOCK CENTRAL Y MOVIMIENTOS
+// ==========================================
+
+model StockBatch {
+  id              BigInt      @id @default(autoincrement())
+  productId       BigInt      @map("product_id")
+  locationId      Int         @map("location_id")
+  lotNumber       String      @map("lot_number")
+  currentQuantity Decimal     @map("current_quantity") @db.Decimal(12, 2)
+  costPrice       Decimal     @map("cost_price") @db.Decimal(18, 4)
+  expirationDate  DateTime?   @map("expiration_date") @db.Date
+  status          BatchStatus @default(DISPONIBLE)
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  product            Product              @relation(fields: [productId], references: [id])
+  location           Location             @relation(fields: [locationId], references: [id])
+  movementItems      StockMovementItem[]
+  labReagentUnits    LabReagentUnit[]
+  incidents          BatchIncident[]
+
+  @@index([productId, lotNumber, locationId])
+  @@map("stock_batches")
+}
+
+model StockMovement {
+  id                    BigInt            @id @default(autoincrement())
+  referenceNumber       String            @unique @map("reference_number")
+  type                  StockMovementType
+  orderId               BigInt?           @map("order_id")
+  originLocationId      Int?              @map("origin_location_id")
+  destinationLocationId Int?              @map("destination_location_id")
+  notes                 String?           @db.Text
+  createdById           Int               @map("created_by_id")
+  createdAt             DateTime          @default(now()) @map("created_at")
+
+  order               Order?              @relation(fields: [orderId], references: [id])
+  originLocation      Location?           @relation("OriginLocation", fields: [originLocationId], references: [id])
+  destinationLocation Location?           @relation("DestinationLocation", fields: [destinationLocationId], references: [id])
+  createdBy           User                @relation(fields: [createdById], references: [id])
+  items               StockMovementItem[]
+  requests            Request[]
+
+  @@map("stock_movements")
+}
+
+model StockMovementItem {
+  id              BigInt   @id @default(autoincrement())
+  stockMovementId BigInt   @map("stock_movement_id")
+  batchId         BigInt   @map("batch_id")
+  quantity        Decimal  @db.Decimal(12, 2)
+  unitCost        Decimal? @map("unit_cost") @db.Decimal(18, 4)
+
+  stockMovement StockMovement @relation(fields: [stockMovementId], references: [id], onDelete: Cascade)
+  batch         StockBatch    @relation(fields: [batchId], references: [id])
+
+  @@map("stock_movement_items")
+}
+
+// ==========================================
+// 8. LABORATORIO (NEVERA, CAVA Y REACTIVOS)
+// ==========================================
+
+model LabReagentUnit {
+  id             BigInt        @id @default(autoincrement())
+  productId      BigInt        @map("product_id")
+  batchId        BigInt        @map("batch_id")
+  fridgeId       Int?          @map("fridge_id")
+  unitCode       String        @unique @map("unit_code")
+  initialVolume  Decimal       @map("initial_volume") @db.Decimal(12, 2)
+  currentVolume  Decimal       @map("current_volume") @db.Decimal(12, 2)
+  status         LabUnitStatus @default(SELLADO)
+  openedAt       DateTime?     @map("opened_at")
+  openedById     Int?          @map("opened_by_id")
+  expirationDate DateTime?     @map("expiration_date") @db.Date
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  product       Product            @relation(fields: [productId], references: [id])
+  batch         StockBatch         @relation(fields: [batchId], references: [id])
+  fridge        Fridge?            @relation(fields: [fridgeId], references: [id])
+  openedBy      User?              @relation("LabUnitOpenedBy", fields: [openedById], references: [id])
+  movements     LabStockMovement[]
+
+  @@map("lab_reagent_units")
+}
+
+model LabStockMovement {
+  id               BigInt          @id @default(autoincrement())
+  labReagentUnitId BigInt          @map("lab_reagent_unit_id")
+  movementType     LabMovementType @map("movement_type")
+  amountUsed       Decimal         @map("amount_used") @db.Decimal(12, 2)
+  fromFridgeId     Int?            @map("from_fridge_id")
+  toFridgeId       Int?            @map("to_fridge_id")
+  reason           String?
+  executedById     Int             @map("executed_by_id")
+  createdAt        DateTime        @default(now()) @map("created_at")
+
+  labReagentUnit LabReagentUnit @relation(fields: [labReagentUnitId], references: [id], onDelete: Cascade)
+  fromFridge     Fridge?        @relation("FromFridge", fields: [fromFridgeId], references: [id])
+  toFridge       Fridge?        @relation("ToFridge", fields: [toFridgeId], references: [id])
+  executedBy     User           @relation(fields: [executedById], references: [id])
+
+  @@map("lab_stock_movements")
+}
+
+// ==========================================
+// 9. SOLICITUDES INTERNAS (REQUESTS)
+// ==========================================
+
+model Request {
+  id                  BigInt        @id @default(autoincrement())
+  requestNumber       String        @unique @map("request_number")
+  userId              Int           @map("user_id")
+  status              RequestStatus @default(PENDIENTE)
+  weeklyTokenCycle    String        @map("weekly_token_cycle")
+  dispatchedMovementId BigInt?      @map("dispatched_movement_id")
+  approvedById        Int?          @map("approved_by_id")
+  approvedAt          DateTime?     @map("approved_at")
+  notes               String?       @db.Text
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+
+  user               User           @relation("UserRequests", fields: [userId], references: [id])
+  approvedBy         User?          @relation("UserApprovedRequests", fields: [approvedById], references: [id])
+  dispatchedMovement StockMovement? @relation(fields: [dispatchedMovementId], references: [id])
+  items              RequestItem[]
+
+  @@map("requests")
+}
+
+model RequestItem {
+  id                BigInt  @id @default(autoincrement())
+  requestId         BigInt  @map("request_id")
+  productId         BigInt  @map("product_id")
+  quantityRequested Decimal @map("quantity_requested") @db.Decimal(12, 2)
+  quantityApproved  Decimal @default(0) @map("quantity_approved") @db.Decimal(12, 2)
+
+  request Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("request_items")
+}
+
+// ==========================================
+// 10. INCIDENCIAS TÉCNICAS (DEFECTUOSOS / MERMAS)
+// ==========================================
+
+model BatchIncident {
+  id               BigInt         @id @default(autoincrement())
+  batchId          BigInt         @map("batch_id")
+  reportedById     Int            @map("reported_by_id")
+  incidentType     IncidentType   @map("incident_type")
+  description      String         @db.Text
+  evidenceUrl      String?        @map("evidence_url")
+  affectedQuantity Decimal        @map("affected_quantity") @db.Decimal(12, 2)
+  status           IncidentStatus @default(ABIERTA)
+  resolvedById     Int?           @map("resolved_by_id")
+  resolutionNotes  String?        @map("resolution_notes") @db.Text
+  resolvedAt       DateTime?      @map("resolved_at")
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  batch      StockBatch @relation(fields: [batchId], references: [id])
+  reportedBy User       @relation("ReportedIncidents", fields: [reportedById], references: [id])
+  resolvedBy User?      @relation("ResolvedIncidents", fields: [resolvedById], references: [id])
+
+  @@map("batch_incidents")
+}

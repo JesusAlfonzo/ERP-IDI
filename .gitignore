@@ -37,5 +37,5 @@ Thumbs.db
 .cursor/
 .cursorrules
 .claude/
-agents/
-devin/
+.agents/
+.devin/

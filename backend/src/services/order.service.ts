@@ -1,5 +1,25 @@
 import { prisma } from '../config/prisma.js';
-import { OrderStatus, PaymentStatus, ReceptionStatus } from '@prisma/client';
+import {
+  OrderStatus,
+  PaymentStatus,
+  ReceptionStatus,
+  StockMovementType,
+} from '@prisma/client';
+
+export interface ReceiveOrderItemDTO {
+  orderItemId: bigint;
+  quantityReceived: number;
+  lotNumber: string;
+  expirationDate: Date;
+  locationId?: number;
+}
+
+export interface ReceiveOrderDTO {
+  orderId: bigint;
+  receivedById: number;
+  notes?: string | null;
+  items: ReceiveOrderItemDTO[];
+}
 
 export interface CreateOrderItemDTO {
   productId: bigint;
@@ -78,7 +98,6 @@ export class OrderService {
       throw new Error('La orden debe incluir al menos un ítem');
     }
 
-    // 1. Obtener la moneda y su tasa más reciente
     const currency = await prisma.currency.findUnique({
       where: { id: data.currencyId },
       include: {
@@ -99,12 +118,10 @@ export class OrderService {
         ? Number(currency.exchanges[0].rate)
         : 1.0;
 
-    // 2. Generar correlativo anual ORD-YYYY-XXXX
     const currentYear = new Date().getFullYear();
     const count = await prisma.order.count();
     const orderNumber = `ORD-${currentYear}-${String(count + 1).padStart(4, '0')}`;
 
-    // 3. Procesar y validar cada ítem con el catálogo de productos
     let subtotal = 0;
     let taxTotal = 0;
 
@@ -128,7 +145,6 @@ export class OrderService {
         throw new Error(`Producto con ID ${item.productId} no encontrado`);
       }
 
-      // Calcular multiplicador (factor de conversión)
       let multiplier = 1.0;
       if (product.purchaseUnitId && product.purchaseUnitId === item.unitId) {
         multiplier = Number(product.conversionFactor);
@@ -157,7 +173,6 @@ export class OrderService {
 
     const total = subtotal + taxTotal;
 
-    // 4. Transacción atómica
     return prisma.$transaction(async (tx) => {
       const order = await tx.order.create({
         data: {
@@ -199,6 +214,133 @@ export class OrderService {
       });
 
       return order;
+    });
+  }
+
+  static async receiveOrder(data: ReceiveOrderDTO) {
+    if (!data.items || data.items.length === 0) {
+      throw new Error('Debe proporcionar al menos un ítem para recibir');
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: data.orderId },
+        include: { items: { include: { product: true } } },
+      });
+
+      if (!order) {
+        throw new Error('Orden no encontrada');
+      }
+
+      if (order.status === OrderStatus.CANCELADA) {
+        throw new Error('No se puede recibir mercancía de una orden cancelada');
+      }
+
+      if (order.receptionStatus === ReceptionStatus.COMPLETO) {
+        throw new Error('Esta orden ya fue recibida en su totalidad');
+      }
+
+      const moveCount = await tx.stockMovement.count();
+      const currentYear = new Date().getFullYear();
+      const moveReference = `MOV-REC-${currentYear}-${String(moveCount + 1).padStart(4, '0')}`;
+
+      const destinationLocationId = data.items[0]?.locationId ?? 1;
+
+      const movement = await tx.stockMovement.create({
+        data: {
+          referenceNumber: moveReference,
+          type: StockMovementType.ENTRADA_COMPRA,
+          orderId: order.id,
+          destinationLocationId,
+          notes: data.notes ?? `Recepción de la orden ${order.orderNumber}`,
+          createdById: data.receivedById,
+        },
+      });
+
+      for (const receivedItem of data.items) {
+        const orderItem = order.items.find(
+          (item) => item.id === receivedItem.orderItemId
+        );
+
+        if (!orderItem) {
+          throw new Error(
+            `Ítem con ID ${receivedItem.orderItemId} no existe en la orden`
+          );
+        }
+
+        const remaining =
+          Number(orderItem.quantityOrdered) -
+          Number(orderItem.quantityReceived);
+        if (receivedItem.quantityReceived > remaining) {
+          throw new Error(
+            `La cantidad (${receivedItem.quantityReceived}) excede el saldo pendiente (${remaining})`
+          );
+        }
+
+        const multiplier = Number(orderItem.multiplier);
+        const baseQuantityToAdd = receivedItem.quantityReceived * multiplier;
+        const targetLocationId =
+          receivedItem.locationId ?? destinationLocationId;
+        const costPerBaseUnit = Number(orderItem.unitPrice) / multiplier;
+
+        const stockBatch = await tx.stockBatch.create({
+          data: {
+            productId: orderItem.productId,
+            locationId: targetLocationId,
+            lotNumber: receivedItem.lotNumber.trim().toUpperCase(),
+            currentQuantity: baseQuantityToAdd,
+            costPrice: costPerBaseUnit,
+            expirationDate: receivedItem.expirationDate,
+          },
+        });
+
+        await tx.stockMovementItem.create({
+          data: {
+            stockMovementId: movement.id,
+            batchId: stockBatch.id,
+            quantity: baseQuantityToAdd,
+            unitCost: costPerBaseUnit,
+          },
+        });
+
+        await tx.orderItem.update({
+          where: { id: orderItem.id },
+          data: {
+            quantityReceived:
+              Number(orderItem.quantityReceived) +
+              receivedItem.quantityReceived,
+          },
+        });
+      }
+
+      const updatedOrder = await tx.order.findUnique({
+        where: { id: data.orderId },
+        include: { items: true },
+      });
+
+      const allCompleted = updatedOrder?.items.every(
+        (item) => Number(item.quantityReceived) >= Number(item.quantityOrdered)
+      );
+
+      return tx.order.update({
+        where: { id: data.orderId },
+        data: {
+          receptionStatus: allCompleted
+            ? ReceptionStatus.COMPLETO
+            : ReceptionStatus.PARCIAL,
+          status: allCompleted ? OrderStatus.COMPLETADA : OrderStatus.PARCIAL,
+        },
+        include: {
+          items: {
+            include: {
+              product: true,
+              unit: true,
+            },
+          },
+          supplier: true,
+          currency: true,
+        },
+      });
     });
   }
 }

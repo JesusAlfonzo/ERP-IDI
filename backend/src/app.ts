@@ -10,6 +10,7 @@ import inventoryRoutes from './routes/inventory.routes.js';
 import purchaseFinanceRoutes from './routes/purchase-finance.routes.js';
 import requestRoutes from './routes/request.routes.js';
 
+
 const app: express.Application = express();
 
 // Middleware para parsear JSON

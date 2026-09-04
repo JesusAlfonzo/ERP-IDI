@@ -24,7 +24,6 @@ export const getRequests = async (
       filter.cycle = cycle.trim();
     }
 
-    // Si el usuario no es Admin ni Almacén, solo puede ver sus propias solicitudes
     const userRoles = req.user?.roles ?? [];
     const isStaff =
       userRoles.includes('ADMINISTRADOR') || userRoles.includes('ALMACENISTA');
@@ -203,6 +202,64 @@ export const rejectRequest = async (
       status: 'SUCCESS',
       message: 'Solicitud rechazada',
       data: serializeBigInt(rejected),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const dispatchRequest = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    if (!id) {
+      res
+        .status(400)
+        .json({ status: 'BAD_REQUEST', message: 'ID no proporcionado' });
+      return;
+    }
+
+    if (!req.user?.id) {
+      res
+        .status(401)
+        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const { items, notes } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'Debe proporcionar la distribución de lotes por ítem',
+      });
+      return;
+    }
+
+    const formattedItems = items.map((it: any) => ({
+      itemId: BigInt(it.itemId),
+      allocations: (it.allocations || []).map((al: any) => ({
+        batchId: BigInt(al.batchId),
+        quantity: Number(al.quantity),
+      })),
+    }));
+
+    const dispatched = await RequestService.dispatchRequest({
+      requestId: BigInt(id),
+      dispatchedById: req.user.id,
+      notes: notes ? String(notes) : null,
+      items: formattedItems,
+    });
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Solicitud despachada y stock rebajado correctamente',
+      data: serializeBigInt(dispatched),
     });
   } catch (error) {
     next(error);

@@ -1,5 +1,27 @@
 import { prisma } from '../config/prisma.js';
-import { RequestStatus } from '@prisma/client';
+import {
+  RequestStatus,
+  StockMovementType,
+  BatchStatus,
+  LabUnitStatus,
+} from '@prisma/client';
+
+export interface DispatchBatchAllocationDTO {
+  batchId: bigint;
+  quantity: number;
+}
+
+export interface DispatchItemDTO {
+  itemId: bigint;
+  allocations: DispatchBatchAllocationDTO[];
+}
+
+export interface DispatchRequestDTO {
+  requestId: bigint;
+  dispatchedById: number;
+  notes?: string | null;
+  items: DispatchItemDTO[];
+}
 
 export interface CreateRequestItemDTO {
   productId: bigint;
@@ -29,7 +51,6 @@ export interface ApproveRequestDTO {
 function getIsoWeeklyCycle(date: Date = new Date()): string {
   const tempDate = new Date(date.getTime());
   tempDate.setHours(0, 0, 0, 0);
-  // El jueves de la semana actual determina el año de la semana
   tempDate.setDate(tempDate.getDate() + 3 - ((tempDate.getDay() + 6) % 7));
   const week1 = new Date(tempDate.getFullYear(), 0, 4);
   const weekNumber =
@@ -230,6 +251,142 @@ export class RequestService {
       include: {
         items: true,
       },
+    });
+  }
+
+  static async dispatchRequest(data: DispatchRequestDTO) {
+    if (!data.items || data.items.length === 0) {
+      throw new Error('Debe especificar los ítems y lotes a despachar');
+    }
+
+    return prisma.$transaction(async (tx) => {
+      // 1. Validar la solicitud
+      const request = await tx.request.findUnique({
+        where: { id: data.requestId },
+        include: {
+          items: {
+            include: { product: true },
+          },
+        },
+      });
+
+      if (!request) {
+        throw new Error('Solicitud no encontrada');
+      }
+
+      if (
+        request.status !== RequestStatus.APROBADA &&
+        request.status !== RequestStatus.DESPACHADA_PARCIAL
+      ) {
+        throw new Error(
+          'Solo se pueden despachar solicitudes APROBADAS o con despacho PARCIAL'
+        );
+      }
+
+      // 2. Generar correlativo del movimiento de salida
+      const count = await tx.stockMovement.count();
+      const currentYear = new Date().getFullYear();
+      const refNumber = `MOV-DESP-${currentYear}-${String(count + 1).padStart(4, '0')}`;
+
+      const movement = await tx.stockMovement.create({
+        data: {
+          referenceNumber: refNumber,
+          type: StockMovementType.DESPACHO_SOLICITUD,
+          notes: data.notes ?? `Despacho de solicitud ${request.requestNumber}`,
+          createdById: data.dispatchedById,
+        },
+      });
+
+      // 3. Procesar asignaciones por ítem
+      for (const itemDispatch of data.items) {
+        const reqItem = request.items.find((i) => i.id === itemDispatch.itemId);
+        if (!reqItem) {
+          throw new Error(`Ítem de solicitud ${itemDispatch.itemId} no existe`);
+        }
+
+        const totalToDispatch = itemDispatch.allocations.reduce(
+          (sum, a) => sum + a.quantity,
+          0
+        );
+
+        if (totalToDispatch > Number(reqItem.quantityApproved)) {
+          throw new Error(
+            `La cantidad asignada (${totalToDispatch}) excede la cantidad aprobada (${reqItem.quantityApproved})`
+          );
+        }
+
+        for (const alloc of itemDispatch.allocations) {
+          const batch = await tx.stockBatch.findUnique({
+            where: { id: alloc.batchId },
+          });
+
+          if (!batch) {
+            throw new Error(`Lote con ID ${alloc.batchId} no encontrado`);
+          }
+
+          if (Number(batch.currentQuantity) < alloc.quantity) {
+            throw new Error(
+              `Stock insuficiente en lote ${batch.lotNumber}. Disponible: ${batch.currentQuantity}, requerido: ${alloc.quantity}`
+            );
+          }
+
+          // Descontar del lote físico
+          const remainingStock = Number(batch.currentQuantity) - alloc.quantity;
+          await tx.stockBatch.update({
+            where: { id: batch.id },
+            data: {
+              currentQuantity: remainingStock,
+              status: remainingStock === 0 ? BatchStatus.AGOTADO : batch.status,
+            },
+          });
+
+          // Registrar detalle del movimiento de inventario
+          await tx.stockMovementItem.create({
+            data: {
+              stockMovementId: movement.id,
+              batchId: batch.id,
+              quantity: alloc.quantity,
+              unitCost: batch.costPrice,
+            },
+          });
+
+          // Si el producto es un reactivo de laboratorio, crear frascos individuales
+          if (reqItem.product.isReagent) {
+            const currentUnitsCount = await tx.labReagentUnit.count();
+            for (let i = 0; i < alloc.quantity; i++) {
+              const unitCode = `LAB-${reqItem.product.sku}-${String(currentUnitsCount + i + 1).padStart(5, '0')}`;
+              await tx.labReagentUnit.create({
+                data: {
+                  productId: reqItem.productId,
+                  batchId: batch.id,
+                  unitCode,
+                  initialVolume: 100,
+                  currentVolume: 100,
+                  status: LabUnitStatus.SELLADO,
+                  expirationDate: batch.expirationDate,
+                },
+              });
+            }
+          }
+        }
+      }
+
+      // 4. Actualizar estado y enlazar con el movimiento generado
+      return tx.request.update({
+        where: { id: request.id },
+        data: {
+          status: RequestStatus.COMPLETADA,
+          dispatchedMovementId: movement.id,
+        },
+        include: {
+          items: {
+            include: { product: true },
+          },
+          dispatchedMovement: {
+            include: { items: true },
+          },
+        },
+      });
     });
   }
 }

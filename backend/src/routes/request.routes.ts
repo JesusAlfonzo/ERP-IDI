@@ -5,6 +5,7 @@ import {
   createRequest,
   approveRequest,
   rejectRequest,
+  dispatchRequest,
 } from '../controllers/request.controller.js';
 import { authenticateJWT } from '../middlewares/auth.middleware.js';
 import { requireRoles } from '../middlewares/role.middleware.js';
@@ -17,6 +18,11 @@ router.use(authenticateJWT);
 router.get('/', getRequests);
 router.get('/:id', getRequestById);
 router.post('/', createRequest);
+router.patch(
+  '/:id/dispatch',
+  requireRoles(['ADMINISTRADOR', 'ALMACENISTA']),
+  dispatchRequest
+);
 
 // Aprobación o rechazo exclusivo para Almacenista y Administrador
 router.patch(

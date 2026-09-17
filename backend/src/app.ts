@@ -15,11 +15,24 @@ import reportRoutes from './routes/report.routes.js';
 import userRoutes from './routes/user.routes.js';
 import catalogRoutes from './routes/catalog.routes.js';
 import exportRoutes from './routes/export.routes.js';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec, swaggerUiOptions } from './config/swagger.js';
 
 const app: express.Application = express();
 
 // Middleware para parsear JSON
 app.use(express.json());
+
+// Interfaz de Documentación Swagger
+app.use(
+  '/api/docs',
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, swaggerUiOptions)
+);
+app.get('/api/docs.json', (_req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
 
 // Rutas
 app.use('/api/health', healthRoutes);

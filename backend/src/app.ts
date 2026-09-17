@@ -18,8 +18,17 @@ import requestRoutes from './routes/request.routes.js';
 import labRoutes from './routes/lab.routes.js';
 import reportRoutes from './routes/report.routes.js';
 import exportRoutes from './routes/export.routes.js';
+import cors from 'cors';
 
 const app: express.Application = express();
+
+// CORS
+app.use(
+  cors({
+    origin: ['http://localhost:3000', 'http://localhost:3001'],
+    credentials: true,
+  })
+);
 
 app.use(express.json());
 

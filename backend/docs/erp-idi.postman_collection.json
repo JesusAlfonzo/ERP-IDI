@@ -1,0 +1,298 @@
+{
+  "info": {
+    "name": "ERP-IDI Backend API",
+    "_postman_id": "erp-idi-collection-v1",
+    "description": "Colección completa de endpoints para el ERP del Instituto de Inmunología Dr. Nicolás E. Bianco Colmenares (UCV).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01. Autenticación & Usuarios",
+      "item": [
+        {
+          "name": "Login Administrador",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"Admin123*\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Listar Usuarios",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            }
+          }
+        },
+        {
+          "name": "Crear Usuario",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"analista2\",\n  \"email\": \"analista2@idi.ucv.ve\",\n  \"password\": \"BioLab2026*\",\n  \"fullName\": \"Lic. Roberto Gómez\",\n  \"department\": \"Inmunología\",\n  \"roleIds\": [2]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02. Catálogos Organizacionales",
+      "item": [
+        {
+          "name": "Listar Categorías",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/catalog/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["catalog", "categories"]
+            }
+          }
+        },
+        {
+          "name": "Crear Categoría",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Reactivos de Citometría\",\n  \"description\": \"Anticuerpos monoclonales y buffers para citometría de flujo\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/catalog/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["catalog", "categories"]
+            }
+          }
+        },
+        {
+          "name": "Listar Marcas",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/catalog/brands",
+              "host": ["{{baseUrl}}"],
+              "path": ["catalog", "brands"]
+            }
+          }
+        },
+        {
+          "name": "Listar Unidades de Medida",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/catalog/units",
+              "host": ["{{baseUrl}}"],
+              "path": ["catalog", "units"]
+            }
+          }
+        },
+        {
+          "name": "Listar Ubicaciones & Equipos",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/catalog/locations",
+              "host": ["{{baseUrl}}"],
+              "path": ["catalog", "locations"]
+            }
+          }
+        },
+        {
+          "name": "Listar Departamentos Activos",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/catalog/departments",
+              "host": ["{{baseUrl}}"],
+              "path": ["catalog", "departments"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03. Proveedores",
+      "item": [
+        {
+          "name": "Listar Proveedores (con búsqueda)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/suppliers?search=",
+              "host": ["{{baseUrl}}"],
+              "path": ["suppliers"],
+              "query": [{ "key": "search", "value": "" }]
+            }
+          }
+        },
+        {
+          "name": "Crear Proveedor",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rifOrId\": \"J-31045920-1\",\n  \"name\": \"BioDiagnóstica C.A.\",\n  \"contactName\": \"Ing. Carlos Mendoza\",\n  \"phone\": \"+58 412 5550192\",\n  \"email\": \"ventas@biodiagnostica.com.ve\",\n  \"address\": \"Boleíta Norte, Caracas\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/suppliers",
+              "host": ["{{baseUrl}}"],
+              "path": ["suppliers"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04. Inventario, Calidad & Kardex",
+      "item": [
+        {
+          "name": "Kardex Paginado (Movimientos)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/inventory/movements?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "movements"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "type", "value": "", "disabled": true },
+                { "key": "batchId", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Ajuste Manual de Inventario",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Cuadre tras auditoría física mensual\",\n  \"items\": [\n    {\n      \"batchId\": 1,\n      \"action\": \"INCREMENTO\",\n      \"quantity\": 2,\n      \"reason\": \"Sobrante justificado\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/inventory/adjustments",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "adjustments"]
+            }
+          }
+        },
+        {
+          "name": "Baja Directa por Merma",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wastes\": [\n    {\n      \"batchId\": 1,\n      \"quantity\": 1,\n      \"reason\": \"Frasco fracturado en manipulación interna\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/inventory/wastes",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "wastes"]
+            }
+          }
+        },
+        {
+          "name": "Cambio de Estado de Lote (Cuarentena)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"EN_CUARENTENA\",\n  \"incidentType\": \"FALLA_CADENA_FRIO\",\n  \"reason\": \"Variación térmica reportada en Cava 01\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/inventory/batches/1/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "batches", "1", "status"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05. Reportería & Exportaciones",
+      "item": [
+        {
+          "name": "Dashboard Ejecutivo Analítico",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/reports/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "dashboard"]
+            }
+          }
+        },
+        {
+          "name": "Exportar Kardex (CSV)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/exports/kardex",
+              "host": ["{{baseUrl}}"],
+              "path": ["exports", "kardex"]
+            }
+          }
+        },
+        {
+          "name": "Exportar Valorización de Inventario (CSV)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/exports/inventory-valuation",
+              "host": ["{{baseUrl}}"],
+              "path": ["exports", "inventory-valuation"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

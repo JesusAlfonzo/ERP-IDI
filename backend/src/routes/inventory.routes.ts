@@ -15,6 +15,6 @@ router.use(authenticateJWT);
 router.get('/', getInventorySummary);
 router.get('/batches', getBatches);
 router.get('/alerts', getAlerts);
-router.get('/movements', getMovements);
+// router.get('/movements', getMovements);
 
 export default router;

@@ -245,7 +245,7 @@ export class StockAdjustmentService {
     }
 
     if (filters?.batchId) {
-      whereClause.movementItems = {
+      whereClause.items = {
         some: { batchId: filters.batchId },
       };
     }
@@ -261,7 +261,7 @@ export class StockAdjustmentService {
           createdBy: {
             select: { id: true, fullName: true, username: true },
           },
-          movementItems: {
+          items: {
             include: {
               batch: {
                 include: {

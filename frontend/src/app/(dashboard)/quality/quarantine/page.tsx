@@ -20,6 +20,9 @@ export default function QualityQuarantinePage() {
   const router = useRouter();
   const [batches, setBatches] = useState<QuarantineBatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeStatus, setActiveStatus] = useState<
+    "EN_CUARENTENA" | "DEFECTUOSO"
+  >("EN_CUARENTENA");
 
   // Modal / Formulario de Dictamen
   const [selectedBatch, setSelectedBatch] = useState<QuarantineBatch | null>(
@@ -36,24 +39,32 @@ export default function QualityQuarantinePage() {
   const loadQuarantine = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await QualityClientService.getQuarantineBatches();
+      const data = await QualityClientService.getBatchesByStatus(activeStatus);
       setBatches(data);
     } catch {
       // Manejado por interceptor global
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeStatus]);
 
   useEffect(() => {
+    let isMounted = true;
+    if (!AuthService.isAuthenticated()) {
+      router.replace("/login");
+      return;
+    }
+
     const init = async () => {
-      if (!AuthService.isAuthenticated()) {
-        router.replace("/login");
-        return;
+      if (isMounted) {
+        await loadQuarantine();
       }
-      await loadQuarantine();
     };
     init();
+
+    return () => {
+      isMounted = false;
+    };
   }, [router, loadQuarantine]);
 
   const handleOpenInspection = (batch: QuarantineBatch) => {
@@ -62,6 +73,8 @@ export default function QualityQuarantinePage() {
     setTechnicalNotes("");
     setFeedback(null);
   };
+
+  const isQuarantine = activeStatus === "EN_CUARENTENA";
 
   const handleCloseInspection = () => {
     setSelectedBatch(null);
@@ -136,6 +149,29 @@ export default function QualityQuarantinePage() {
         </button>
       </div>
 
+      <div className="flex gap-2 border-b border-slate-200">
+        <button
+          onClick={() => setActiveStatus("EN_CUARENTENA")}
+          className={`px-4 py-2 text-xs font-semibold border-b-2 ${
+            isQuarantine
+              ? "border-amber-500 text-amber-700"
+              : "border-transparent text-slate-500"
+          }`}
+        >
+          En cuarentena
+        </button>
+        <button
+          onClick={() => setActiveStatus("DEFECTUOSO")}
+          className={`px-4 py-2 text-xs font-semibold border-b-2 ${
+            !isQuarantine
+              ? "border-red-500 text-red-700"
+              : "border-transparent text-slate-500"
+          }`}
+        >
+          Defectuosos
+        </button>
+      </div>
+
       {/* Tabla de Cuarentena */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
@@ -163,7 +199,9 @@ export default function QualityQuarantinePage() {
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-slate-400">
                     <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
-                    No hay lotes retenidos en cuarentena en este momento.
+                    {isQuarantine
+                      ? "No hay lotes retenidos en cuarentena en este momento."
+                      : "No hay lotes defectuosos registrados."}
                   </td>
                 </tr>
               ) : (
@@ -198,13 +236,20 @@ export default function QualityQuarantinePage() {
                       {new Date(batch.createdAt).toLocaleDateString()}
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={() => handleOpenInspection(batch)}
-                        className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-                      >
-                        <FileCheck className="w-3.5 h-3.5" />
-                        Emitir Dictamen
-                      </button>
+                      {isQuarantine ? (
+                        <button
+                          onClick={() => handleOpenInspection(batch)}
+                          className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                        >
+                          <FileCheck className="w-3.5 h-3.5" />
+                          Emitir Dictamen
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-red-700 font-semibold">
+                          <XCircle className="w-3.5 h-3.5" />
+                          Rechazado
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))

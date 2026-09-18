@@ -9,30 +9,51 @@ import type {
 export const QualityClientService = {
   /**
    * Obtiene todos los lotes retenidos en cuarentena
+   * Endpoint backend: GET /api/inventory/batches?status=EN_CUARENTENA
    */
   async getQuarantineBatches(): Promise<QuarantineBatch[]> {
+    return this.getBatchesByStatus("EN_CUARENTENA");
+  },
+
+  async getDefectiveBatches(): Promise<QuarantineBatch[]> {
+    return this.getBatchesByStatus("DEFECTUOSO");
+  },
+
+  async getBatchesByStatus(
+    status: "EN_CUARENTENA" | "DEFECTUOSO",
+  ): Promise<QuarantineBatch[]> {
     const response = await apiClient.get<ApiResponse<QuarantineBatch[]>>(
-      "/quality/quarantine",
+      `/inventory/batches?status=${status}`,
     );
     return response.data.data || [];
   },
 
   /**
-   * Emite el dictamen técnico para liberar a DISPONIBLE o marcar como DEFECTUOSO
+   * Emite el dictamen técnico actualizando el estado del lote en el inventario
+   * Endpoint backend: PATCH /api/inventory/batches/:id/status
    */
   async submitVerdict(
     payload: QualityInspectionPayload,
   ): Promise<QualityInspectionResponse> {
-    const response = await apiClient.post<
-      ApiResponse<QualityInspectionResponse>
-    >("/quality/inspection", payload);
+    const targetStatus =
+      payload.verdict === "LIBERAR" ? "DISPONIBLE" : "DEFECTUOSO";
 
-    if (!response.data.data) {
-      throw new Error(
-        response.data.message || "Error al procesar el dictamen de calidad",
-      );
-    }
+    const response = await apiClient.patch<ApiResponse<QuarantineBatch>>(
+      `/inventory/batches/${payload.batchId}/status`,
+      {
+        status: targetStatus,
+        reason: payload.technicalNotes.trim(),
+      },
+    );
 
-    return response.data.data;
+    return {
+      batchId: payload.batchId,
+      newStatus: targetStatus,
+      message:
+        response.data.message ||
+        (targetStatus === "DISPONIBLE"
+          ? "Lote liberado e integrado al inventario disponible."
+          : "Lote declarado defectuoso y apartado de operaciones."),
+    };
   },
 };

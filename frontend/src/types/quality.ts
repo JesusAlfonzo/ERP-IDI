@@ -4,7 +4,7 @@ export interface QuarantineBatch {
   currentQuantity: number;
   costPrice: number;
   expirationDate: string | null;
-  status: "EN_CUARENTENA";
+  status: "EN_CUARENTENA" | "DEFECTUOSO";
   createdAt: string;
   product: {
     id: number;

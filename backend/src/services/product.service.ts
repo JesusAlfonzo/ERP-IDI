@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma.js';
+import { BatchStatus } from '@prisma/client';
 
 export interface CreateProductDTO {
   name: string;
@@ -49,33 +50,50 @@ export class ProductService {
 
   // --- Productos ---
   static async listProducts(filter?: ProductFilterDTO) {
-    return prisma.product.findMany({
-      where: {
-        isActive: true,
-        ...(filter?.categoryId !== undefined
-          ? { categoryId: filter.categoryId }
-          : {}),
-        ...(filter?.isReagent !== undefined
-          ? { isReagent: filter.isReagent }
-          : {}),
-        ...(filter?.search
-          ? {
-              OR: [
-                { name: { contains: filter.search, mode: 'insensitive' } },
-                { sku: { contains: filter.search, mode: 'insensitive' } },
-                { barcode: { contains: filter.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      include: {
-        category: true,
-        brand: true,
-        baseUnit: true,
-        purchaseUnit: true,
-      },
-      orderBy: { name: 'asc' },
-    });
+    return prisma.product
+      .findMany({
+        where: {
+          isActive: true,
+          ...(filter?.categoryId !== undefined
+            ? { categoryId: filter.categoryId }
+            : {}),
+          ...(filter?.isReagent !== undefined
+            ? { isReagent: filter.isReagent }
+            : {}),
+          ...(filter?.search
+            ? {
+                OR: [
+                  { name: { contains: filter.search, mode: 'insensitive' } },
+                  { sku: { contains: filter.search, mode: 'insensitive' } },
+                  { barcode: { contains: filter.search, mode: 'insensitive' } },
+                ],
+              }
+            : {}),
+        },
+        include: {
+          category: true,
+          brand: true,
+          baseUnit: true,
+          purchaseUnit: true,
+          stockBatches: {
+            where: {
+              status: BatchStatus.DISPONIBLE,
+              currentQuantity: { gt: 0 },
+            },
+            select: { currentQuantity: true },
+          },
+        },
+        orderBy: { name: 'asc' },
+      })
+      .then((products) =>
+        products.map(({ stockBatches, ...product }) => ({
+          ...product,
+          totalStock: stockBatches.reduce(
+            (total, batch) => total + Number(batch.currentQuantity),
+            0
+          ),
+        }))
+      );
   }
 
   static async getProductById(id: bigint) {

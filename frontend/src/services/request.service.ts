@@ -46,7 +46,14 @@ export const RequestClientService = {
   ): Promise<InternalRequest> {
     const response = await apiClient.post<ApiResponse<InternalRequest>>(
       `/requests/${payload.requestId}/dispatch`,
-      payload,
+      {
+        dispatchNotes: payload.dispatchNotes,
+        items: payload.items.map((item) => ({
+          itemId: Number(item.itemId),
+          batchId: Number(item.batchId),
+          dispatchedQuantity: Number(item.dispatchedQuantity),
+        })),
+      },
     );
 
     if (!response.data.data) {

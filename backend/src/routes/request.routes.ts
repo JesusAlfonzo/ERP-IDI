@@ -18,7 +18,7 @@ router.use(authenticateJWT);
 router.get('/', getRequests);
 router.get('/:id', getRequestById);
 router.post('/', createRequest);
-router.patch(
+router.post(
   '/:id/dispatch',
   requireRoles(['ADMINISTRADOR', 'ALMACENISTA']),
   dispatchRequest
@@ -31,7 +31,7 @@ router.patch(
   approveRequest
 );
 
-router.patch(
+router.post(
   '/:id/reject',
   requireRoles(['ADMINISTRADOR', 'ALMACENISTA']),
   rejectRequest

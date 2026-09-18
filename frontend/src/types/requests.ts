@@ -2,13 +2,16 @@ export type RequestPriority = "BAJA" | "RUTINA" | "URGENTE";
 export type RequestStatus =
   | "PENDIENTE"
   | "APROBADA"
-  | "DESPACHADA"
+  | "DESPACHADA_PARCIAL"
+  | "COMPLETADA"
   | "RECHAZADA";
 
 export interface InternalRequestItem {
   id?: number;
   productId: number;
   requestedQuantity: number;
+  quantityApproved?: number;
+  quantityDispatched?: number;
   dispatchedQuantity?: number;
   batchId?: number | null;
   product?: {

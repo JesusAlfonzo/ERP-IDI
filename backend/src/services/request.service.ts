@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma.js';
 import {
   RequestStatus,
+  RequestPriority,
   StockMovementType,
   BatchStatus,
   LabUnitStatus,
@@ -30,6 +31,9 @@ export interface CreateRequestItemDTO {
 
 export interface CreateRequestDTO {
   userId: number;
+  priority: RequestPriority;
+  departmentSection: string;
+  justification: string;
   notes?: string | null;
   items: CreateRequestItemDTO[];
 }
@@ -148,6 +152,9 @@ export class RequestService {
         requestNumber,
         userId: data.userId,
         status: RequestStatus.PENDIENTE,
+        priority: data.priority,
+        departmentSection: data.departmentSection,
+        justification: data.justification,
         weeklyTokenCycle,
         notes: data.notes ?? null,
         items: {
@@ -276,10 +283,27 @@ export class RequestService {
 
       if (
         request.status !== RequestStatus.APROBADA &&
-        request.status !== RequestStatus.DESPACHADA_PARCIAL
+        request.status !== RequestStatus.DESPACHADA_PARCIAL &&
+        request.status !== RequestStatus.PENDIENTE
       ) {
         throw new Error(
-          'Solo se pueden despachar solicitudes APROBADAS o con despacho PARCIAL'
+          'Solo se pueden despachar solicitudes PENDIENTES, APROBADAS o con despacho PARCIAL'
+        );
+      }
+
+      const approvedQuantityFor = (item: (typeof request.items)[number]) =>
+        request.status === RequestStatus.PENDIENTE
+          ? Number(item.quantityRequested)
+          : Number(item.quantityApproved);
+
+      if (request.status === RequestStatus.PENDIENTE) {
+        await Promise.all(
+          request.items.map((item) =>
+            tx.requestItem.update({
+              where: { id: item.id },
+              data: { quantityApproved: item.quantityRequested },
+            })
+          )
         );
       }
 
@@ -309,11 +333,26 @@ export class RequestService {
           0
         );
 
-        if (totalToDispatch > Number(reqItem.quantityApproved)) {
+        if (totalToDispatch <= 0) {
+          throw new Error('La cantidad a despachar debe ser mayor que 0');
+        }
+
+        const approvedQuantity = approvedQuantityFor(reqItem);
+        const alreadyDispatched = Number(reqItem.quantityDispatched);
+        const pendingQuantity = Math.max(
+          0,
+          approvedQuantity - alreadyDispatched
+        );
+        if (totalToDispatch > pendingQuantity) {
           throw new Error(
-            `La cantidad asignada (${totalToDispatch}) excede la cantidad aprobada (${reqItem.quantityApproved})`
+            `La cantidad asignada (${totalToDispatch}) excede el saldo pendiente (${pendingQuantity})`
           );
         }
+
+        await tx.requestItem.update({
+          where: { id: reqItem.id },
+          data: { quantityDispatched: alreadyDispatched + totalToDispatch },
+        });
 
         for (const alloc of itemDispatch.allocations) {
           const batch = await tx.stockBatch.findUnique({
@@ -322,6 +361,12 @@ export class RequestService {
 
           if (!batch) {
             throw new Error(`Lote con ID ${alloc.batchId} no encontrado`);
+          }
+
+          if (batch.productId !== reqItem.productId) {
+            throw new Error(
+              `El lote ${batch.lotNumber} no corresponde al producto solicitado`
+            );
           }
 
           if (Number(batch.currentQuantity) < alloc.quantity) {
@@ -345,7 +390,7 @@ export class RequestService {
             data: {
               stockMovementId: movement.id,
               batchId: batch.id,
-              quantity: alloc.quantity,
+              quantity: -alloc.quantity,
               unitCost: batch.costPrice,
             },
           });
@@ -371,11 +416,31 @@ export class RequestService {
         }
       }
 
+      const fullyDispatched = request.items.every((item) => {
+        const dispatched = data.items
+          .filter((entry) => entry.itemId === item.id)
+          .reduce(
+            (sum, entry) =>
+              sum +
+              entry.allocations.reduce(
+                (total, allocation) => total + allocation.quantity,
+                0
+              ),
+            0
+          );
+        return (
+          Number(item.quantityDispatched) + dispatched >=
+          approvedQuantityFor(item)
+        );
+      });
+
       // 4. Actualizar estado y enlazar con el movimiento generado
       return tx.request.update({
         where: { id: request.id },
         data: {
-          status: RequestStatus.COMPLETADA,
+          status: fullyDispatched
+            ? RequestStatus.COMPLETADA
+            : RequestStatus.DESPACHADA_PARCIAL,
           dispatchedMovementId: movement.id,
         },
         include: {

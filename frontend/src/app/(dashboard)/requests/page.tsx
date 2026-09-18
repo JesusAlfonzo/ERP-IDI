@@ -23,6 +23,8 @@ import {
   Loader2,
   Check,
   Ban,
+  AlertTriangle,
+  XCircle,
 } from "lucide-react";
 
 const STATUS_CONFIG: Record<
@@ -37,8 +39,12 @@ const STATUS_CONFIG: Record<
     label: "Aprobada",
     className: "bg-blue-50 text-blue-700 border-blue-200",
   },
-  DESPACHADA: {
-    label: "Despachada",
+  DESPACHADA_PARCIAL: {
+    label: "Despacho parcial",
+    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  },
+  COMPLETADA: {
+    label: "Completada",
     className: "bg-emerald-50 text-emerald-700 border-emerald-200",
   },
   RECHAZADA: {
@@ -105,10 +111,14 @@ export default function InternalRequestsPage() {
   const [selectedForDispatch, setSelectedForDispatch] =
     useState<InternalRequest | null>(null);
   const [dispatchItemAllocations, setDispatchItemAllocations] = useState<
-    Record<number, { batchId: number; quantity: number }>
+    Record<number, { batchId: number; quantity: number | "" }>
   >({});
   const [dispatchNotes, setDispatchNotes] = useState("");
   const [dispatching, setDispatching] = useState(false);
+  const [requestToReject, setRequestToReject] =
+    useState<InternalRequest | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejecting, setRejecting] = useState(false);
 
   const [feedback, setFeedback] = useState<{
     status: "success" | "error";
@@ -218,17 +228,26 @@ export default function InternalRequestsPage() {
   // Preparación modal de despacho
   const handleOpenDispatch = (req: InternalRequest) => {
     setSelectedForDispatch(req);
-    const initialMap: Record<number, { batchId: number; quantity: number }> =
-      {};
+    const initialMap: Record<
+      number,
+      { batchId: number; quantity: number | "" }
+    > = {};
     req.items.forEach((it) => {
       if (it.id) {
+        const pendingQuantity = Math.max(
+          0,
+          (it.quantityApproved ?? it.requestedQuantity) -
+            (it.quantityDispatched ?? 0),
+        );
         // Buscar por b.product.id o b.productId
         const matchBatch = availableBatches.find(
           (b) => (b.productId ?? b.product?.id) === it.productId,
         );
         initialMap[it.id] = {
           batchId: matchBatch ? matchBatch.id : 0,
-          quantity: it.requestedQuantity,
+          quantity: matchBatch
+            ? Math.min(pendingQuantity, matchBatch.currentQuantity)
+            : pendingQuantity,
         };
       }
     });
@@ -246,12 +265,15 @@ export default function InternalRequestsPage() {
       ([itemIdStr, alloc]) => ({
         itemId: Number(itemIdStr),
         batchId: alloc.batchId,
-        dispatchedQuantity: alloc.quantity,
+        dispatchedQuantity: Number(alloc.quantity),
       }),
     );
 
     const missingBatch = allocationsList.some(
-      (a) => !a.batchId || a.dispatchedQuantity <= 0,
+      (a) =>
+        !a.batchId ||
+        a.dispatchedQuantity <= 0 ||
+        !Number.isFinite(a.dispatchedQuantity),
     );
     if (missingBatch) {
       setFeedback({
@@ -292,15 +314,30 @@ export default function InternalRequestsPage() {
     }
   };
 
-  const handleReject = async (requestId: number) => {
-    const reason = prompt("Indique el motivo de rechazo de la solicitud:");
-    if (!reason || !reason.trim()) return;
-
+  const handleReject = async () => {
+    if (!requestToReject || rejectReason.trim().length < 5) {
+      setFeedback({
+        status: "error",
+        message: "El motivo de rechazo debe tener al menos 5 caracteres.",
+      });
+      return;
+    }
+    setRejecting(true);
     try {
-      await RequestClientService.rejectRequest(requestId, reason.trim());
+      await RequestClientService.rejectRequest(
+        requestToReject.id,
+        rejectReason.trim(),
+      );
       await loadData();
+      setRequestToReject(null);
+      setRejectReason("");
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Error al rechazar");
+      setFeedback({
+        status: "error",
+        message: err instanceof Error ? err.message : "Error al rechazar",
+      });
+    } finally {
+      setRejecting(false);
     }
   };
 
@@ -445,7 +482,11 @@ export default function InternalRequestsPage() {
                               <Check className="w-3.5 h-3.5" /> Despachar
                             </button>
                             <button
-                              onClick={() => handleReject(req.id)}
+                              onClick={() => {
+                                setRequestToReject(req);
+                                setRejectReason("");
+                                setFeedback(null);
+                              }}
                               className="inline-flex items-center bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 p-1 rounded transition-colors"
                               title="Rechazar solicitud"
                             >
@@ -690,6 +731,45 @@ export default function InternalRequestsPage() {
             )}
 
             <form onSubmit={handleConfirmDispatch} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs">
+                <div>
+                  <span className="block text-[10px] uppercase text-slate-500">
+                    Área solicitante
+                  </span>
+                  <strong className="text-slate-800">
+                    {selectedForDispatch.departmentSection}
+                  </strong>
+                </div>
+                <div>
+                  <span className="block text-[10px] uppercase text-slate-500">
+                    Solicitante
+                  </span>
+                  <strong className="text-slate-800">
+                    {selectedForDispatch.applicant?.fullName ||
+                      selectedForDispatch.applicant?.username}
+                  </strong>
+                </div>
+                <div>
+                  <span className="block text-[10px] uppercase text-slate-500">
+                    Prioridad
+                  </span>
+                  <span
+                    className={`inline-block px-2 py-0.5 rounded font-semibold ${PRIORITY_BADGES[selectedForDispatch.priority]?.className}`}
+                  >
+                    {PRIORITY_BADGES[selectedForDispatch.priority]?.label ||
+                      selectedForDispatch.priority}
+                  </span>
+                </div>
+                <div className="sm:col-span-3 border-t border-blue-100 pt-2">
+                  <span className="block text-[10px] uppercase text-slate-500">
+                    Justificación
+                  </span>
+                  <p className="text-slate-700">
+                    {selectedForDispatch.justification ||
+                      "Sin justificación registrada"}
+                  </p>
+                </div>
+              </div>
               <div className="space-y-3">
                 <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider block">
                   Asignación de Lotes Físicos a Despachar
@@ -697,12 +777,17 @@ export default function InternalRequestsPage() {
 
                 {selectedForDispatch.items.map((it) => {
                   const itId = it.id as number;
+                  const pendingQuantity = Math.max(
+                    0,
+                    (it.quantityApproved ?? it.requestedQuantity) -
+                      (it.quantityDispatched ?? 0),
+                  );
                   const candidateBatches = availableBatches.filter(
                     (b) => (b.productId ?? b.product?.id) === it.productId,
                   );
                   const currentAlloc = dispatchItemAllocations[itId] || {
                     batchId: 0,
-                    quantity: it.requestedQuantity,
+                    quantity: pendingQuantity,
                   };
 
                   return (
@@ -720,6 +805,12 @@ export default function InternalRequestsPage() {
                             {it.requestedQuantity} {it.product?.unitOfMeasure}
                           </b>
                         </span>
+                        <span className="text-blue-700">
+                          Pendiente:{" "}
+                          <b>
+                            {pendingQuantity} {it.product?.unitOfMeasure}
+                          </b>
+                        </span>
                       </div>
 
                       <div className="grid grid-cols-12 gap-2">
@@ -735,6 +826,18 @@ export default function InternalRequestsPage() {
                                 [itId]: {
                                   ...prev[itId],
                                   batchId: Number(e.target.value),
+                                  quantity: (() => {
+                                    const selected = candidateBatches.find(
+                                      (batch) =>
+                                        batch.id === Number(e.target.value),
+                                    );
+                                    return selected
+                                      ? Math.min(
+                                          pendingQuantity,
+                                          selected.currentQuantity,
+                                        )
+                                      : "";
+                                  })(),
                                 },
                               }))
                             }
@@ -751,6 +854,22 @@ export default function InternalRequestsPage() {
                               </option>
                             ))}
                           </select>
+                          {(() => {
+                            const selected = candidateBatches.find(
+                              (batch) => batch.id === currentAlloc.batchId,
+                            );
+                            if (
+                              !selected ||
+                              selected.currentQuantity >= pendingQuantity
+                            )
+                              return null;
+                            return (
+                              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
+                                Stock en almacén insuficiente para entrega
+                                completa. Se realizará un despacho parcial.
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         <div className="col-span-4">
@@ -760,13 +879,16 @@ export default function InternalRequestsPage() {
                           <input
                             type="number"
                             min="1"
-                            value={currentAlloc.quantity}
+                            value={currentAlloc.quantity ?? ""}
                             onChange={(e) =>
                               setDispatchItemAllocations((prev) => ({
                                 ...prev,
                                 [itId]: {
                                   ...prev[itId],
-                                  quantity: Number(e.target.value),
+                                  quantity:
+                                    e.target.value === ""
+                                      ? ""
+                                      : Number(e.target.value),
                                 },
                               }))
                             }
@@ -811,6 +933,61 @@ export default function InternalRequestsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {requestToReject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                <h3 className="font-bold text-slate-800">
+                  Rechazar requisición
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRequestToReject(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-xs text-red-800 flex gap-2">
+              <XCircle className="w-4 h-4 shrink-0" />
+              <span>
+                Solicitud {requestToReject.requestNumber}. El rechazo quedará
+                registrado con el usuario actual.
+              </span>
+            </div>
+            <textarea
+              rows={4}
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Indique el motivo técnico o administrativo..."
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-red-500"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                onClick={() => setRequestToReject(null)}
+                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleReject()}
+                disabled={rejecting || rejectReason.trim().length < 5}
+                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-50"
+              >
+                {rejecting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {rejecting ? "Rechazando..." : "Confirmar Rechazo"}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { RequestService } from '../services/request.service.js';
 import { serializeBigInt } from '../utils/serializer.js';
-import { RequestStatus } from '@prisma/client';
+import { RequestPriority, RequestStatus } from '@prisma/client';
 
 export const getRequests = async (
   req: Request,
@@ -82,7 +82,35 @@ export const createRequest = async (
       return;
     }
 
-    const { items, notes } = req.body;
+    const { priority, departmentSection, justification, items, notes } =
+      req.body;
+
+    if (
+      !priority ||
+      !Object.values(RequestPriority).includes(priority as RequestPriority)
+    ) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: `priority inválido. Debe ser uno de: ${Object.values(RequestPriority).join(', ')}`,
+      });
+      return;
+    }
+    if (!departmentSection || String(departmentSection).trim().length < 2) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message:
+          'departmentSection es obligatorio y debe tener al menos 2 caracteres',
+      });
+      return;
+    }
+    if (!justification || String(justification).trim().length < 5) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message:
+          'justification es obligatorio y debe tener al menos 5 caracteres',
+      });
+      return;
+    }
 
     if (!Array.isArray(items) || items.length === 0) {
       res.status(400).json({
@@ -92,13 +120,27 @@ export const createRequest = async (
       return;
     }
 
-    const formattedItems = items.map((it: any) => ({
-      productId: BigInt(it.productId),
-      quantityRequested: Number(it.quantityRequested),
-    }));
+    const formattedItems = items.map((it: any) => {
+      if (
+        !it.productId ||
+        !Number.isFinite(Number(it.requestedQuantity)) ||
+        Number(it.requestedQuantity) <= 0
+      ) {
+        throw new Error(
+          'Cada ítem requiere productId y requestedQuantity mayor que 0'
+        );
+      }
+      return {
+        productId: BigInt(it.productId),
+        quantityRequested: Number(it.requestedQuantity),
+      };
+    });
 
     const newRequest = await RequestService.createRequest({
       userId: req.user.id,
+      priority: priority as RequestPriority,
+      departmentSection: String(departmentSection).trim(),
+      justification: String(justification).trim(),
       notes: notes ? String(notes) : null,
       items: formattedItems,
     });
@@ -190,12 +232,20 @@ export const rejectRequest = async (
       return;
     }
 
-    const { notes } = req.body;
+    const reason = req.body.reason ?? req.body.notes;
+
+    if (!reason || String(reason).trim().length < 5) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'El motivo de rechazo debe tener al menos 5 caracteres',
+      });
+      return;
+    }
 
     const rejected = await RequestService.rejectRequest(
       BigInt(id),
       req.user.id,
-      notes ? String(notes) : undefined
+      String(reason).trim()
     );
 
     res.status(200).json({
@@ -231,7 +281,7 @@ export const dispatchRequest = async (
       return;
     }
 
-    const { items, notes } = req.body;
+    const { items, notes, dispatchNotes } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
       res.status(400).json({
@@ -241,18 +291,40 @@ export const dispatchRequest = async (
       return;
     }
 
-    const formattedItems = items.map((it: any) => ({
-      itemId: BigInt(it.itemId),
-      allocations: (it.allocations || []).map((al: any) => ({
-        batchId: BigInt(al.batchId),
-        quantity: Number(al.quantity),
-      })),
-    }));
+    const formattedItems = items.map((it: any) => {
+      const itemId = Number(it.itemId);
+      if (!Number.isSafeInteger(itemId) || itemId <= 0) {
+        throw new Error('itemId debe ser un entero positivo');
+      }
+
+      const rawAllocations = it.allocations
+        ? it.allocations
+        : [{ batchId: it.batchId, quantity: it.dispatchedQuantity }];
+      const allocations = rawAllocations.map((allocation: any) => {
+        const batchId = Number(allocation.batchId);
+        const quantity = Number(
+          allocation.quantity ?? allocation.dispatchedQuantity
+        );
+        if (!Number.isSafeInteger(batchId) || batchId <= 0) {
+          throw new Error('batchId debe ser un entero positivo');
+        }
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          throw new Error('La cantidad a despachar debe ser mayor que 0');
+        }
+        return { batchId: BigInt(batchId), quantity };
+      });
+
+      return { itemId: BigInt(itemId), allocations };
+    });
 
     const dispatched = await RequestService.dispatchRequest({
       requestId: BigInt(id),
       dispatchedById: req.user.id,
-      notes: notes ? String(notes) : null,
+      notes: dispatchNotes
+        ? String(dispatchNotes)
+        : notes
+          ? String(notes)
+          : null,
       items: formattedItems,
     });
 

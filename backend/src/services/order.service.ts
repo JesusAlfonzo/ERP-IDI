@@ -3,6 +3,7 @@ import {
   OrderStatus,
   PaymentStatus,
   ReceptionStatus,
+  BatchStatus,
   StockMovementType,
 } from '@prisma/client';
 
@@ -270,7 +271,8 @@ export class OrderService {
 
         const remaining =
           Number(orderItem.quantityOrdered) -
-          Number(orderItem.quantityReceived);
+          Number(orderItem.quantityReceived) +
+          Number(orderItem.quantityRejected);
         if (receivedItem.quantityReceived > remaining) {
           throw new Error(
             `La cantidad (${receivedItem.quantityReceived}) excede el saldo pendiente (${remaining})`
@@ -291,6 +293,7 @@ export class OrderService {
             currentQuantity: baseQuantityToAdd,
             costPrice: costPerBaseUnit,
             expirationDate: receivedItem.expirationDate,
+            status: BatchStatus.EN_CUARENTENA,
           },
         });
 
@@ -298,6 +301,7 @@ export class OrderService {
           data: {
             stockMovementId: movement.id,
             batchId: stockBatch.id,
+            orderItemId: orderItem.id,
             quantity: baseQuantityToAdd,
             unitCost: costPerBaseUnit,
           },
@@ -319,7 +323,9 @@ export class OrderService {
       });
 
       const allCompleted = updatedOrder?.items.every(
-        (item) => Number(item.quantityReceived) >= Number(item.quantityOrdered)
+        (item) =>
+          Number(item.quantityReceived) - Number(item.quantityRejected) >=
+          Number(item.quantityOrdered)
       );
 
       return tx.order.update({

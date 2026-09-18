@@ -18,6 +18,7 @@ import requestRoutes from './routes/request.routes.js';
 import labRoutes from './routes/lab.routes.js';
 import reportRoutes from './routes/report.routes.js';
 import exportRoutes from './routes/export.routes.js';
+import inventoryMasterRoutes from './routes/inventory-master.routes.js';
 import cors from 'cors';
 
 const app: express.Application = express();
@@ -70,5 +71,8 @@ app.use('/api/exports', exportRoutes);
 
 // Manejador centralizado de errores
 app.use(errorHandler);
+
+// Rutas de inventario maestro (marcas, unidades, ubicaciones)
+app.use('/api/inventory/masters', inventoryMasterRoutes);
 
 export default app;

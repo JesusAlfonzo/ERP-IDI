@@ -25,12 +25,10 @@ export const createCategory = async (
   try {
     const { name, description } = req.body;
     if (!name) {
-      res
-        .status(400)
-        .json({
-          status: 'BAD_REQUEST',
-          message: 'El nombre de la categoría es obligatorio',
-        });
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'El nombre de la categoría es obligatorio',
+      });
       return;
     }
     const category = await CatalogService.createCategory({ name, description });
@@ -104,17 +102,15 @@ export const createBrand = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { name } = req.body;
+    const { name, description } = req.body;
     if (!name) {
-      res
-        .status(400)
-        .json({
-          status: 'BAD_REQUEST',
-          message: 'El nombre de la marca es obligatorio',
-        });
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'El nombre de la marca es obligatorio',
+      });
       return;
     }
-    const brand = await CatalogService.createBrand(name);
+    const brand = await CatalogService.createBrand(name, description);
     res.status(201).json({ status: 'SUCCESS', data: brand });
   } catch (error) {
     next(error);
@@ -135,17 +131,18 @@ export const updateBrand = async (
         .json({ status: 'BAD_REQUEST', message: 'ID no proporcionado' });
       return;
     }
-    const { name } = req.body;
+    const { name, description } = req.body;
     if (!name) {
-      res
-        .status(400)
-        .json({
-          status: 'BAD_REQUEST',
-          message: 'El nuevo nombre es requerido',
-        });
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'El nuevo nombre es requerido',
+      });
       return;
     }
-    const brand = await CatalogService.updateBrand(Number(id), name);
+    const brand = await CatalogService.updateBrand(Number(id), {
+      name,
+      description,
+    });
     res.status(200).json({ status: 'SUCCESS', data: brand });
   } catch (error) {
     next(error);
@@ -174,12 +171,10 @@ export const createUnit = async (
   try {
     const { name, abbreviation } = req.body;
     if (!name || !abbreviation) {
-      res
-        .status(400)
-        .json({
-          status: 'BAD_REQUEST',
-          message: 'Nombre y abreviatura son requeridos',
-        });
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'Nombre y abreviatura son requeridos',
+      });
       return;
     }
     const unit = await CatalogService.createUnit({ name, abbreviation });

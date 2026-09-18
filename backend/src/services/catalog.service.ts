@@ -62,16 +62,24 @@ export class CatalogService {
     });
   }
 
-  static async createBrand(name: string) {
+  static async createBrand(name: string, description?: string) {
     return prisma.brand.create({
-      data: { name: name.trim() },
+      data: { name: name.trim(), description: description?.trim() || null },
     });
   }
 
-  static async updateBrand(id: number, name: string) {
+  static async updateBrand(
+    id: number,
+    data: { name?: string; description?: string }
+  ) {
     return prisma.brand.update({
       where: { id },
-      data: { name: name.trim() },
+      data: {
+        ...(data.name !== undefined ? { name: data.name.trim() } : {}),
+        ...(data.description !== undefined
+          ? { description: data.description.trim() || null }
+          : {}),
+      },
     });
   }
 

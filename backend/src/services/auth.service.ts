@@ -7,6 +7,19 @@ const JWT_SECRET = process.env.JWT_SECRET || 'jwt_default_secret_key';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 
 export class AuthService {
+  static async changePassword(
+    userId: number,
+    currentPassword: string,
+    newPassword: string
+  ) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !(await bcrypt.compare(currentPassword, user.passwordHash))) {
+      throw new Error('La contraseña actual no es válida');
+    }
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+  }
+
   static async login(identifier: string, pass: string) {
     const user = await prisma.user.findFirst({
       where: {

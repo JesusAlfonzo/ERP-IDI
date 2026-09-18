@@ -54,3 +54,46 @@ export const getMe = async (
     next(error);
   }
 };
+
+export const changePassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    if (!req.user?.id) {
+      res
+        .status(401)
+        .json({ status: 'UNAUTHORIZED', message: 'No autenticado' });
+      return;
+    }
+    const { currentPassword, newPassword } = req.body;
+    if (
+      !currentPassword ||
+      typeof newPassword !== 'string' ||
+      newPassword.length < 8
+    ) {
+      res
+        .status(400)
+        .json({
+          status: 'BAD_REQUEST',
+          message:
+            'newPassword debe tener al menos 8 caracteres y currentPassword es obligatorio',
+        });
+      return;
+    }
+    await AuthService.changePassword(
+      req.user.id,
+      String(currentPassword),
+      newPassword
+    );
+    res
+      .status(200)
+      .json({
+        status: 'SUCCESS',
+        message: 'Contraseña actualizada exitosamente',
+      });
+  } catch (error) {
+    next(error);
+  }
+};

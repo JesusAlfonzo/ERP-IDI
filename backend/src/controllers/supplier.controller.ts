@@ -1,5 +1,89 @@
 import type { Request, Response, NextFunction } from 'express';
 import { SupplierService } from '../services/supplier.service.js';
+import { PaymentMethod } from '@prisma/client';
+import { serializeBigInt } from '../utils/serializer.js';
+
+export const getSupplierDebts = async (
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    res
+      .status(200)
+      .json({ status: 'SUCCESS', data: await SupplierService.listDebts() });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSupplierStatement = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    res
+      .status(200)
+      .json({
+        status: 'SUCCESS',
+        data: serializeBigInt(
+          await SupplierService.getStatement(Number(req.params.id))
+        ),
+      });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const registerSupplierPayment = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    if (!req.user?.id) {
+      res
+        .status(401)
+        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+    const { amountUsd, paymentMethod, referenceNumber, paymentDate, notes } =
+      req.body;
+    if (
+      !amountUsd ||
+      Number(amountUsd) <= 0 ||
+      !paymentMethod ||
+      !Object.values(PaymentMethod).includes(paymentMethod)
+    ) {
+      res
+        .status(400)
+        .json({
+          status: 'BAD_REQUEST',
+          message: `amountUsd y paymentMethod son obligatorios. Métodos: ${Object.values(PaymentMethod).join(', ')}`,
+        });
+      return;
+    }
+    const payment = await SupplierService.registerPayment({
+      supplierId: Number(req.params.id),
+      amountUsd: Number(amountUsd),
+      paymentMethod,
+      referenceNumber: referenceNumber ? String(referenceNumber) : null,
+      paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+      notes: notes ? String(notes) : null,
+      registeredById: req.user.id,
+    });
+    res
+      .status(201)
+      .json({
+        status: 'SUCCESS',
+        message: 'Pago registrado correctamente',
+        data: serializeBigInt(payment),
+      });
+  } catch (error) {
+    next(error);
+  }
+};
 
 export const getSuppliers = async (
   req: Request,

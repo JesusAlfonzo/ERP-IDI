@@ -9,6 +9,12 @@ export interface ReagentBatchOption {
     name: string;
     unitOfMeasure: string;
   };
+  fridge?: {
+    id: number;
+    name: string;
+    code: string;
+    targetTempCelsius: number | string | null;
+  } | null;
 }
 
 export interface ReagentConsumptionPayload {

@@ -17,6 +17,8 @@ import {
   Clock,
   History,
   Package,
+  Search,
+  Calendar,
 } from "lucide-react";
 
 const COMMON_PROTOCOLS = [
@@ -42,6 +44,16 @@ export default function ReagentConsumptionPage() {
   const [reagents, setReagents] = useState<ReagentBatchOption[]>([]);
   const [history, setHistory] = useState<ReagentConsumptionRecord[]>([]);
   const [loadingData, setLoadingData] = useState(true);
+  const [reagentSearch, setReagentSearch] = useState("");
+  const [fridges, setFridges] = useState<
+    Array<{
+      id: number;
+      name: string;
+      code: string;
+      targetTempCelsius: number | string | null;
+    }>
+  >([]);
+  const [selectedFridgeId, setSelectedFridgeId] = useState("");
 
   // Estado del formulario
   const [selectedBatchId, setSelectedBatchId] = useState<string>("");
@@ -67,6 +79,7 @@ export default function ReagentConsumptionPage() {
       ]);
       setReagents(reagentsData);
       setHistory(historyData);
+      setFridges(await LaboratoryClientService.getFridges().catch(() => []));
     } catch {
       // Manejado por interceptor global
     } finally {
@@ -85,9 +98,36 @@ export default function ReagentConsumptionPage() {
     init();
   }, [router, loadData]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(async () => {
+      setLoadingData(true);
+      try {
+        setReagents(
+          await LaboratoryClientService.getAvailableReagents(reagentSearch),
+        );
+      } finally {
+        setLoadingData(false);
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [reagentSearch]);
+
   const selectedReagent = reagents.find(
     (r) => r.id === Number(selectedBatchId),
   );
+
+  const assignSelectedBatch = async () => {
+    if (!selectedReagent || !selectedFridgeId) return;
+    await LaboratoryClientService.assignBatchToFridge(
+      Number(selectedFridgeId),
+      selectedReagent.id,
+    );
+    setFeedback({
+      status: "success",
+      message: "Lote asignado a la nevera correctamente.",
+    });
+    await loadData();
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -196,25 +236,76 @@ export default function ReagentConsumptionPage() {
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Reactivo / Lote Activo
               </label>
-              <select
-                value={selectedBatchId}
-                onChange={(e) => setSelectedBatchId(e.target.value)}
-                disabled={loadingData}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800"
-                required
-              >
-                <option value="">
-                  {loadingData
-                    ? "Cargando reactivos..."
-                    : "-- Seleccionar reactivo en uso --"}
-                </option>
-                {reagents.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.product.name} - Lote #{r.lotNumber} | Disp:{" "}
-                    {r.currentQuantity} {r.product.unitOfMeasure}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                <input
+                  value={reagentSearch}
+                  onChange={(e) => {
+                    setReagentSearch(e.target.value);
+                    setSelectedBatchId("");
+                  }}
+                  placeholder="Buscar reactivo, SKU o lote..."
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800"
+                  required={!selectedBatchId}
+                />
+                {!selectedBatchId && (
+                  <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg">
+                    {loadingData ? (
+                      <div className="p-3 text-xs text-slate-500">
+                        Buscando reactivos...
+                      </div>
+                    ) : reagents.length === 0 ? (
+                      <div className="p-3 text-xs text-slate-500">
+                        No hay reactivos disponibles.
+                      </div>
+                    ) : (
+                      reagents.map((reagent) => (
+                        <button
+                          key={reagent.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedBatchId(String(reagent.id));
+                            setReagentSearch(
+                              `${reagent.product.name} · #${reagent.lotNumber}`,
+                            );
+                          }}
+                          className="w-full text-left px-3 py-2.5 border-b border-slate-100 hover:bg-purple-50"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <strong className="text-xs text-slate-800 truncate">
+                              {reagent.product.name}
+                            </strong>
+                            <span className="text-[10px] font-mono font-bold text-purple-700">
+                              #{reagent.lotNumber}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between mt-1 text-[10px] text-slate-500">
+                            <span>{reagent.product.sku}</span>
+                            <span className="font-semibold text-emerald-700">
+                              {reagent.currentQuantity}{" "}
+                              {reagent.product.unitOfMeasure}
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              {reagent.expirationDate
+                                ? new Date(
+                                    reagent.expirationDate,
+                                  ).toLocaleDateString()
+                                : "Sin vencimiento"}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-[10px] font-medium text-purple-700">
+                            Nevera: {reagent.fridge?.name || "Sin asignar"}
+                            {reagent.fridge?.targetTempCelsius != null
+                              ? ` · ${reagent.fridge.targetTempCelsius}°C`
+                              : ""}
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
 
               {selectedReagent && (
                 <div className="mt-2.5 p-3 bg-purple-50/50 border border-purple-100 rounded-lg flex items-center justify-between text-xs text-purple-900">
@@ -236,6 +327,35 @@ export default function ReagentConsumptionPage() {
                       {selectedReagent.product.unitOfMeasure}
                     </span>
                   </div>
+                </div>
+              )}
+              {selectedReagent && (
+                <div className="mt-2 grid grid-cols-1 gap-2 rounded-lg border border-purple-200 bg-purple-50 p-3 text-xs sm:grid-cols-[1fr_auto] sm:items-end">
+                  <label className="font-semibold text-purple-900">
+                    Nevera / congelador
+                    <select
+                      value={selectedFridgeId}
+                      onChange={(event) =>
+                        setSelectedFridgeId(event.target.value)
+                      }
+                      className="mt-1 w-full rounded-lg border border-purple-300 bg-white px-3 py-2 text-slate-900"
+                    >
+                      <option value="">Seleccionar nevera</option>
+                      {fridges.map((fridge) => (
+                        <option key={fridge.id} value={fridge.id}>
+                          {fridge.name} ({fridge.targetTempCelsius ?? "-"}°C)
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void assignSelectedBatch()}
+                    disabled={!selectedFridgeId}
+                    className="rounded-lg bg-purple-700 px-3 py-2 font-semibold text-white disabled:opacity-50"
+                  >
+                    Asignar lote
+                  </button>
                 </div>
               )}
             </div>

@@ -7,12 +7,47 @@ import type {
 } from "@/types/laboratory";
 
 export const LaboratoryClientService = {
+  async getFridges(): Promise<
+    Array<{
+      id: number;
+      name: string;
+      code: string;
+      targetTempCelsius: number | string | null;
+    }>
+  > {
+    const response =
+      await apiClient.get<
+        ApiResponse<
+          Array<{
+            id: number;
+            name: string;
+            code: string;
+            targetTempCelsius: number | string | null;
+          }>
+        >
+      >("/lab/fridges");
+    return response.data.data || [];
+  },
+
+  async assignBatchToFridge(fridgeId: number, batchId: number) {
+    const response = await apiClient.post<
+      ApiResponse<{ assignedUnits: number }>
+    >(`/lab/fridges/${fridgeId}/assign-batch`, { batchId });
+    if (!response.data.data)
+      throw new Error(
+        response.data.message || "No se pudo asignar el lote a la nevera",
+      );
+    return response.data.data;
+  },
   /**
    * Obtiene los reactivos/lotes disponibles para consumo en laboratorio
    */
-  async getAvailableReagents(): Promise<ReagentBatchOption[]> {
+  async getAvailableReagents(search?: string): Promise<ReagentBatchOption[]> {
+    const query = search?.trim()
+      ? `?search=${encodeURIComponent(search.trim())}`
+      : "";
     const response = await apiClient.get<ApiResponse<ReagentBatchOption[]>>(
-      "/laboratory/reagents",
+      `/lab/reagents${query}`,
     );
     return response.data.data || [];
   },
@@ -23,7 +58,7 @@ export const LaboratoryClientService = {
   async getRecentConsumptions(limit = 10): Promise<ReagentConsumptionRecord[]> {
     const response = await apiClient.get<
       ApiResponse<ReagentConsumptionRecord[]>
-    >(`/laboratory/consumptions?limit=${limit}`);
+    >(`/lab/consumptions?limit=${limit}`);
     return response.data.data || [];
   },
 
@@ -35,7 +70,7 @@ export const LaboratoryClientService = {
   ): Promise<ReagentConsumptionRecord> {
     const response = await apiClient.post<
       ApiResponse<ReagentConsumptionRecord>
-    >("/laboratory/consumptions", payload);
+    >("/lab/consumptions", payload);
 
     if (!response.data.data) {
       throw new Error(

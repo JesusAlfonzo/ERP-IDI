@@ -120,7 +120,7 @@ export default function DashboardPage() {
               minimumFractionDigits: 2,
             })}
           </div>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-slate-600">
             Calculado en base a lotes activos
           </span>
         </div>
@@ -135,7 +135,7 @@ export default function DashboardPage() {
           <div className="text-2xl font-bold text-slate-800">
             {data?.qualityAndStockAlerts.quarantinedBatches}
           </div>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-slate-600">
             Requieren dictamen técnico
           </span>
         </div>
@@ -150,7 +150,7 @@ export default function DashboardPage() {
           <div className="text-2xl font-bold text-slate-800">
             {data?.expirationMatrix.summary.within30DaysCount}
           </div>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-slate-600">
             {data?.expirationMatrix.summary.expiredCount} ya vencidos
           </span>
         </div>
@@ -168,7 +168,7 @@ export default function DashboardPage() {
               minimumFractionDigits: 2,
             })}
           </div>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-slate-600">
             {data?.purchasing.pendingOrders} órdenes activas
           </span>
         </div>
@@ -186,17 +186,25 @@ export default function DashboardPage() {
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
                 <tr>
-                  <th className="py-2.5 px-3">Lote</th>
-                  <th className="py-2.5 px-3">Producto</th>
-                  <th className="py-2.5 px-3 text-right">Cant.</th>
-                  <th className="py-2.5 px-3">Vencimiento</th>
+                  <th className="py-2.5 px-3 font-semibold text-slate-700">
+                    Lote
+                  </th>
+                  <th className="py-2.5 px-3 font-semibold text-slate-700">
+                    Producto
+                  </th>
+                  <th className="py-2.5 px-3 text-right font-semibold text-slate-700">
+                    Cant.
+                  </th>
+                  <th className="py-2.5 px-3 font-semibold text-slate-700">
+                    Vencimiento
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {!data?.expirationMatrix.details.within30Days ||
                 data.expirationMatrix.details.within30Days.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="py-4 text-center text-slate-400">
+                    <td colSpan={4} className="py-4 text-center text-slate-600">
                       No hay lotes próximos a vencer en los próximos 30 días
                     </td>
                   </tr>
@@ -208,8 +216,10 @@ export default function DashboardPage() {
                         <td className="py-2 px-3 font-mono font-medium text-slate-700">
                           {item.lotNumber}
                         </td>
-                        <td className="py-2 px-3">{item.productName}</td>
-                        <td className="py-2 px-3 text-right font-semibold">
+                        <td className="py-2 px-3 font-medium text-slate-800">
+                          {item.productName}
+                        </td>
+                        <td className="py-2 px-3 text-right font-bold text-slate-900">
                           {item.quantity}
                         </td>
                         <td className="py-2 px-3 text-red-600">
@@ -233,29 +243,35 @@ export default function DashboardPage() {
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
                 <tr>
-                  <th className="py-2.5 px-3">Código</th>
-                  <th className="py-2.5 px-3">Reactivo</th>
-                  <th className="py-2.5 px-3 text-right">Total Consumido</th>
+                  <th className="py-2.5 px-3 font-semibold text-slate-700">
+                    Código
+                  </th>
+                  <th className="py-2.5 px-3 font-semibold text-slate-700">
+                    Reactivo
+                  </th>
+                  <th className="py-2.5 px-3 text-right font-semibold text-slate-700">
+                    Total Consumido
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {!data?.laboratory.topConsumedReagents ||
                 data.laboratory.topConsumedReagents.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="py-4 text-center text-slate-400">
+                    <td colSpan={3} className="py-4 text-center text-slate-600">
                       No hay consumos registrados aún
                     </td>
                   </tr>
                 ) : (
                   data.laboratory.topConsumedReagents.map((reagent) => (
                     <tr key={reagent.unitCode}>
-                      <td className="py-2 px-3 font-mono text-slate-600">
+                      <td className="py-2 px-3 font-mono font-medium text-slate-700">
                         {reagent.unitCode}
                       </td>
                       <td className="py-2 px-3 font-medium text-slate-800">
                         {reagent.productName}
                       </td>
-                      <td className="py-2 px-3 text-right font-semibold text-purple-700">
+                      <td className="py-2 px-3 text-right font-bold text-purple-800">
                         {reagent.totalConsumed}
                       </td>
                     </tr>

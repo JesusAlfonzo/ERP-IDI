@@ -1,16 +1,16 @@
 export type UserRole =
   | "ADMINISTRADOR"
-  | "ALMACEN"
-  | "LABORATORIO"
+  | "ALMACENISTA"
+  | "ANALISTA_LABORATORIO"
   | "COMPRAS"
-  | "CALIDAD";
+  | "SOLICITANTE";
 
 export interface SystemUser {
   id: number;
   username: string;
   fullName: string;
   email: string;
-  role: UserRole;
+  roles: UserRole[];
   department: string;
   isActive: boolean;
   createdAt: string;
@@ -21,14 +21,15 @@ export interface CreateUserPayload {
   fullName: string;
   email: string;
   password?: string;
-  role: UserRole;
+  roles: UserRole[];
   department: string;
 }
 
 export interface UpdateUserPayload {
   fullName?: string;
   email?: string;
-  role?: UserRole;
+  roles?: UserRole[];
+  roleIds?: number[];
   department?: string;
   isActive?: boolean;
 }

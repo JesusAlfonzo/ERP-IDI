@@ -16,6 +16,8 @@ export interface UpdateUserDTO {
   department?: string;
   isActive?: boolean;
   password?: string;
+  roles?: string[];
+  roleIds?: number[];
 }
 
 const userSafeSelect = {
@@ -110,7 +112,11 @@ export class UserService {
   /**
    * Actualiza los datos de perfil o contraseña de un usuario
    */
-  static async updateUser(userId: number, data: UpdateUserDTO) {
+  static async updateUser(
+    userId: number,
+    data: UpdateUserDTO,
+    actorId?: number
+  ) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
@@ -124,23 +130,85 @@ export class UserService {
       passwordHash = await bcrypt.hash(data.password, 10);
     }
 
-    return prisma.user.update({
-      where: { id: userId },
-      data: {
-        email: data.email ?? user.email,
-        fullName: data.fullName ?? user.fullName,
-        department: data.department ?? user.department,
-        isActive: data.isActive !== undefined ? data.isActive : user.isActive,
-        passwordHash,
-      },
-      select: userSafeSelect,
+    return prisma.$transaction(async (tx) => {
+      const requestedRoleIds =
+        data.roleIds ??
+        (data.roles
+          ? (
+              await tx.role.findMany({
+                where: { name: { in: data.roles } },
+                select: { id: true },
+              })
+            ).map((role) => role.id)
+          : undefined);
+      if (actorId === userId && data.isActive === false) {
+        throw new Error('No puede desactivar su propia cuenta');
+      }
+      if (
+        actorId === userId &&
+        requestedRoleIds &&
+        !requestedRoleIds.includes(1)
+      ) {
+        throw new Error(
+          'No puede revocar el rol ADMINISTRADOR de su propia cuenta'
+        );
+      }
+      if (requestedRoleIds && requestedRoleIds.length === 0) {
+        throw new Error('El usuario debe conservar al menos un rol');
+      }
+      if (requestedRoleIds && !requestedRoleIds.includes(1)) {
+        const activeAdmins = await tx.user.count({
+          where: { isActive: true, userRoles: { some: { roleId: 1 } } },
+        });
+        const targetIsAdmin = await tx.userRole.findFirst({
+          where: { userId, roleId: 1 },
+        });
+        if (targetIsAdmin && activeAdmins <= 1) {
+          throw new Error('No se puede revocar el último administrador activo');
+        }
+      }
+      const updated = await tx.user.update({
+        where: { id: userId },
+        data: {
+          email: data.email ?? user.email,
+          fullName: data.fullName ?? user.fullName,
+          department: data.department ?? user.department,
+          isActive: data.isActive !== undefined ? data.isActive : user.isActive,
+          passwordHash,
+        },
+        select: userSafeSelect,
+      });
+      if (requestedRoleIds) {
+        await tx.userRole.deleteMany({ where: { userId } });
+        await tx.userRole.createMany({
+          data: requestedRoleIds.map((roleId) => ({ userId, roleId })),
+        });
+      }
+      return tx.user.findUnique({
+        where: { id: updated.id },
+        select: userSafeSelect,
+      });
     });
+  }
+
+  static async resetPassword(userId: number, newPassword: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!user) throw new Error(`Usuario con ID ${userId} no encontrado`);
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
   }
 
   /**
    * Sincroniza los roles de un usuario
    */
-  static async syncUserRoles(userId: number, roleIds: number[]) {
+  static async syncUserRoles(
+    userId: number,
+    roleIds: number[],
+    actorId?: number
+  ) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
@@ -150,6 +218,25 @@ export class UserService {
     }
 
     return prisma.$transaction(async (tx) => {
+      if (roleIds.length === 0) {
+        throw new Error('El usuario debe conservar al menos un rol');
+      }
+      if (actorId === userId && !roleIds.includes(1)) {
+        throw new Error(
+          'No puede revocar el rol ADMINISTRADOR de su propia cuenta'
+        );
+      }
+      if (!roleIds.includes(1)) {
+        const targetIsAdmin = await tx.userRole.findFirst({
+          where: { userId, roleId: 1 },
+        });
+        const activeAdmins = await tx.user.count({
+          where: { isActive: true, userRoles: { some: { roleId: 1 } } },
+        });
+        if (targetIsAdmin && activeAdmins <= 1) {
+          throw new Error('No se puede revocar el último administrador activo');
+        }
+      }
       await tx.userRole.deleteMany({
         where: { userId },
       });
@@ -177,5 +264,17 @@ export class UserService {
     return prisma.role.findMany({
       orderBy: { id: 'asc' },
     });
+  }
+
+  static async getRoleIdsByNames(names: string[]) {
+    if (names.length === 0) return [];
+    const roles = await prisma.role.findMany({
+      where: { name: { in: names } },
+      select: { id: true, name: true },
+    });
+    if (roles.length !== names.length) {
+      throw new Error('Uno o más roles solicitados no existen');
+    }
+    return roles.map((role) => role.id);
   }
 }

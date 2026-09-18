@@ -26,11 +26,11 @@ const ROLE_BADGES: Record<UserRole, { label: string; className: string }> = {
     label: "Admin Global",
     className: "bg-purple-50 text-purple-700 border-purple-200",
   },
-  ALMACEN: {
+  ALMACENISTA: {
     label: "Almacén Central",
     className: "bg-blue-50 text-blue-700 border-blue-200",
   },
-  LABORATORIO: {
+  ANALISTA_LABORATORIO: {
     label: "Bioanálisis / Sala",
     className: "bg-emerald-50 text-emerald-700 border-emerald-200",
   },
@@ -38,9 +38,9 @@ const ROLE_BADGES: Record<UserRole, { label: string; className: string }> = {
     label: "Adquisiciones",
     className: "bg-amber-50 text-amber-700 border-amber-200",
   },
-  CALIDAD: {
-    label: "Control Calidad",
-    className: "bg-rose-50 text-rose-700 border-rose-200",
+  SOLICITANTE: {
+    label: "Solicitante",
+    className: "bg-slate-50 text-slate-700 border-slate-200",
   },
 };
 
@@ -68,13 +68,14 @@ export default function AdminUsersPage() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<UserRole>("LABORATORIO");
+  const [roles, setRoles] = useState<UserRole[]>(["SOLICITANTE"]);
   const [department, setDepartment] = useState(DEPARTMENTS[0]);
   const [submittingUser, setSubmittingUser] = useState(false);
 
   // Modal Reseteo de Password
   const [userToReset, setUserToReset] = useState<SystemUser | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [submittingReset, setSubmittingReset] = useState(false);
 
   // Notificaciones
@@ -121,10 +122,16 @@ export default function AdminUsersPage() {
     e.preventDefault();
     setFeedback(null);
 
-    if (!fullName.trim() || !username.trim() || !email.trim()) {
+    if (
+      !fullName.trim() ||
+      !username.trim() ||
+      !email.trim() ||
+      roles.length === 0
+    ) {
       setFeedback({
         status: "error",
-        message: "Complete todos los campos obligatorios.",
+        message:
+          "Complete todos los campos obligatorios y asigne al menos un rol.",
       });
       return;
     }
@@ -136,7 +143,7 @@ export default function AdminUsersPage() {
         username: username.trim().toLowerCase(),
         email: email.trim().toLowerCase(),
         password: password.trim() || undefined,
-        role,
+        roles,
         department,
       });
 
@@ -182,7 +189,18 @@ export default function AdminUsersPage() {
 
   const handleResetPassword = async (e: FormEvent) => {
     e.preventDefault();
-    if (!userToReset || !newPassword.trim()) return;
+    if (
+      !userToReset ||
+      newPassword.length < 8 ||
+      newPassword !== confirmPassword
+    ) {
+      setFeedback({
+        status: "error",
+        message:
+          "La contraseña debe tener 8 caracteres y coincidir con su confirmación.",
+      });
+      return;
+    }
     setFeedback(null);
 
     setSubmittingReset(true);
@@ -198,6 +216,7 @@ export default function AdminUsersPage() {
       setTimeout(() => {
         setUserToReset(null);
         setNewPassword("");
+        setConfirmPassword("");
         setFeedback(null);
       }, 1000);
     } catch (err: unknown) {
@@ -296,10 +315,7 @@ export default function AdminUsersPage() {
                 </tr>
               ) : (
                 filteredUsers.map((user) => {
-                  const roleBadge = ROLE_BADGES[user.role] || {
-                    label: user.role,
-                    className: "bg-slate-50 text-slate-700",
-                  };
+                  const userRoles = user.roles || [];
 
                   return (
                     <tr
@@ -321,11 +337,19 @@ export default function AdminUsersPage() {
                         {user.department}
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${roleBadge.className}`}
-                        >
-                          {roleBadge.label}
-                        </span>
+                        <div className="flex flex-wrap justify-center gap-1">
+                          {userRoles.map((userRole) => {
+                            const roleBadge = ROLE_BADGES[userRole];
+                            return roleBadge ? (
+                              <span
+                                key={userRole}
+                                className={`inline-block rounded border px-2 py-0.5 text-[10px] font-bold ${roleBadge.className}`}
+                              >
+                                {roleBadge.label}
+                              </span>
+                            ) : null;
+                          })}
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-center">
                         <span
@@ -344,6 +368,7 @@ export default function AdminUsersPage() {
                             onClick={() => {
                               setUserToReset(user);
                               setNewPassword("");
+                              setConfirmPassword("");
                               setFeedback(null);
                             }}
                             className="p-1 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors"
@@ -464,22 +489,41 @@ export default function AdminUsersPage() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Rol Institucional
-                  </label>
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as UserRole)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-purple-500 font-semibold"
-                  >
-                    <option value="ADMINISTRADOR">Administrador Global</option>
-                    <option value="ALMACEN">Almacén Central</option>
-                    <option value="LABORATORIO">
-                      Laboratorio / Bioanalista
-                    </option>
-                    <option value="COMPRAS">Compras y Proveedores</option>
-                    <option value="CALIDAD">Control de Calidad</option>
-                  </select>
+                  <span className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                    Roles Institucionales
+                  </span>
+                  <div className="space-y-1 rounded-lg border border-slate-300 bg-slate-50 p-2">
+                    {(
+                      [
+                        ["ADMINISTRADOR", "Administrador Global"],
+                        ["ALMACENISTA", "Almacén Central"],
+                        ["ANALISTA_LABORATORIO", "Laboratorio / Bioanalista"],
+                        ["COMPRAS", "Compras y Proveedores"],
+                        ["SOLICITANTE", "Solicitante"],
+                      ] as const
+                    ).map(([value, label]) => (
+                      <label
+                        key={value}
+                        className="flex items-center gap-2 text-xs text-slate-800"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={roles.includes(value)}
+                          onChange={(e) =>
+                            setRoles((current) =>
+                              e.target.checked
+                                ? [...new Set([...current, value])]
+                                : current.filter(
+                                    (roleValue) => roleValue !== value,
+                                  ),
+                            )
+                          }
+                          className="h-3.5 w-3.5 accent-purple-600"
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
                 <div>
@@ -589,7 +633,21 @@ export default function AdminUsersPage() {
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder="Mínimo 8 caracteres"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-purple-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  Confirmar Contraseña
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repita la contraseña"
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-purple-500"
                   required
                 />

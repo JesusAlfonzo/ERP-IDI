@@ -2,7 +2,7 @@ export interface AuthUserPayload {
   id: number;
   username: string;
   email: string;
-  department: string;
+  department?: string;
   roles: string[];
 }
 

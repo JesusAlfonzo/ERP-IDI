@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -9,6 +10,7 @@ import {
   Package,
   FileText,
   FlaskConical,
+  Snowflake,
   ShoppingCart,
   ShieldAlert,
   Settings,
@@ -17,76 +19,128 @@ import {
   Building2,
   ClipboardList,
   Shield,
+  ChevronDown,
 } from "lucide-react";
 
-interface NavItem {
+interface SubItem {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   roles?: string[];
 }
 
-const NAVIGATION_ITEMS: NavItem[] = [
+interface NavGroup {
+  groupLabel?: string;
+  label: string;
+  href?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  roles?: string[];
+  children?: SubItem[];
+}
+
+const NAVIGATION_GROUPS: NavGroup[] = [
   {
     label: "Dashboard",
     href: "/dashboard",
     icon: LayoutDashboard,
   },
   {
-    label: "Catálogo y Lotes",
-    href: "/inventory/products",
-    icon: Package,
-    roles: ["ADMINISTRADOR", "ALMACEN"],
-  },
-  {
-    label: "Kardex",
-    href: "/inventory/kardex",
-    icon: FileText,
-    roles: ["ADMINISTRADOR", "ALMACEN"],
-  },
-  {
-    label: "Ajustes & Mermas",
-    href: "/inventory/adjustments",
-    icon: SlidersHorizontal,
-    roles: ["ADMINISTRADOR", "ALMACEN"],
-  },
-  {
     label: "Solicitudes Internas",
     href: "/requests",
     icon: ClipboardList,
-    roles: ["ADMINISTRADOR", "ALMACEN", "LABORATORIO"],
+    roles: [
+      "ADMINISTRADOR",
+      "ALMACENISTA",
+      "ANALISTA_LABORATORIO",
+      "SOLICITANTE",
+    ],
   },
   {
-    label: "Laboratorio",
-    href: "/laboratory/consumption",
+    groupLabel: "OPERACIONES",
+    label: "Inventario & Stock",
+    icon: Package,
+    roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS"],
+    children: [
+      {
+        label: "Catálogo & Lotes",
+        href: "/inventory/products",
+        icon: Package,
+        roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS"],
+      },
+      {
+        label: "Kardex de Movimientos",
+        href: "/inventory/kardex",
+        icon: FileText,
+        roles: ["ADMINISTRADOR", "ALMACENISTA"],
+      },
+      {
+        label: "Ajustes & Mermas",
+        href: "/inventory/adjustments",
+        icon: SlidersHorizontal,
+        roles: ["ADMINISTRADOR", "ALMACENISTA"],
+      },
+      {
+        label: "Maestros del Almacén",
+        href: "/inventory/settings",
+        icon: Settings,
+        roles: ["ADMINISTRADOR", "ALMACENISTA"],
+      },
+    ],
+  },
+  {
+    label: "Laboratorio Clínico",
     icon: FlaskConical,
-    roles: ["ADMINISTRADOR", "LABORATORIO"],
+    roles: ["ADMINISTRADOR", "ANALISTA_LABORATORIO"],
+    children: [
+      {
+        label: "Consumo de Reactivos",
+        href: "/laboratory/consumption",
+        icon: FlaskConical,
+        roles: ["ADMINISTRADOR", "ANALISTA_LABORATORIO"],
+      },
+      {
+        label: "Cadena de Frío & Cavas",
+        href: "/laboratory/fridges",
+        icon: Snowflake,
+        roles: ["ADMINISTRADOR", "ANALISTA_LABORATORIO"],
+      },
+      {
+        label: "Lotes en Cuarentena",
+        href: "/quality/quarantine",
+        icon: ShieldAlert,
+        roles: ["ADMINISTRADOR", "ANALISTA_LABORATORIO"],
+      },
+    ],
   },
   {
-    label: "Compras & Proveedores",
-    href: "/purchasing/orders",
+    groupLabel: "GESTIÓN",
+    label: "Compras & Finanzas",
     icon: ShoppingCart,
     roles: ["ADMINISTRADOR", "COMPRAS"],
+    children: [
+      {
+        label: "Órdenes de Compra",
+        href: "/purchasing/orders",
+        icon: ShoppingCart,
+        roles: ["ADMINISTRADOR", "COMPRAS"],
+      },
+      {
+        label: "Proveedores & Cuentas",
+        href: "/purchasing/debts",
+        icon: Building2,
+        roles: ["ADMINISTRADOR", "COMPRAS"],
+      },
+    ],
   },
   {
-    label: "Proveedores & Deuda",
-    href: "/purchasing/suppliers",
-    icon: Building2,
-    roles: ["ADMINISTRADOR", "COMPRAS"],
-  },
-  {
-    label: "Control de Calidad",
-    href: "/quality/quarantine",
-    icon: ShieldAlert,
-    roles: ["ADMINISTRADOR", "ALMACEN", "LABORATORIO"],
-  },
-  {
-    label: "Usuarios y Permisos",
+    groupLabel: "SISTEMA",
+    label: "Seguridad & Usuarios",
     href: "/admin/users",
     icon: Shield,
     roles: ["ADMINISTRADOR"],
   },
 ];
+
 interface SidebarProps {
   user: AuthUser | null;
   isOpen: boolean;
@@ -102,29 +156,56 @@ export function Sidebar({ user, isOpen, onClose }: SidebarProps) {
     return itemRoles.some((role) => user.roles.includes(role));
   };
 
+  const isChildActive = (children?: SubItem[]) => {
+    if (!children) return false;
+    return children.some(
+      (c) => pathname === c.href || pathname.startsWith(`${c.href}/`),
+    );
+  };
+
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const initialState: Record<string, boolean> = {};
+    NAVIGATION_GROUPS.forEach((item) => {
+      if (item.children) {
+        initialState[item.label] = isChildActive(item.children);
+      }
+    });
+    return initialState;
+  });
+
+  const toggleGroup = (label: string) => {
+    setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
+  };
+
   return (
     <>
-      {/* Backdrop móvil */}
       {isOpen && (
         <div
           onClick={onClose}
-          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs lg:hidden"
+          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs lg:hidden"
         />
       )}
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-slate-300 flex flex-col transition-transform duration-200 ease-in-out lg:static lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 w-64 bg-slate-950 text-slate-300 flex flex-col border-r border-slate-800/80 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0",
           isOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        {/* Cabecera Sidebar */}
-        <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800">
-          <div className="flex items-center gap-2 font-bold text-white tracking-wide">
-            <span className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white text-sm font-black">
+        {/* Encabezado */}
+        <div className="h-16 flex items-center justify-between px-5 border-b border-slate-800/80 bg-slate-950">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white text-sm font-black shadow-md shadow-blue-600/20">
               E
-            </span>
-            <span>ERP-IDI</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-sm font-bold tracking-wide text-white leading-tight">
+                ERP-IDI
+              </span>
+              <span className="text-[10px] text-slate-500 font-mono leading-none">
+                v2.0.0
+              </span>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -134,43 +215,129 @@ export function Sidebar({ user, isOpen, onClose }: SidebarProps) {
           </button>
         </div>
 
-        {/* Links de Navegación */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {NAVIGATION_ITEMS.filter((item) => isAllowed(item.roles)).map(
+        {/* Menú de Navegación */}
+        <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto custom-scrollbar">
+          {NAVIGATION_GROUPS.filter((item) => isAllowed(item.roles)).map(
             (item) => {
-              const isActive =
-                pathname === item.href || pathname.startsWith(`${item.href}/`);
               const Icon = item.icon;
 
+              if (item.children) {
+                const allowedChildren = item.children.filter((child) =>
+                  isAllowed(child.roles),
+                );
+                if (allowedChildren.length === 0) return null;
+
+                const groupActive = isChildActive(allowedChildren);
+                const isExpanded = openGroups[item.label] ?? groupActive;
+
+                return (
+                  <div key={item.label} className="space-y-1">
+                    {item.groupLabel && (
+                      <div className="px-3 pt-3 pb-1 text-[10px] font-bold tracking-wider text-slate-500 uppercase">
+                        {item.groupLabel}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(item.label)}
+                      className={cn(
+                        "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors group",
+                        groupActive
+                          ? "text-blue-400 bg-blue-950/30"
+                          : "text-slate-400 hover:bg-slate-900 hover:text-slate-200",
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Icon className="w-4 h-4 shrink-0 transition-transform group-hover:scale-105" />
+                        <span>{item.label}</span>
+                      </div>
+                      <ChevronDown
+                        className={cn(
+                          "w-3.5 h-3.5 text-slate-500 transition-transform duration-200",
+                          isExpanded && "rotate-180 text-blue-400",
+                        )}
+                      />
+                    </button>
+
+                    {/* Submenú desplegable con guía visual */}
+                    {isExpanded && (
+                      <div className="pl-4 pr-1 py-1 space-y-1 border-l border-slate-800/80 ml-5 my-0.5">
+                        {allowedChildren.map((subItem) => {
+                          const SubIcon = subItem.icon;
+                          const subActive =
+                            pathname === subItem.href ||
+                            pathname.startsWith(`${subItem.href}/`);
+
+                          return (
+                            <Link
+                              key={subItem.href}
+                              href={subItem.href}
+                              onClick={() => onClose()}
+                              className={cn(
+                                "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors",
+                                subActive
+                                  ? "bg-blue-600 text-white shadow-xs font-semibold"
+                                  : "text-slate-400 hover:bg-slate-900 hover:text-slate-200",
+                              )}
+                            >
+                              <SubIcon className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                              <span>{subItem.label}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              // Enlace directo simple (Dashboard, Solicitudes, Usuarios)
+              const isActive =
+                pathname === item.href ||
+                (item.href !== "/dashboard" &&
+                  pathname.startsWith(`${item.href ?? ""}/`));
+
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => onClose()}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-colors",
-                    isActive
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+                <div key={item.label}>
+                  {item.groupLabel && (
+                    <div className="px-3 pt-3 pb-1 text-[10px] font-bold tracking-wider text-slate-500 uppercase">
+                      {item.groupLabel}
+                    </div>
                   )}
-                >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span>{item.label}</span>
-                </Link>
+                  <Link
+                    href={item.href ?? "#"}
+                    onClick={() => onClose()}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors",
+                      isActive
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "text-slate-400 hover:bg-slate-900 hover:text-slate-200",
+                    )}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </Link>
+                </div>
               );
             },
           )}
         </nav>
 
-        {/* Info del usuario logueado */}
-        <div className="p-4 border-t border-slate-800 bg-slate-950/40">
-          <div className="flex flex-col">
-            <span className="text-xs font-semibold text-white truncate">
-              {user?.fullName || user?.username || "Usuario"}
-            </span>
-            <span className="text-[10px] text-slate-400 truncate">
-              {user?.department || "Personal IDI"} &bull; {user?.roles?.[0]}
-            </span>
+        {/* Perfil del Usuario Activo */}
+        <div className="p-3 border-t border-slate-800/80 bg-slate-950">
+          <div className="flex items-center gap-3 p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
+            <div className="w-8 h-8 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center font-bold text-xs shrink-0 border border-blue-500/20">
+              {user?.fullName?.charAt(0) || user?.username?.charAt(0) || "U"}
+            </div>
+            <div className="flex flex-col min-w-0 flex-1">
+              <span className="text-xs font-medium text-slate-200 truncate">
+                {user?.fullName || user?.username || "Usuario"}
+              </span>
+              <span className="text-[10px] text-slate-500 truncate">
+                {user?.roles?.[0] ?? "Personal"} &bull;{" "}
+                {user?.department ?? "IDI"}
+              </span>
+            </div>
           </div>
         </div>
       </aside>

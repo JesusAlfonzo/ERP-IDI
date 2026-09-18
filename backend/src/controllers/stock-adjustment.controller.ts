@@ -178,12 +178,18 @@ export const listStockMovements = async (
   try {
     const pagination = getPaginationParams(req, 10, 100);
 
-    const { batchId, type, startDate, endDate } = req.query;
+    const { batchId, productId, search, type, startDate, endDate } = req.query;
 
     const filters: MovementFilterOptions = {};
 
     if (batchId) {
       filters.batchId = BigInt(String(batchId));
+    }
+    if (productId) {
+      filters.productId = BigInt(String(productId));
+    }
+    if (typeof search === 'string' && search.trim()) {
+      filters.search = search.trim();
     }
     if (
       type &&

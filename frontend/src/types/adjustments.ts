@@ -5,11 +5,13 @@ export type AdjustmentType =
   | "MERMA_VENCIMIENTO";
 
 export interface InventoryAdjustmentPayload {
-  batchId: number;
-  type: AdjustmentType;
-  quantity: number;
-  reason: string;
-  referenceDoc?: string;
+  notes?: string;
+  items: {
+    batchId: number;
+    action: "INCREMENTO" | "DECREMENTO";
+    quantity: number;
+    reason?: string;
+  }[];
 }
 
 export interface AdjustmentResponseData {

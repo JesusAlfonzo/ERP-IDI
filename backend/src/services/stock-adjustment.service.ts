@@ -4,6 +4,8 @@ import {
   BatchStatus,
   IncidentType,
   IncidentStatus,
+  OrderStatus,
+  ReceptionStatus,
 } from '@prisma/client';
 import {
   type PaginationParams,
@@ -14,6 +16,8 @@ export type AdjustmentAction = 'INCREMENTO' | 'DECREMENTO';
 
 export interface MovementFilterOptions {
   batchId?: bigint | undefined;
+  productId?: bigint | undefined;
+  search?: string | undefined;
   type?: StockMovementType | undefined;
   startDate?: Date | undefined;
   endDate?: Date | undefined;
@@ -164,7 +168,15 @@ export class StockAdjustmentService {
     return prisma.$transaction(async (tx) => {
       const batch = await tx.stockBatch.findUnique({
         where: { id: batchId },
-        include: { product: true },
+        include: {
+          product: true,
+          movementItems: {
+            include: {
+              stockMovement: true,
+              orderItem: true,
+            },
+          },
+        },
       });
 
       if (!batch) {
@@ -176,12 +188,69 @@ export class StockAdjustmentService {
       }
 
       if (
+        batch.status === BatchStatus.DEFECTUOSO &&
+        newStatus !== BatchStatus.DEFECTUOSO
+      ) {
+        throw new Error(
+          'Un lote defectuoso es inmutable; el reemplazo debe registrarse como un lote nuevo'
+        );
+      }
+
+      if (
+        newStatus === BatchStatus.DEFECTUOSO &&
+        batch.status !== BatchStatus.EN_CUARENTENA
+      ) {
+        throw new Error(
+          'Solo se pueden rechazar lotes que se encuentren en cuarentena'
+        );
+      }
+
+      if (
         Number(batch.currentQuantity) === 0 &&
         newStatus !== BatchStatus.AGOTADO
       ) {
         throw new Error(
           'No se puede cambiar el estado de un lote sin existencias (AGOTADO)'
         );
+      }
+
+      if (newStatus === BatchStatus.DEFECTUOSO) {
+        const movementItem = batch.movementItems.find(
+          (item) => item.stockMovement.orderId !== null
+        );
+        const orderItem = movementItem?.orderItem;
+
+        if (!movementItem || !orderItem) {
+          throw new Error(
+            'No se puede rechazar el lote porque no está vinculado a un renglón de compra'
+          );
+        }
+
+        const rejectedQuantity =
+          Number(movementItem.quantity) / Number(orderItem.multiplier);
+        const orderId = movementItem.stockMovement.orderId;
+
+        if (orderId === null) {
+          throw new Error(
+            'El movimiento del lote no pertenece a una orden de compra'
+          );
+        }
+
+        await tx.orderItem.update({
+          where: { id: orderItem.id },
+          data: {
+            quantityRejected:
+              Number(orderItem.quantityRejected) + rejectedQuantity,
+          },
+        });
+
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            status: OrderStatus.PARCIAL,
+            receptionStatus: ReceptionStatus.PARCIAL,
+          },
+        });
       }
 
       // Si se pasa a un estado de alerta o bloqueo (CUARENTENA, DEFECTUOSO, VENCIDO) y hay usuario
@@ -250,6 +319,50 @@ export class StockAdjustmentService {
       };
     }
 
+    if (filters?.productId || filters?.search) {
+      whereClause.items = {
+        some: {
+          ...(filters.batchId ? { batchId: filters.batchId } : {}),
+          ...(filters.productId
+            ? { batch: { productId: filters.productId } }
+            : {}),
+          ...(filters.search
+            ? {
+                batch: {
+                  ...(filters.productId
+                    ? { productId: filters.productId }
+                    : {}),
+                  OR: [
+                    {
+                      lotNumber: {
+                        contains: filters.search,
+                        mode: 'insensitive',
+                      },
+                    },
+                    {
+                      product: {
+                        name: {
+                          contains: filters.search,
+                          mode: 'insensitive',
+                        },
+                      },
+                    },
+                    {
+                      product: {
+                        sku: {
+                          contains: filters.search,
+                          mode: 'insensitive',
+                        },
+                      },
+                    },
+                  ],
+                },
+              }
+            : {}),
+        },
+      };
+    }
+
     const [totalItems, movements] = await prisma.$transaction([
       prisma.stockMovement.count({ where: whereClause }),
       prisma.stockMovement.findMany({
@@ -266,7 +379,12 @@ export class StockAdjustmentService {
               batch: {
                 include: {
                   product: {
-                    select: { id: true, name: true, sku: true },
+                    select: {
+                      id: true,
+                      name: true,
+                      sku: true,
+                      baseUnit: { select: { abbreviation: true } },
+                    },
                   },
                 },
               },

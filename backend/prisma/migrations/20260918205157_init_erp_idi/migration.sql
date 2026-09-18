@@ -1,9 +1,3 @@
-/*
-  Warnings:
-
-  - You are about to drop the `User` table. If the table is not empty, all the data it contains will be lost.
-
-*/
 -- CreateEnum
 CREATE TYPE "LocationType" AS ENUM ('ALMACEN_GENERAL', 'LABORATORIO', 'OFICINA', 'DEPOSITO');
 
@@ -20,7 +14,7 @@ CREATE TYPE "PaymentStatus" AS ENUM ('PENDIENTE', 'PAGADO_PARCIAL', 'PAGADO', 'E
 CREATE TYPE "ReceptionStatus" AS ENUM ('PENDIENTE', 'PARCIAL', 'COMPLETO');
 
 -- CreateEnum
-CREATE TYPE "PaymentMethod" AS ENUM ('TRANSFERENCIA_NACIONAL', 'PAGO_MOVIL', 'TRANSFERENCIA_INTERNACIONAL', 'EFECTIVO_USD', 'EFECTIVO_BS');
+CREATE TYPE "PaymentMethod" AS ENUM ('TRANSFERENCIA_USD', 'TRANSFERENCIA_BS', 'TRANSFERENCIA_NACIONAL', 'PAGO_MOVIL', 'TRANSFERENCIA_INTERNACIONAL', 'EFECTIVO_USD', 'EFECTIVO_BS');
 
 -- CreateEnum
 CREATE TYPE "BatchStatus" AS ENUM ('DISPONIBLE', 'EN_CUARENTENA', 'DEFECTUOSO', 'VENCIDO', 'AGOTADO');
@@ -38,13 +32,13 @@ CREATE TYPE "LabMovementType" AS ENUM ('CONSUMO_PRUEBAS', 'TRASLADO_NEVERA', 'DE
 CREATE TYPE "RequestStatus" AS ENUM ('PENDIENTE', 'APROBADA', 'DESPACHADA_PARCIAL', 'COMPLETADA', 'RECHAZADA');
 
 -- CreateEnum
+CREATE TYPE "RequestPriority" AS ENUM ('BAJA', 'RUTINA', 'URGENTE');
+
+-- CreateEnum
 CREATE TYPE "IncidentType" AS ENUM ('FALLA_CONTROL_CALIDAD', 'CADENA_FRIO_ROTA', 'DANO_FISICO', 'CONTAMINACION_PRECIPITADO', 'VENCIMIENTO_PREMATURO', 'OTRO');
 
 -- CreateEnum
 CREATE TYPE "IncidentStatus" AS ENUM ('ABIERTA', 'CONFIRMADA', 'DESCARTADA');
-
--- DropTable
-DROP TABLE "User";
 
 -- CreateTable
 CREATE TABLE "users" (
@@ -145,6 +139,7 @@ CREATE TABLE "categories" (
 CREATE TABLE "brands" (
     "id" SERIAL NOT NULL,
     "name" TEXT NOT NULL,
+    "description" TEXT,
 
     CONSTRAINT "brands_pkey" PRIMARY KEY ("id")
 );
@@ -326,6 +321,7 @@ CREATE TABLE "stock_movement_items" (
     "id" BIGSERIAL NOT NULL,
     "stock_movement_id" BIGINT NOT NULL,
     "batch_id" BIGINT NOT NULL,
+    "order_item_id" BIGINT,
     "quantity" DECIMAL(12,2) NOT NULL,
     "unit_cost" DECIMAL(18,4),
 
@@ -372,6 +368,9 @@ CREATE TABLE "requests" (
     "request_number" TEXT NOT NULL,
     "user_id" INTEGER NOT NULL,
     "status" "RequestStatus" NOT NULL DEFAULT 'PENDIENTE',
+    "priority" "RequestPriority" NOT NULL DEFAULT 'RUTINA',
+    "department_section" TEXT NOT NULL,
+    "justification" TEXT NOT NULL,
     "weekly_token_cycle" TEXT NOT NULL,
     "dispatched_movement_id" BIGINT,
     "approved_by_id" INTEGER,
@@ -390,6 +389,7 @@ CREATE TABLE "request_items" (
     "product_id" BIGINT NOT NULL,
     "quantity_requested" DECIMAL(12,2) NOT NULL,
     "quantity_approved" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "quantity_dispatched" DECIMAL(12,2) NOT NULL DEFAULT 0,
 
     CONSTRAINT "request_items_pkey" PRIMARY KEY ("id")
 );
@@ -555,6 +555,9 @@ ALTER TABLE "stock_movement_items" ADD CONSTRAINT "stock_movement_items_stock_mo
 
 -- AddForeignKey
 ALTER TABLE "stock_movement_items" ADD CONSTRAINT "stock_movement_items_batch_id_fkey" FOREIGN KEY ("batch_id") REFERENCES "stock_batches"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "stock_movement_items" ADD CONSTRAINT "stock_movement_items_order_item_id_fkey" FOREIGN KEY ("order_item_id") REFERENCES "order_items"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "lab_reagent_units" ADD CONSTRAINT "lab_reagent_units_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

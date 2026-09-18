@@ -7,7 +7,7 @@ async function main() {
   console.log('🌱 Iniciando la siembra de datos (Seed)...');
 
   // 1. Monedas base
-  const usd = await prisma.currency.upsert({
+  await prisma.currency.upsert({
     where: { code: 'USD' },
     update: {},
     create: {
@@ -18,7 +18,7 @@ async function main() {
     },
   });
 
-  const ves = await prisma.currency.upsert({
+  await prisma.currency.upsert({
     where: { code: 'VES' },
     update: {},
     create: {
@@ -29,7 +29,7 @@ async function main() {
     },
   });
 
-  const eur = await prisma.currency.upsert({
+  await prisma.currency.upsert({
     where: { code: 'EUR' },
     update: {},
     create: {
@@ -62,7 +62,40 @@ async function main() {
   }
   console.log('✅ Unidades de medida sembradas');
 
-  // 3. Roles y Permisos
+  // 3. Marcas comerciales base (Catálogo Maestro)
+  const brandsData = [
+    {
+      name: 'Sigma-Aldrich',
+      description: 'Reactivos químicos analíticos y sueros',
+    },
+    {
+      name: 'Bio-Rad',
+      description: 'Kits diagnósticos y reactivos de control',
+    },
+    {
+      name: 'Thermo Fisher Scientific',
+      description: 'Material e insumos para citometría y biología molecular',
+    },
+    {
+      name: 'BD Biosciences',
+      description: 'Soluciones y reactivos de diagnóstico',
+    },
+    {
+      name: 'Genérico / Preparado Interno',
+      description: 'Soluciones tamponadas preparadas en el instituto',
+    },
+  ];
+
+  for (const brand of brandsData) {
+    await prisma.brand.upsert({
+      where: { name: brand.name },
+      update: {},
+      create: brand,
+    });
+  }
+  console.log('✅ Marcas comerciales sembradas');
+
+  // 4. Roles y Permisos
   const rolesData = [
     {
       name: 'ADMINISTRADOR',
@@ -97,12 +130,11 @@ async function main() {
   }
   console.log('✅ Roles base sembrados');
 
-  // 4. Ubicaciones
+  // 5. Ubicaciones
   const warehouse = await prisma.location.upsert({
     where: { id: 1 },
     update: {},
     create: {
-      id: 1,
       name: 'Almacén Central',
       type: LocationType.ALMACEN_GENERAL,
       description: 'Depósito principal de mercancía y reactivos en reserva',
@@ -113,7 +145,6 @@ async function main() {
     where: { id: 2 },
     update: {},
     create: {
-      id: 2,
       name: 'Laboratorio de Inmunología',
       type: LocationType.LABORATORIO,
       description: 'Área analítica de laboratorio clínico',
@@ -121,7 +152,7 @@ async function main() {
   });
   console.log('✅ Ubicaciones físicas sembradas');
 
-  // 5. Equipos de Frío (Nevera y Cava de tu Excel)
+  // 6. Equipos de Frío
   await prisma.fridge.upsert({
     where: { code: 'NEV-01' },
     update: {},
@@ -149,7 +180,7 @@ async function main() {
   });
   console.log('✅ Equipos de frío sembrados (NEV-01, CAVA-01)');
 
-  // 6. Categorías Maestras
+  // 7. Categorías Maestras
   const categoriesData = [
     {
       name: 'Reactivos de Inmunología',
@@ -178,7 +209,7 @@ async function main() {
   }
   console.log('✅ Categorías maestras sembradas');
 
-  // 7. Usuario Administrador Inicial
+  // 8. Usuario Administrador Inicial
   const adminPasswordHash = await bcrypt.hash('Admin1234!', 10);
   const adminUser = await prisma.user.upsert({
     where: { email: 'admin@idi.ucv.ve' },
@@ -193,10 +224,8 @@ async function main() {
     },
   });
 
-  // Obtenemos el ID del rol asegurando a TypeScript que existe
   const adminRoleId = createdRoles['ADMINISTRADOR']!;
 
-  // Asignar rol ADMINISTRADOR al usuario admin
   await prisma.userRole.upsert({
     where: {
       userId_roleId: {

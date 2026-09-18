@@ -9,6 +9,7 @@ import { AuthService } from "@/services/auth.service";
 import type {
   PurchaseOrder,
   Supplier,
+  Currency,
   PurchaseOrderStatus,
 } from "@/types/purchasing";
 import type { Product } from "@/types/inventory";
@@ -17,13 +18,12 @@ import {
   Plus,
   Filter,
   RefreshCw,
-  Clock,
   CheckCircle2,
   AlertCircle,
   X,
   Trash2,
   Building2,
-  DollarSign,
+  Coins,
   Loader2,
   PackageCheck,
 } from "lucide-react";
@@ -50,16 +50,18 @@ const STATUS_BADGES: Record<
   },
 };
 
-interface FormItem {
+interface FormRow {
   productId: number;
-  quantity: number;
-  unitPriceUsd: number;
+  unitId: number;
+  quantityOrdered: number;
+  unitPrice: number;
 }
 
 export default function PurchaseOrdersPage() {
   const router = useRouter();
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -67,10 +69,10 @@ export default function PurchaseOrdersPage() {
   // Modal de Creación
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [supplierId, setSupplierId] = useState<string>("");
-  const [expectedDate, setExpectedDate] = useState<string>("");
+  const [currencyId, setCurrencyId] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
-  const [items, setItems] = useState<FormItem[]>([
-    { productId: 0, quantity: 1, unitPriceUsd: 0 },
+  const [items, setItems] = useState<FormRow[]>([
+    { productId: 0, unitId: 0, quantityOrdered: 1, unitPrice: 0 },
   ]);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
@@ -81,36 +83,47 @@ export default function PurchaseOrdersPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [ordersData, suppliersData, productsData] = await Promise.all([
-        PurchasingClientService.getOrders(statusFilter || undefined).catch(
-          () => [],
-        ),
-        PurchasingClientService.getSuppliers().catch(() => []),
-        InventoryClientService.getProducts().catch(() => []),
-      ]);
+      const [ordersData, suppliersData, currenciesData, productsData] =
+        await Promise.all([
+          PurchasingClientService.getOrders(statusFilter || undefined).catch(
+            () => [],
+          ),
+          PurchasingClientService.getSuppliers().catch(() => []),
+          PurchasingClientService.getCurrencies().catch(() => []),
+          InventoryClientService.getProducts().catch(() => []),
+        ]);
       setOrders(ordersData);
       setSuppliers(suppliersData);
+      setCurrencies(currenciesData);
       setCatalogProducts(productsData);
+
+      if (currenciesData.length > 0 && !currencyId) {
+        setCurrencyId(String(currenciesData[0].id));
+      }
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, currencyId]);
 
   useEffect(() => {
+    let isMounted = true;
+    if (!AuthService.isAuthenticated()) {
+      router.replace("/login");
+      return;
+    }
     const init = async () => {
-      if (!AuthService.isAuthenticated()) {
-        router.replace("/login");
-        return;
-      }
-      await loadData();
+      if (isMounted) await loadData();
     };
     init();
+    return () => {
+      isMounted = false;
+    };
   }, [router, loadData]);
 
   const handleAddItem = () => {
     setItems((prev) => [
       ...prev,
-      { productId: 0, quantity: 1, unitPriceUsd: 0 },
+      { productId: 0, unitId: 0, quantityOrdered: 1, unitPrice: 0 },
     ]);
   };
 
@@ -119,9 +132,21 @@ export default function PurchaseOrdersPage() {
     setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleItemChange = (
+  const handleProductSelect = (index: number, pId: number) => {
+    const selectedProd = catalogProducts.find((p) => p.id === pId);
+    const unitId =
+      selectedProd?.baseUnitId || selectedProd?.purchaseUnitId || 1;
+
+    setItems((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], productId: pId, unitId };
+      return updated;
+    });
+  };
+
+  const handleRowChange = (
     index: number,
-    field: keyof FormItem,
+    field: "quantityOrdered" | "unitPrice",
     val: number,
   ) => {
     setItems((prev) => {
@@ -133,31 +158,33 @@ export default function PurchaseOrdersPage() {
 
   const orderTotalEstimated = items.reduce(
     (acc, curr) =>
-      acc + (Number(curr.quantity) || 0) * (Number(curr.unitPriceUsd) || 0),
+      acc + (Number(curr.quantityOrdered) || 0) * (Number(curr.unitPrice) || 0),
     0,
   );
+
+  const selectedCurrency = currencies.find((c) => c.id === Number(currencyId));
 
   const handleSubmitOrder = async (e: FormEvent) => {
     e.preventDefault();
     setFeedback(null);
 
-    if (!supplierId) {
+    if (!currencyId) {
       setFeedback({
         status: "error",
-        message: "Seleccione un proveedor comercial.",
+        message: "Seleccione la moneda de compra.",
       });
       return;
     }
 
     const hasInvalidItem = items.some(
-      (it) => !it.productId || it.quantity <= 0 || it.unitPriceUsd <= 0,
+      (it) => !it.productId || it.quantityOrdered <= 0 || it.unitPrice <= 0,
     );
 
     if (hasInvalidItem) {
       setFeedback({
         status: "error",
         message:
-          "Asegúrese de seleccionar producto, cantidad y precio válido en cada renglón.",
+          "Asegúrese de seleccionar producto, cantidad y costo válido en cada renglón.",
       });
       return;
     }
@@ -165,10 +192,15 @@ export default function PurchaseOrdersPage() {
     setSubmitting(true);
     try {
       await PurchasingClientService.createOrder({
-        supplierId: Number(supplierId),
-        expectedDeliveryDate: expectedDate || undefined,
-        notes: notes.trim() || undefined,
-        items,
+        supplierId: supplierId ? Number(supplierId) : null,
+        currencyId: Number(currencyId),
+        notes: notes.trim() || null,
+        items: items.map((it) => ({
+          productId: Number(it.productId),
+          unitId: Number(it.unitId),
+          quantityOrdered: Number(it.quantityOrdered),
+          unitPrice: Number(it.unitPrice),
+        })),
       });
 
       setFeedback({
@@ -180,9 +212,10 @@ export default function PurchaseOrdersPage() {
       setTimeout(() => {
         setIsModalOpen(false);
         setSupplierId("");
-        setExpectedDate("");
         setNotes("");
-        setItems([{ productId: 0, quantity: 1, unitPriceUsd: 0 }]);
+        setItems([
+          { productId: 0, unitId: 0, quantityOrdered: 1, unitPrice: 0 },
+        ]);
         setFeedback(null);
       }, 1000);
     } catch (err: unknown) {
@@ -206,7 +239,8 @@ export default function PurchaseOrdersPage() {
             Órdenes de Compra y Abastecimiento
           </h1>
           <p className="text-xs text-slate-500">
-            Control de adquisiciones a casas comerciales y recepción de insumos
+            Control de adquisiciones comerciales, divisas e ingreso físico a
+            cuarentena
           </p>
         </div>
 
@@ -259,9 +293,8 @@ export default function PurchaseOrdersPage() {
                 <th className="py-3 px-4">N° Orden</th>
                 <th className="py-3 px-4">Proveedor</th>
                 <th className="py-3 px-4">Fecha Emisión</th>
-                <th className="py-3 px-4">Entrega Estimada</th>
-                <th className="py-3 px-4 text-center">Ítems</th>
-                <th className="py-3 px-4 text-right">Monto Total USD</th>
+                <th className="py-3 px-4 text-center">Moneda</th>
+                <th className="py-3 px-4 text-center">Renglones</th>
                 <th className="py-3 px-4 text-center">Estado</th>
                 <th className="py-3 px-4 text-center">Acción</th>
               </tr>
@@ -269,14 +302,14 @@ export default function PurchaseOrdersPage() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2" />
                     Cargando órdenes de compra...
                   </td>
                 </tr>
               ) : orders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
                     No se encontraron órdenes de compra registradas.
                   </td>
                 </tr>
@@ -288,42 +321,33 @@ export default function PurchaseOrdersPage() {
                   };
                   return (
                     <tr
-                      key={order.id}
+                      key={String(order.id)}
                       className="hover:bg-slate-50/60 transition-colors"
                     >
                       <td className="py-3 px-4 font-mono font-bold text-slate-800">
-                        {order.orderNumber}
+                        {order.orderNumber || `#${order.id}`}
                       </td>
                       <td className="py-3 px-4">
                         <div className="font-semibold text-slate-800 flex items-center gap-1.5">
                           <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                          {order.supplier?.name}
+                          {order.supplier?.name || "Proveedor General"}
                         </div>
-                        <div className="text-[10px] text-slate-400 font-mono">
-                          {order.supplier?.rif}
-                        </div>
+                        {order.supplier?.rifOrId && (
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            {order.supplier.rifOrId}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-slate-500">
-                        {new Date(order.createdAt).toLocaleDateString()}
+                        {order.createdAt
+                          ? new Date(order.createdAt).toLocaleDateString()
+                          : "-"}
                       </td>
-                      <td className="py-3 px-4 text-slate-600">
-                        <span className="inline-flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-slate-400" />
-                          {order.expectedDeliveryDate
-                            ? new Date(
-                                order.expectedDeliveryDate,
-                              ).toLocaleDateString()
-                            : "Inmediata"}
-                        </span>
+                      <td className="py-3 px-4 text-center font-mono font-semibold text-slate-700">
+                        {order.currency?.code || "USD"}
                       </td>
                       <td className="py-3 px-4 text-center font-semibold text-slate-700">
                         {order.items?.length || 0}
-                      </td>
-                      <td className="py-3 px-4 text-right font-bold text-slate-900 font-mono">
-                        $
-                        {Number(order.totalAmountUsd).toLocaleString("en-US", {
-                          minimumFractionDigits: 2,
-                        })}
                       </td>
                       <td className="py-3 px-4 text-center">
                         <span
@@ -358,7 +382,7 @@ export default function PurchaseOrdersPage() {
       {/* Modal de Nueva Orden */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-2xl w-full p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <ShoppingCart className="w-5 h-5 text-blue-600" />
@@ -392,38 +416,45 @@ export default function PurchaseOrdersPage() {
             )}
 
             <form onSubmit={handleSubmitOrder} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Selector Proveedor */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
                     Proveedor Comercial
                   </label>
                   <select
                     value={supplierId}
                     onChange={(e) => setSupplierId(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-                    required
                   >
-                    <option value="">-- Seleccione proveedor --</option>
+                    <option value="">
+                      -- Proveedor Opcional / Caja Chica --
+                    </option>
                     {suppliers.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.name} ({s.rif})
+                        {s.name} ({s.rifOrId})
                       </option>
                     ))}
                   </select>
                 </div>
 
-                {/* Fecha Estimada */}
+                {/* Selector Moneda */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Fecha Estimada de Llegada
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                    Moneda de la Orden *
                   </label>
-                  <input
-                    type="date"
-                    value={expectedDate}
-                    onChange={(e) => setExpectedDate(e.target.value)}
+                  <select
+                    value={currencyId}
+                    onChange={(e) => setCurrencyId(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-                  />
+                    required
+                  >
+                    {currencies.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.code} - {c.symbol})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -451,19 +482,15 @@ export default function PurchaseOrdersPage() {
                       <select
                         value={item.productId}
                         onChange={(e) =>
-                          handleItemChange(
-                            idx,
-                            "productId",
-                            Number(e.target.value),
-                          )
+                          handleProductSelect(idx, Number(e.target.value))
                         }
                         className="w-full bg-white border border-slate-300 rounded-md px-2 py-1.5 text-xs text-slate-800"
                         required
                       >
-                        <option value="0">-- Producto / Insumo --</option>
+                        <option value="0">-- Seleccionar insumo --</option>
                         {catalogProducts.map((p) => (
                           <option key={p.id} value={p.id}>
-                            {p.name} ({p.sku})
+                            {p.name} {p.sku ? `(${p.sku})` : ""}
                           </option>
                         ))}
                       </select>
@@ -474,11 +501,11 @@ export default function PurchaseOrdersPage() {
                         type="number"
                         min="1"
                         placeholder="Cant."
-                        value={item.quantity}
+                        value={item.quantityOrdered}
                         onChange={(e) =>
-                          handleItemChange(
+                          handleRowChange(
                             idx,
-                            "quantity",
+                            "quantityOrdered",
                             Number(e.target.value),
                           )
                         }
@@ -490,22 +517,22 @@ export default function PurchaseOrdersPage() {
                     <div className="col-span-3">
                       <div className="relative">
                         <span className="absolute inset-y-0 left-2 flex items-center text-slate-400 text-xs">
-                          $
+                          {selectedCurrency?.symbol || "$"}
                         </span>
                         <input
                           type="number"
                           step="0.01"
                           min="0.01"
-                          placeholder="Unit USD"
-                          value={item.unitPriceUsd || ""}
+                          placeholder="Costo unit."
+                          value={item.unitPrice || ""}
                           onChange={(e) =>
-                            handleItemChange(
+                            handleRowChange(
                               idx,
-                              "unitPriceUsd",
+                              "unitPrice",
                               Number(e.target.value),
                             )
                           }
-                          className="w-full bg-white border border-slate-300 rounded-md pl-5 pr-2 py-1.5 text-xs text-slate-800"
+                          className="w-full bg-white border border-slate-300 rounded-md pl-6 pr-2 py-1.5 text-xs text-slate-800"
                           required
                         />
                       </div>
@@ -526,9 +553,10 @@ export default function PurchaseOrdersPage() {
 
                 {/* Subtotal estimado */}
                 <div className="flex justify-end pt-2 text-xs font-semibold text-slate-700">
-                  <span className="mr-2">Monto Estimado de la Orden:</span>
+                  <span className="mr-2">Monto Total Estimado:</span>
                   <span className="font-mono text-blue-700 flex items-center">
-                    <DollarSign className="w-3.5 h-3.5" />
+                    <Coins className="w-3.5 h-3.5 mr-1" />
+                    {selectedCurrency?.symbol || "$"}{" "}
                     {orderTotalEstimated.toLocaleString("en-US", {
                       minimumFractionDigits: 2,
                     })}
@@ -539,13 +567,13 @@ export default function PurchaseOrdersPage() {
               {/* Observaciones */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Notas de Despacho o Condiciones (Opcional)
+                  Notas de Compra o Términos de Despacho (Opcional)
                 </label>
                 <textarea
                   rows={2}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Instrucciones de transporte, refrigeración requerida o forma de pago acordada..."
+                  placeholder="Especificaciones sobre transporte en frío, acuerdos de pago..."
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -565,7 +593,7 @@ export default function PurchaseOrdersPage() {
                   className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {submitting ? "Generando orden..." : "Crear Orden de Compra"}
+                  {submitting ? "Emitiendo orden..." : "Crear Orden de Compra"}
                 </button>
               </div>
             </form>

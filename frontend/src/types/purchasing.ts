@@ -4,6 +4,14 @@ export type PurchaseOrderStatus =
   | "RECIBIDO"
   | "CANCELADO";
 
+export interface Currency {
+  id: number;
+  code: string;
+  name: string;
+  symbol: string;
+  isDefault?: boolean;
+}
+
 export interface SupplierPayment {
   id: number;
   amountUsd: number;
@@ -19,27 +27,24 @@ export interface SupplierPayment {
 
 export interface Supplier {
   id: number;
+  rifOrId: string;
   name: string;
-  rif: string;
-  contactName?: string;
-  contactEmail?: string;
-  contactPhone?: string;
-  address?: string;
-  paymentTermsDays?: number;
-  isActive: boolean;
-  totalPurchasedUsd?: number;
-  totalDebtUsd?: number;
-  payments?: SupplierPayment[];
+  contactName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface CreateSupplierPayload {
+  rifOrId: string;
   name: string;
-  rif: string;
   contactName?: string;
-  contactEmail?: string;
-  contactPhone?: string;
+  phone?: string;
+  email?: string;
   address?: string;
-  paymentTermsDays?: number;
 }
 
 export interface RegisterPaymentPayload {
@@ -49,58 +54,102 @@ export interface RegisterPaymentPayload {
     | "TRANSFERENCIA_USD"
     | "TRANSFERENCIA_BS"
     | "EFECTIVO_USD"
+    | "EFECTIVO_BS"
     | "PAGO_MOVIL";
   referenceNumber: string;
+  paymentDate?: string;
   notes?: string;
 }
 
+export interface SupplierDebt {
+  id: number;
+  name: string;
+  rifOrId: string;
+  totalPurchasedUsd: number;
+  totalPaidUsd: number;
+  totalPaidThisMonthUsd: number;
+  balanceUsd: number;
+  status: "SOLVENTE" | "CON_DEUDA";
+}
+
+export interface SupplierStatement {
+  supplier: { id: number; name: string; rifOrId: string };
+  orders: Array<
+    PurchaseOrder & {
+      totalUsd: number;
+      paidUsd: number;
+      balanceUsd: number;
+      payments?: Array<{
+        id: number;
+        paymentDate: string;
+        paymentMethod: string;
+        amount: number;
+      }>;
+    }
+  >;
+  totalPurchasedUsd: number;
+  totalPaidUsd: number;
+  balanceUsd: number;
+}
+
 export interface PurchaseOrderItem {
-  id?: number;
+  id: number;
   productId: number;
-  quantity: number;
-  unitPriceUsd: number;
-  totalPriceUsd?: number;
+  unitId: number;
+  quantityOrdered: number;
+  quantityReceived?: number;
+  quantityRejected?: number;
+  unitPrice: number;
   product?: {
     id: number;
     name: string;
-    sku: string;
-    unitOfMeasure: string;
+    sku?: string | null;
+    unitOfMeasure?: string;
+    baseUnit?: { abbreviation: string; name: string };
   };
 }
 
 export interface PurchaseOrder {
   id: number;
-  orderNumber: string;
+  orderNumber?: string;
   status: PurchaseOrderStatus;
-  supplierId: number;
-  supplier: Supplier;
-  totalAmountUsd: number;
+  supplierId?: number | null;
+  currencyId: number;
+  supplier?: Supplier | null;
+  currency?: Currency;
+  totalAmount?: number;
+  totalAmountUsd?: number;
   notes?: string | null;
   expectedDeliveryDate?: string | null;
   createdAt: string;
   items: PurchaseOrderItem[];
 }
 
+export interface CreateOrderItemPayload {
+  productId: number;
+  unitId: number;
+  quantityOrdered: number;
+  unitPrice: number;
+}
+
 export interface CreatePurchaseOrderPayload {
-  supplierId: number;
+  supplierId?: number | null;
+  currencyId: number;
+  notes?: string | null;
   expectedDeliveryDate?: string;
-  notes?: string;
-  items: {
-    productId: number;
-    quantity: number;
-    unitPriceUsd: number;
-  }[];
+  items: CreateOrderItemPayload[];
 }
 
 export interface ReceiveOrderItemPayload {
-  productId: number;
+  orderItemId: number;
+  quantityReceived: number;
   lotNumber: string;
-  expirationDate?: string;
-  receivedQuantity: number;
+  expirationDate: string;
+  locationId?: number;
 }
 
 export interface ReceiveOrderPayload {
   orderId: number;
-  deliveryNoteNumber?: string;
+  notes?: string | null;
   items: ReceiveOrderItemPayload[];
 }

@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { AuthService } from "@/services/auth.service";
-import type { PurchaseOrder } from "@/types/purchasing";
+import type { PurchaseOrder, PurchaseOrderItem } from "@/types/purchasing";
 import {
   PackageCheck,
   ArrowLeft,
@@ -18,11 +18,13 @@ import {
 } from "lucide-react";
 
 interface ReceptionRow {
+  orderItemId: number;
   productId: number;
   productName: string;
   sku: string;
   unitOfMeasure: string;
   orderedQuantity: number;
+  pendingQuantity: number;
   receivedQuantity: number;
   lotNumber: string;
   expirationDate: string;
@@ -35,7 +37,7 @@ export default function ReceiveOrderPage() {
 
   const [order, setOrder] = useState<PurchaseOrder | null>(null);
   const [loading, setLoading] = useState(true);
-  const [deliveryNoteNumber, setDeliveryNoteNumber] = useState("");
+  const [notes, setNotes] = useState("");
   const [itemsData, setItemsData] = useState<ReceptionRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
@@ -49,33 +51,52 @@ export default function ReceiveOrderPage() {
       const data = await PurchasingClientService.getOrderById(orderId);
       setOrder(data);
 
-      const rows: ReceptionRow[] = (data.items || []).map((item) => ({
-        productId: item.productId,
-        productName: item.product?.name || `Producto #${item.productId}`,
-        sku: item.product?.sku || "N/A",
-        unitOfMeasure: item.product?.unitOfMeasure || "Unid",
-        orderedQuantity: Number(item.quantity),
-        receivedQuantity: Number(item.quantity),
-        lotNumber: "",
-        expirationDate: "",
-      }));
+      const rows: ReceptionRow[] = (data.items || [])
+        .map((item: PurchaseOrderItem) => {
+          const ordered = Number(item.quantityOrdered) || 0;
+          const received = Number(item.quantityReceived) || 0;
+          const rejected = Number(item.quantityRejected) || 0;
+          const pending = Math.max(0, ordered - received + rejected);
+
+          return {
+            orderItemId: Number(item.id),
+            productId: Number(item.productId),
+            productName: item.product?.name || `Producto #${item.productId}`,
+            sku: item.product?.sku || "N/A",
+            unitOfMeasure:
+              item.product?.baseUnit?.abbreviation ||
+              item.product?.unitOfMeasure ||
+              "Unid",
+            orderedQuantity: ordered,
+            pendingQuantity: pending,
+            receivedQuantity: pending,
+            lotNumber: "",
+            expirationDate: "",
+          };
+        })
+        .filter((row) => row.pendingQuantity > 0);
+
       setItemsData(rows);
     } catch {
-      // Interceptor global
+      // Manejado por interceptor global
     } finally {
       setLoading(false);
     }
   }, [orderId]);
 
   useEffect(() => {
+    let isMounted = true;
+    if (!AuthService.isAuthenticated()) {
+      router.replace("/login");
+      return;
+    }
     const init = async () => {
-      if (!AuthService.isAuthenticated()) {
-        router.replace("/login");
-        return;
-      }
-      await loadOrder();
+      if (isMounted) await loadOrder();
     };
     init();
+    return () => {
+      isMounted = false;
+    };
   }, [router, loadOrder]);
 
   const handleRowChange = (
@@ -90,18 +111,30 @@ export default function ReceiveOrderPage() {
     });
   };
 
+  const calculatedTotal = (order?.items || []).reduce(
+    (acc, curr) =>
+      acc + (Number(curr.quantityOrdered) || 0) * (Number(curr.unitPrice) || 0),
+    0,
+  );
+  const displayTotal = Number(order?.totalAmount) || calculatedTotal;
+
   const handleSubmitReception = async (e: FormEvent) => {
     e.preventDefault();
     setFeedback(null);
 
-    const hasMissingLot = itemsData.some(
-      (it) => !it.lotNumber.trim() || it.receivedQuantity <= 0,
+    const hasInvalidRow = itemsData.some(
+      (it) =>
+        !it.lotNumber.trim() ||
+        Number(it.receivedQuantity) <= 0 ||
+        Number(it.receivedQuantity) > it.pendingQuantity ||
+        !it.expirationDate,
     );
-    if (hasMissingLot) {
+
+    if (hasInvalidRow) {
       setFeedback({
         status: "error",
         message:
-          "Debe ingresar el número de lote del fabricante y una cantidad válida para cada renglón.",
+          "Verifique que todos los lotes tengan número, fecha de vencimiento y una cantidad no superior a la pendiente.",
       });
       return;
     }
@@ -110,24 +143,24 @@ export default function ReceiveOrderPage() {
     try {
       await PurchasingClientService.receiveOrder({
         orderId,
-        deliveryNoteNumber: deliveryNoteNumber.trim() || undefined,
+        notes: notes.trim() || undefined,
         items: itemsData.map((row) => ({
-          productId: row.productId,
+          orderItemId: row.orderItemId,
           lotNumber: row.lotNumber.trim().toUpperCase(),
-          expirationDate: row.expirationDate || undefined,
-          receivedQuantity: Number(row.receivedQuantity),
+          expirationDate: row.expirationDate,
+          quantityReceived: Number(row.receivedQuantity),
+          locationId: 1,
         })),
       });
 
       setFeedback({
         status: "success",
-        message:
-          "Mercancía recibida exitosamente. Los lotes fueron ingresados a Cuarentena.",
+        message: "Mercancía recibida. Los lotes ingresaron a Cuarentena.",
       });
 
       setTimeout(() => {
         router.push("/quality/quarantine");
-      }, 1500);
+      }, 1200);
     } catch (err: unknown) {
       setFeedback({
         status: "error",
@@ -206,7 +239,7 @@ export default function ReceiveOrderPage() {
             Orden de Compra
           </span>
           <div className="text-lg font-bold font-mono text-slate-800">
-            {order.orderNumber}
+            {order.orderNumber || `#${order.id}`}
           </div>
         </div>
 
@@ -216,7 +249,7 @@ export default function ReceiveOrderPage() {
           </span>
           <div className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
             <Building2 className="w-4 h-4 text-slate-400" />
-            {order.supplier?.name}
+            {order.supplier?.name || "Proveedor General"}
           </div>
         </div>
 
@@ -225,138 +258,156 @@ export default function ReceiveOrderPage() {
             Monto Acordado
           </span>
           <div className="text-sm font-bold font-mono text-slate-800">
-            $
-            {Number(order.totalAmountUsd).toLocaleString("en-US", {
-              minimumFractionDigits: 2,
-            })}
+            {order.currency?.symbol || "$"}{" "}
+            {displayTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
           </div>
         </div>
       </div>
 
-      {/* Formulario de Entrada */}
-      <form onSubmit={handleSubmitReception} className="space-y-6">
-        {/* N° de Guía o Nota de Entrega */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-            N° Guía de Despacho / Factura del Proveedor (Opcional)
-          </label>
-          <input
-            type="text"
-            value={deliveryNoteNumber}
-            onChange={(e) => setDeliveryNoteNumber(e.target.value)}
-            placeholder="Ej: GUIA-PROV-9082"
-            className="w-full sm:w-96 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-mono"
-          />
-        </div>
-
-        {/* Renglones para asignación de lote */}
-        <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-              <Package className="w-4 h-4 text-slate-500" />
-              Detalle de Renglones Recibidos
-            </span>
-            <span className="text-[11px] text-slate-400">
-              Todos los lotes se crearán bajo estado preventivo{" "}
-              <b>EN_CUARENTENA</b>
-            </span>
-          </div>
-
-          <div className="divide-y divide-slate-100 p-5 space-y-4">
-            {itemsData.map((row, idx) => (
-              <div
-                key={idx}
-                className="pt-4 first:pt-0 grid grid-cols-1 md:grid-cols-12 gap-3 items-center"
-              >
-                <div className="md:col-span-4">
-                  <div className="font-semibold text-xs text-slate-800">
-                    {row.productName}
-                  </div>
-                  <div className="font-mono text-[10px] text-slate-400">
-                    SKU: {row.sku}
-                  </div>
-                  <div className="text-[11px] text-slate-500">
-                    Pedido original:{" "}
-                    <b>
-                      {row.orderedQuantity} {row.unitOfMeasure}
-                    </b>
-                  </div>
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">
-                    Cant. Recibida
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="1"
-                    value={row.receivedQuantity}
-                    onChange={(e) =>
-                      handleRowChange(
-                        idx,
-                        "receivedQuantity",
-                        Number(e.target.value),
-                      )
-                    }
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold"
-                    required
-                  />
-                </div>
-
-                <div className="md:col-span-3">
-                  <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">
-                    N° Lote Fabricante
-                  </label>
-                  <input
-                    type="text"
-                    value={row.lotNumber}
-                    onChange={(e) =>
-                      handleRowChange(idx, "lotNumber", e.target.value)
-                    }
-                    placeholder="Lote del empaque"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-mono"
-                    required
-                  />
-                </div>
-
-                <div className="md:col-span-3">
-                  <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                    <Calendar className="w-3 h-3" /> Fecha Expiración
-                  </label>
-                  <input
-                    type="date"
-                    value={row.expirationDate}
-                    onChange={(e) =>
-                      handleRowChange(idx, "expirationDate", e.target.value)
-                    }
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
-                  />
-                </div>
-              </div>
-            ))}
+      {itemsData.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center space-y-3 shadow-xs">
+          <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
+          <h3 className="text-base font-bold text-slate-800">
+            Orden Completada
+          </h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            Todos los renglones de esta orden ya han sido recibidos en su
+            totalidad.
+          </p>
+          <div className="pt-2">
+            <Link
+              href="/purchasing/orders"
+              className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-semibold"
+            >
+              Regresar a Órdenes
+            </Link>
           </div>
         </div>
+      ) : (
+        <form onSubmit={handleSubmitReception} className="space-y-6">
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              N° Guía de Despacho / Factura / Observaciones (Opcional)
+            </label>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Ej: Factura 00492 / Despacho en frío"
+              className="w-full sm:w-96 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-mono"
+            />
+          </div>
 
-        <div className="flex justify-end gap-3 pt-2">
-          <Link
-            href="/purchasing/orders"
-            className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors"
-          >
-            Cancelar
-          </Link>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-5 py-2.5 rounded-lg transition-colors shadow-xs disabled:opacity-50"
-          >
-            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            {submitting
-              ? "Procesando entrada..."
-              : "Confirmar Recepción de Mercancía"}
-          </button>
-        </div>
-      </form>
+          <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                <Package className="w-4 h-4 text-slate-500" />
+                Renglones Pendientes por Recibir
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Lotes registrados en <b>EN_CUARENTENA</b>
+              </span>
+            </div>
+
+            <div className="divide-y divide-slate-100 p-5 space-y-4">
+              {itemsData.map((row, idx) => (
+                <div
+                  key={row.orderItemId || idx}
+                  className="pt-4 first:pt-0 grid grid-cols-1 md:grid-cols-12 gap-3 items-center"
+                >
+                  <div className="md:col-span-4">
+                    <div className="font-semibold text-xs text-slate-800">
+                      {row.productName}
+                    </div>
+                    <div className="font-mono text-[10px] text-slate-400">
+                      SKU: {row.sku}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Pendiente:{" "}
+                      <b className="text-blue-700">
+                        {row.pendingQuantity} / {row.orderedQuantity}{" "}
+                        {row.unitOfMeasure}
+                      </b>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">
+                      Cant. Recibida
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="1"
+                      max={row.pendingQuantity}
+                      value={row.receivedQuantity}
+                      onChange={(e) =>
+                        handleRowChange(
+                          idx,
+                          "receivedQuantity",
+                          Number(e.target.value),
+                        )
+                      }
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold"
+                      required
+                    />
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">
+                      N° Lote Fabricante *
+                    </label>
+                    <input
+                      type="text"
+                      value={row.lotNumber}
+                      onChange={(e) =>
+                        handleRowChange(idx, "lotNumber", e.target.value)
+                      }
+                      placeholder="Lote del empaque"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-mono"
+                      required
+                    />
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <label className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 uppercase mb-1">
+                      <Calendar className="w-3 h-3" /> Fecha Expiración *
+                    </label>
+                    <input
+                      type="date"
+                      value={row.expirationDate}
+                      onChange={(e) =>
+                        handleRowChange(idx, "expirationDate", e.target.value)
+                      }
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
+                      required
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Link
+              href="/purchasing/orders"
+              className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors"
+            >
+              Cancelar
+            </Link>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-5 py-2.5 rounded-lg transition-colors shadow-xs disabled:opacity-50"
+            >
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {submitting
+                ? "Procesando entrada..."
+                : "Confirmar Recepción de Mercancía"}
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

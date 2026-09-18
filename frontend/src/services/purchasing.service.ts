@@ -3,32 +3,71 @@ import type { ApiResponse } from "@/types/api";
 import type {
   PurchaseOrder,
   Supplier,
+  Currency,
   CreatePurchaseOrderPayload,
   CreateSupplierPayload,
   RegisterPaymentPayload,
   SupplierPayment,
   ReceiveOrderPayload,
+  SupplierDebt,
+  SupplierStatement,
 } from "@/types/purchasing";
 
 export const PurchasingClientService = {
+  /**
+   * Obtiene la lista de monedas configuradas
+   * Endpoint backend: GET /api/currencies
+   */
+  async getCurrencies(): Promise<Currency[]> {
+    const response =
+      await apiClient.get<ApiResponse<Currency[]>>("/currencies");
+    return response.data.data || [];
+  },
+
   async getOrders(status?: string): Promise<PurchaseOrder[]> {
     const params = status ? `?status=${status}` : "";
     const response = await apiClient.get<ApiResponse<PurchaseOrder[]>>(
-      `/purchasing/orders${params}`,
+      `/orders${params}`,
     );
     return response.data.data || [];
   },
 
-  async getSuppliers(): Promise<Supplier[]> {
-    const response = await apiClient.get<ApiResponse<Supplier[]>>(
-      "/purchasing/suppliers",
+  async getOrderById(orderId: number): Promise<PurchaseOrder> {
+    const response = await apiClient.get<ApiResponse<PurchaseOrder>>(
+      `/orders/${orderId}`,
     );
+    if (!response.data.data) {
+      throw new Error(response.data.message || "Orden no encontrada");
+    }
+    return response.data.data;
+  },
+
+  async getSuppliers(): Promise<Supplier[]> {
+    const response = await apiClient.get<ApiResponse<Supplier[]>>("/suppliers");
     return response.data.data || [];
+  },
+
+  async getSupplierDebts(): Promise<SupplierDebt[]> {
+    const response =
+      await apiClient.get<ApiResponse<SupplierDebt[]>>("/suppliers/debts");
+    return response.data.data || [];
+  },
+
+  async getSupplierStatement(id: number): Promise<SupplierStatement> {
+    const response = await apiClient.get<ApiResponse<SupplierStatement>>(
+      `/suppliers/${id}/statement`,
+    );
+    if (!response.data.data) {
+      throw new Error(
+        response.data.message || "Estado de cuenta no disponible",
+      );
+    }
+    return response.data.data;
   },
 
   async createSupplier(payload: CreateSupplierPayload): Promise<Supplier> {
     const response = await apiClient.post<ApiResponse<Supplier>>(
-      "/purchasing/suppliers",
+      "/suppliers",
       payload,
     );
     if (!response.data.data) {
@@ -41,7 +80,7 @@ export const PurchasingClientService = {
     payload: RegisterPaymentPayload,
   ): Promise<SupplierPayment> {
     const response = await apiClient.post<ApiResponse<SupplierPayment>>(
-      `/purchasing/suppliers/${payload.supplierId}/payments`,
+      `/suppliers/${payload.supplierId}/payments`,
       payload,
     );
     if (!response.data.data) {
@@ -54,7 +93,7 @@ export const PurchasingClientService = {
     payload: CreatePurchaseOrderPayload,
   ): Promise<PurchaseOrder> {
     const response = await apiClient.post<ApiResponse<PurchaseOrder>>(
-      "/purchasing/orders",
+      "/orders",
       payload,
     );
     if (!response.data.data) {
@@ -65,26 +104,13 @@ export const PurchasingClientService = {
     return response.data.data;
   },
 
-  /**
-   * Obtiene el detalle completo de una orden de compra con sus ítems
-   */
-  async getOrderById(orderId: number): Promise<PurchaseOrder> {
-    const response = await apiClient.get<ApiResponse<PurchaseOrder>>(
-      `/purchasing/orders/${orderId}`,
-    );
-    if (!response.data.data) {
-      throw new Error(response.data.message || "Orden no encontrada");
-    }
-    return response.data.data;
-  },
-
-  /**
-   * Procesa la entrada física de mercancía generando lotes en cuarentena
-   */
   async receiveOrder(payload: ReceiveOrderPayload): Promise<PurchaseOrder> {
     const response = await apiClient.post<ApiResponse<PurchaseOrder>>(
-      `/purchasing/orders/${payload.orderId}/receive`,
-      payload,
+      `/orders/${payload.orderId}/receive`,
+      {
+        notes: payload.notes,
+        items: payload.items,
+      },
     );
     if (!response.data.data) {
       throw new Error(

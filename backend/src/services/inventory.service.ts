@@ -92,7 +92,13 @@ export class InventoryService {
     productId?: bigint;
     locationId?: number;
     status?: BatchStatus;
+    search?: string;
+    page?: number;
+    limit?: number;
   }) {
+    const limit = Math.min(Math.max(filter?.limit ?? 30, 1), 100);
+    const page = Math.max(filter?.page ?? 1, 1);
+
     return prisma.stockBatch.findMany({
       where: {
         ...(filter?.productId !== undefined
@@ -101,7 +107,24 @@ export class InventoryService {
         ...(filter?.locationId !== undefined
           ? { locationId: filter.locationId }
           : {}),
-        ...(filter?.status !== undefined ? { status: filter.status } : {}),
+        status: filter?.status ?? BatchStatus.DISPONIBLE,
+        ...(filter?.search
+          ? {
+              OR: [
+                { lotNumber: { contains: filter.search, mode: 'insensitive' } },
+                {
+                  product: {
+                    name: { contains: filter.search, mode: 'insensitive' },
+                  },
+                },
+                {
+                  product: {
+                    sku: { contains: filter.search, mode: 'insensitive' },
+                  },
+                },
+              ],
+            }
+          : {}),
       },
       include: {
         product: {
@@ -115,6 +138,8 @@ export class InventoryService {
         { expirationDate: 'asc' }, // FIFO: primero los más próximos a expirar
         { createdAt: 'desc' },
       ],
+      skip: (page - 1) * limit,
+      take: limit,
     });
   }
 

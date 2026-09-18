@@ -39,15 +39,29 @@ export const getBatches = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { productId, locationId, status } = req.query;
+    const { productId, locationId, status, search, page, limit } = req.query;
 
     const filter: {
       productId?: bigint;
       locationId?: number;
       status?: BatchStatus;
+      search?: string;
+      page?: number;
+      limit?: number;
     } = {};
     if (productId) filter.productId = BigInt(String(productId));
     if (locationId) filter.locationId = Number(locationId);
+    if (typeof search === 'string' && search.trim() !== '') {
+      filter.search = search.trim();
+    }
+    const parsedPage = Number(page);
+    const parsedLimit = Number(limit);
+    if (Number.isInteger(parsedPage) && parsedPage > 0) {
+      filter.page = parsedPage;
+    }
+    if (Number.isInteger(parsedLimit) && parsedLimit > 0) {
+      filter.limit = parsedLimit;
+    }
     if (
       typeof status === 'string' &&
       Object.values(BatchStatus).includes(status as BatchStatus)

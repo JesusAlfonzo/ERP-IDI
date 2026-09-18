@@ -1,26 +1,23 @@
 export type MovementType =
   | "ENTRADA_COMPRA"
-  | "ENTRADA_AJUSTE"
-  | "SALIDA_CONSUMO"
-  | "SALIDA_AJUSTE"
-  | "TRANSFERENCIA"
-  | "MERMA_VENCIMIENTO"
-  | "MERMA_ROTURA";
+  | "TRASLADO_A_LABORATORIO"
+  | "DESPACHO_SOLICITUD"
+  | "AJUSTE_INVENTARIO"
+  | "DESCARTE_MERMA";
 
 export interface KardexItem {
   id: number;
   createdAt: string;
   type: MovementType;
   quantity: number;
-  balanceAfter: number;
-  unitCostUsd: number;
-  totalCostUsd: number;
+  balanceAfter: number | null;
+  unitCost: number | null;
   reason?: string | null;
   referenceDoc?: string | null;
   performedBy: {
     fullName: string;
     username: string;
-  };
+  } | null;
   batch: {
     lotNumber: string;
     expirationDate: string | null;

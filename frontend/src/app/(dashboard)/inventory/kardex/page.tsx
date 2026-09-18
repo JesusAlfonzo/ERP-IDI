@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { InventoryClientService } from "@/services/inventory.service";
-import { ReportClientService } from "@/services/report.service";
+import { downloadCsv } from "@/lib/csv";
 import { AuthService } from "@/services/auth.service";
 import type { KardexItem, MovementType } from "@/types/kardex";
 import type { PaginationMeta } from "@/types/api";
@@ -19,18 +19,14 @@ import {
   FileText,
 } from "lucide-react";
 
-const MOVEMENT_LABELS: Record<
-  MovementType,
-  { label: string; isPositive: boolean }
-> = {
-  ENTRADA_COMPRA: { label: "Entrada Compra", isPositive: true },
-  ENTRADA_AJUSTE: { label: "Entrada Ajuste", isPositive: true },
-  SALIDA_CONSUMO: { label: "Consumo Rutina", isPositive: false },
-  SALIDA_AJUSTE: { label: "Salida Ajuste", isPositive: false },
-  TRANSFERENCIA: { label: "Transferencia", isPositive: false },
-  MERMA_VENCIMIENTO: { label: "Merma Vencida", isPositive: false },
-  MERMA_ROTURA: { label: "Merma Daño", isPositive: false },
-};
+const MOVEMENT_LABELS: Record<MovementType, { label: string; color: string }> =
+  {
+    ENTRADA_COMPRA: { label: "Entrada por Compra", color: "emerald" },
+    TRASLADO_A_LABORATORIO: { label: "Salida a Laboratorio", color: "purple" },
+    DESPACHO_SOLICITUD: { label: "Salida a Sala", color: "purple" },
+    AJUSTE_INVENTARIO: { label: "Ajuste de Inventario", color: "blue" },
+    DESCARTE_MERMA: { label: "Merma", color: "red" },
+  };
 
 export default function KardexPage() {
   const router = useRouter();
@@ -87,7 +83,32 @@ export default function KardexPage() {
   const handleExportCSV = async () => {
     setDownloading(true);
     try {
-      await ReportClientService.downloadKardexCSV();
+      const today = new Date().toISOString().slice(0, 10);
+      downloadCsv(
+        `kardex_inventario_${today}.csv`,
+        [
+          "Fecha",
+          "Tipo",
+          "Producto",
+          "SKU",
+          "Lote",
+          "Cantidad",
+          "Unidad",
+          "Usuario",
+          "Motivo",
+        ],
+        items.map((row) => [
+          new Date(row.createdAt).toLocaleString("es-VE"),
+          MOVEMENT_LABELS[row.type]?.label || row.type,
+          row.batch.product.name,
+          row.batch.product.sku,
+          row.batch.lotNumber,
+          row.quantity,
+          row.batch.product.unitOfMeasure,
+          row.performedBy?.fullName || row.performedBy?.username || "Sistema",
+          row.reason,
+        ]),
+      );
     } finally {
       setDownloading(false);
     }
@@ -202,8 +223,8 @@ export default function KardexPage() {
                 <th className="py-3 px-4">Lote</th>
                 <th className="py-3 px-4 text-right">Cantidad</th>
                 <th className="py-3 px-4 text-right">Saldo Tras Mov.</th>
-                <th className="py-3 px-4 text-right">Costo Unit.</th>
                 <th className="py-3 px-4">Responsable</th>
+                <th className="py-3 px-4">Observación</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -222,10 +243,8 @@ export default function KardexPage() {
                 </tr>
               ) : (
                 items.map((row) => {
-                  const movement = MOVEMENT_LABELS[row.type] || {
-                    label: row.type,
-                    isPositive: false,
-                  };
+                  const movement = MOVEMENT_LABELS[row.type];
+                  const isPositive = row.quantity >= 0;
                   return (
                     <tr
                       key={row.id}
@@ -240,17 +259,21 @@ export default function KardexPage() {
                       <td className="py-3 px-4">
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold text-[10px] ${
-                            movement.isPositive
+                            movement?.color === "emerald"
                               ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              : "bg-amber-50 text-amber-700 border border-amber-200"
+                              : movement?.color === "purple"
+                                ? "bg-purple-50 text-purple-700 border border-purple-200"
+                                : movement?.color === "red"
+                                  ? "bg-red-50 text-red-700 border border-red-200"
+                                  : "bg-blue-50 text-blue-700 border border-blue-200"
                           }`}
                         >
-                          {movement.isPositive ? (
+                          {isPositive ? (
                             <ArrowDownLeft className="w-3 h-3" />
                           ) : (
                             <ArrowUpRight className="w-3 h-3" />
                           )}
-                          {movement.label}
+                          {movement?.label || row.type}
                         </span>
                       </td>
                       <td className="py-3 px-4">
@@ -266,28 +289,24 @@ export default function KardexPage() {
                       </td>
                       <td
                         className={`py-3 px-4 text-right font-bold ${
-                          movement.isPositive
-                            ? "text-emerald-600"
-                            : "text-slate-800"
+                          isPositive ? "text-emerald-600" : "text-red-600"
                         }`}
                       >
-                        {movement.isPositive
-                          ? `+${row.quantity}`
-                          : `-${row.quantity}`}
+                        {row.quantity > 0 ? `+${row.quantity}` : row.quantity}
                         <span className="text-[10px] font-normal text-slate-500 ml-1">
                           {row.batch.product.unitOfMeasure}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right font-semibold text-slate-700">
-                        {row.balanceAfter}
-                      </td>
-                      <td className="py-3 px-4 text-right text-slate-600 font-mono">
-                        ${Number(row.unitCostUsd).toFixed(2)}
+                        {row.balanceAfter ?? "-"}
                       </td>
                       <td className="py-3 px-4 text-slate-600">
                         {row.performedBy?.fullName ||
                           row.performedBy?.username ||
                           "Sistema"}
+                      </td>
+                      <td className="py-3 px-4 text-slate-500 max-w-xs truncate">
+                        {row.reason || "-"}
                       </td>
                     </tr>
                   );

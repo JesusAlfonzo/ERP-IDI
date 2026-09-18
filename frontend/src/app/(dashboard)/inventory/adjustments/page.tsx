@@ -14,6 +14,8 @@ import {
   AlertCircle,
   Loader2,
   Package,
+  Search,
+  Calendar,
 } from "lucide-react";
 
 interface ActiveBatchOption {
@@ -65,6 +67,7 @@ export default function AdjustmentsPage() {
   const router = useRouter();
   const [batches, setBatches] = useState<ActiveBatchOption[]>([]);
   const [loadingBatches, setLoadingBatches] = useState(true);
+  const [batchSearch, setBatchSearch] = useState("");
 
   // Estado del Formulario
   const [selectedBatchId, setSelectedBatchId] = useState<string>("");
@@ -83,14 +86,15 @@ export default function AdjustmentsPage() {
   const loadBatches = useCallback(async () => {
     setLoadingBatches(true);
     try {
-      const data = await InventoryClientService.getActiveBatches();
+      const data =
+        await InventoryClientService.searchActiveBatches(batchSearch);
       setBatches(data);
     } catch {
       // Manejado por interceptor global
     } finally {
       setLoadingBatches(false);
     }
-  }, []);
+  }, [batchSearch]);
 
   useEffect(() => {
     const init = async () => {
@@ -103,6 +107,11 @@ export default function AdjustmentsPage() {
     init();
   }, [router, loadBatches]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => loadBatches(), 300);
+    return () => window.clearTimeout(timer);
+  }, [batchSearch, loadBatches]);
+
   const selectedBatch = batches.find((b) => b.id === Number(selectedBatchId));
 
   const handleSubmit = async (e: FormEvent) => {
@@ -113,11 +122,18 @@ export default function AdjustmentsPage() {
       !selectedBatchId ||
       !quantity ||
       Number(quantity) <= 0 ||
-      !reason.trim()
+      !reason.trim() ||
+      ((adjustmentType === "MERMA_ROTURA" ||
+        adjustmentType === "MERMA_VENCIMIENTO") &&
+        reason.trim().length < 5)
     ) {
       setFeedback({
         status: "error",
-        message: "Complete todos los campos obligatorios con valores válidos.",
+        message:
+          adjustmentType === "MERMA_ROTURA" ||
+          adjustmentType === "MERMA_VENCIMIENTO"
+            ? "Complete los campos obligatorios y use un motivo de merma de al menos 5 caracteres."
+            : "Complete todos los campos obligatorios con valores válidos.",
       });
       return;
     }
@@ -136,13 +152,28 @@ export default function AdjustmentsPage() {
 
     setSubmitting(true);
     try {
-      const res = await InventoryClientService.createAdjustment({
-        batchId: Number(selectedBatchId),
-        type: adjustmentType,
-        quantity: Number(quantity),
-        reason: reason.trim(),
-        referenceDoc: referenceDoc.trim() || undefined,
-      });
+      const res =
+        adjustmentType === "MERMA_ROTURA" ||
+        adjustmentType === "MERMA_VENCIMIENTO"
+          ? await InventoryClientService.registerDirectWaste({
+              batchId: Number(selectedBatchId),
+              quantity: Number(quantity),
+              reason: reason.trim(),
+            })
+          : await InventoryClientService.createAdjustment({
+              notes: referenceDoc.trim() || undefined,
+              items: [
+                {
+                  batchId: Number(selectedBatchId),
+                  action:
+                    adjustmentType === "ENTRADA_AJUSTE"
+                      ? "INCREMENTO"
+                      : "DECREMENTO",
+                  quantity: Number(quantity),
+                  reason: reason.trim(),
+                },
+              ],
+            });
 
       setFeedback({
         status: "success",
@@ -240,25 +271,69 @@ export default function AdjustmentsPage() {
           <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
             Lote Afectado
           </label>
-          <select
-            value={selectedBatchId}
-            onChange={(e) => setSelectedBatchId(e.target.value)}
-            disabled={loadingBatches}
-            className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
-            required
-          >
-            <option value="">
-              {loadingBatches
-                ? "Cargando lotes disponibles..."
-                : "-- Seleccione un lote --"}
-            </option>
-            {batches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.product.name} ({b.product.sku}) - Lote #{b.lotNumber} |
-                Stock: {b.currentQuantity} {b.product.unitOfMeasure}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+            <input
+              value={batchSearch}
+              onChange={(e) => {
+                setBatchSearch(e.target.value);
+                setSelectedBatchId("");
+              }}
+              placeholder="Buscar por insumo, SKU o número de lote..."
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
+              required={!selectedBatchId}
+            />
+            {(batchSearch || batches.length > 0) && !selectedBatchId && (
+              <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg">
+                {loadingBatches ? (
+                  <div className="p-3 text-xs text-slate-500">
+                    Buscando lotes...
+                  </div>
+                ) : batches.length === 0 ? (
+                  <div className="p-3 text-xs text-slate-500">
+                    No se encontraron lotes disponibles.
+                  </div>
+                ) : (
+                  batches.map((batch) => (
+                    <button
+                      type="button"
+                      key={batch.id}
+                      onClick={() => {
+                        setSelectedBatchId(String(batch.id));
+                        setBatchSearch(
+                          `${batch.product.name} · #${batch.lotNumber}`,
+                        );
+                      }}
+                      className="w-full text-left px-3 py-2.5 border-b border-slate-100 hover:bg-blue-50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <strong className="text-xs text-slate-800 truncate">
+                          {batch.product.name}
+                        </strong>
+                        <span className="text-[10px] font-mono font-bold text-blue-700">
+                          #{batch.lotNumber}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mt-1 text-[10px] text-slate-500">
+                        <span>{batch.product.sku}</span>
+                        <span className="font-semibold text-emerald-700">
+                          {batch.currentQuantity} {batch.product.unitOfMeasure}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {batch.expirationDate
+                            ? new Date(
+                                batch.expirationDate,
+                              ).toLocaleDateString()
+                            : "Sin vencimiento"}
+                        </span>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Ficha rápida del lote seleccionado */}
           {selectedBatch && (

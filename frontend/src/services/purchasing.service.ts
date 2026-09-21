@@ -3,120 +3,236 @@ import type { ApiResponse } from "@/types/api";
 import type {
   PurchaseOrder,
   Supplier,
-  Currency,
-  CreatePurchaseOrderPayload,
-  CreateSupplierPayload,
-  RegisterPaymentPayload,
-  SupplierPayment,
-  ReceiveOrderPayload,
   SupplierDebt,
   SupplierStatement,
+  SupplierPayment,
+  Currency,
+  CreateSupplierPayload,
+  RegisterPaymentPayload,
+  CreatePurchaseOrderPayload,
+  ReceiveOrderPayload,
 } from "@/types/purchasing";
 
+export interface OrderItemDetail {
+  id: string | number;
+  productId: string | number;
+  unitId: number;
+  quantityOrdered: number | string;
+  quantityReceived: number | string;
+  quantityRejected: number | string;
+  multiplier: number | string;
+  baseQuantity: number | string;
+  unitPrice: number | string;
+  taxRate: number | string;
+  totalLine: number | string;
+  product?: {
+    id: string | number;
+    name: string;
+    sku: string;
+    isReagent: boolean;
+    baseUnit?: { abbreviation: string };
+  };
+  unit?: {
+    id: number;
+    name: string;
+    abbreviation: string;
+  };
+}
+
+export interface OrderDetail {
+  id: string | number;
+  orderNumber: string;
+  supplierId: number | null;
+  currencyId: number;
+  exchangeRate: number | string;
+  status:
+    | "BORRADOR"
+    | "PENDIENTE"
+    | "APROBADA"
+    | "PARCIAL"
+    | "COMPLETADA"
+    | "CANCELADA";
+  paymentStatus: "PENDIENTE" | "PARCIAL" | "PAGADO";
+  receptionStatus: "PENDIENTE" | "PARCIAL" | "COMPLETO";
+  subtotal: number | string;
+  taxTotal: number | string;
+  total: number | string;
+  notes: string | null;
+  createdAt: string;
+  supplier?: {
+    id: number;
+    name: string;
+    rif: string;
+    contactName?: string | null;
+    phone?: string | null;
+    email?: string | null;
+  } | null;
+  currency?: {
+    id: number;
+    code: string;
+    name: string;
+    symbol: string;
+  };
+  createdBy?: {
+    id: number;
+    fullName: string | null;
+    email: string;
+  };
+  items: OrderItemDetail[];
+  payments?: {
+    id: number;
+    amount: number | string;
+    paymentMethod: string;
+    reference: string | null;
+    createdAt: string;
+  }[];
+  invoices?: {
+    id: number;
+    invoiceNumber: string;
+    controlNumber: string | null;
+    total: number | string;
+    createdAt: string;
+  }[];
+}
+
 export const PurchasingClientService = {
-  /**
-   * Obtiene la lista de monedas configuradas
-   * Endpoint backend: GET /api/currencies
-   */
-  async getCurrencies(): Promise<Currency[]> {
-    const response =
-      await apiClient.get<ApiResponse<Currency[]>>("/currencies");
-    return response.data.data || [];
-  },
-
-  async getOrders(status?: string): Promise<PurchaseOrder[]> {
-    const params = status ? `?status=${status}` : "";
-    const response = await apiClient.get<ApiResponse<PurchaseOrder[]>>(
-      `/orders${params}`,
-    );
-    return response.data.data || [];
-  },
-
-  async getOrderById(orderId: number): Promise<PurchaseOrder> {
-    const response = await apiClient.get<ApiResponse<PurchaseOrder>>(
-      `/orders/${orderId}`,
-    );
-    if (!response.data.data) {
-      throw new Error(response.data.message || "Orden no encontrada");
+  // --- Órdenes de Compra ---
+  getOrders: async (
+    filters?: { search?: string; status?: string } | string,
+  ): Promise<PurchaseOrder[]> => {
+    let query = "";
+    if (typeof filters === "string" && filters.trim() !== "") {
+      query = `?status=${encodeURIComponent(filters.trim())}`;
+    } else if (typeof filters === "object" && filters !== null) {
+      const params = new URLSearchParams();
+      if (filters.search) params.append("search", filters.search);
+      if (filters.status) params.append("status", filters.status);
+      const str = params.toString();
+      if (str) query = `?${str}`;
     }
-    return response.data.data;
-  },
 
-  async getSuppliers(): Promise<Supplier[]> {
-    const response = await apiClient.get<ApiResponse<Supplier[]>>("/suppliers");
-    return response.data.data || [];
-  },
-
-  async getSupplierDebts(): Promise<SupplierDebt[]> {
-    const response =
-      await apiClient.get<ApiResponse<SupplierDebt[]>>("/suppliers/debts");
-    return response.data.data || [];
-  },
-
-  async getSupplierStatement(id: number): Promise<SupplierStatement> {
-    const response = await apiClient.get<ApiResponse<SupplierStatement>>(
-      `/suppliers/${id}/statement`,
+    const res = await apiClient.get<ApiResponse<PurchaseOrder[]>>(
+      `/orders${query}`,
     );
-    if (!response.data.data) {
-      throw new Error(
-        response.data.message || "Estado de cuenta no disponible",
-      );
-    }
-    return response.data.data;
+    return res.data.data || [];
   },
 
-  async createSupplier(payload: CreateSupplierPayload): Promise<Supplier> {
-    const response = await apiClient.post<ApiResponse<Supplier>>(
-      "/suppliers",
-      payload,
+  getOrderById: async (id: string | number): Promise<PurchaseOrder> => {
+    const res = await apiClient.get<ApiResponse<PurchaseOrder>>(
+      `/orders/${id}`,
     );
-    if (!response.data.data) {
-      throw new Error(response.data.message || "Error al crear el proveedor");
-    }
-    return response.data.data;
+    const data = res.data.data;
+    if (!data) throw new Error("Orden no encontrada");
+    return data;
   },
 
-  async registerPayment(
-    payload: RegisterPaymentPayload,
-  ): Promise<SupplierPayment> {
-    const response = await apiClient.post<ApiResponse<SupplierPayment>>(
-      `/suppliers/${payload.supplierId}/payments`,
-      payload,
-    );
-    if (!response.data.data) {
-      throw new Error(response.data.message || "Error al registrar el pago");
-    }
-    return response.data.data;
-  },
-
-  async createOrder(
-    payload: CreatePurchaseOrderPayload,
-  ): Promise<PurchaseOrder> {
-    const response = await apiClient.post<ApiResponse<PurchaseOrder>>(
+  createOrder: async (
+    payload:
+      | CreatePurchaseOrderPayload
+      | {
+          supplierId?: number | null;
+          currencyId: number;
+          notes?: string | null;
+          items: {
+            productId: string | number;
+            unitId: number;
+            quantityOrdered: number;
+            unitPrice: number;
+          }[];
+        },
+  ): Promise<PurchaseOrder> => {
+    const res = await apiClient.post<ApiResponse<PurchaseOrder>>(
       "/orders",
       payload,
     );
-    if (!response.data.data) {
-      throw new Error(
-        response.data.message || "Error al generar la orden de compra",
-      );
-    }
-    return response.data.data;
+    const data = res.data.data;
+    if (!data) throw new Error("Error al registrar orden de compra");
+    return data;
   },
 
-  async receiveOrder(payload: ReceiveOrderPayload): Promise<PurchaseOrder> {
-    const response = await apiClient.post<ApiResponse<PurchaseOrder>>(
-      `/orders/${payload.orderId}/receive`,
-      {
-        notes: payload.notes,
-        items: payload.items,
-      },
-    );
-    if (!response.data.data) {
-      throw new Error(
-        response.data.message || "Error al procesar la recepción",
+  receiveOrder: async (
+    payloadOrOrderId: ReceiveOrderPayload | string | number,
+    maybePayload?: {
+      notes?: string;
+      items: {
+        orderItemId: string | number;
+        quantityReceived: number;
+        lotNumber: string;
+        expirationDate: string;
+        locationId?: number;
+      }[];
+    },
+  ): Promise<PurchaseOrder> => {
+    if (typeof payloadOrOrderId === "object") {
+      const { orderId, ...body } = payloadOrOrderId;
+      const res = await apiClient.post<ApiResponse<PurchaseOrder>>(
+        `/orders/${orderId}/receive`,
+        body,
       );
+      const data = res.data.data;
+      if (!data) throw new Error("Error al registrar recepción de orden");
+      return data;
     }
-    return response.data.data;
+
+    const res = await apiClient.post<ApiResponse<PurchaseOrder>>(
+      `/orders/${payloadOrOrderId}/receive`,
+      maybePayload,
+    );
+    const data = res.data.data;
+    if (!data) throw new Error("Error al registrar recepción de orden");
+    return data;
+  },
+
+  // --- Monedas ---
+  getCurrencies: async (): Promise<Currency[]> => {
+    const res = await apiClient.get<ApiResponse<Currency[]>>("/currencies");
+    return res.data.data || [];
+  },
+
+  // --- Proveedores y Cartera de Pagos ---
+  getSuppliers: async (): Promise<Supplier[]> => {
+    const res = await apiClient.get<ApiResponse<Supplier[]>>("/suppliers");
+    return res.data.data || [];
+  },
+
+  createSupplier: async (payload: CreateSupplierPayload): Promise<Supplier> => {
+    const res = await apiClient.post<ApiResponse<Supplier>>(
+      "/suppliers",
+      payload,
+    );
+    const data = res.data.data;
+    if (!data) throw new Error("Error al registrar proveedor");
+    return data;
+  },
+
+  getSupplierDebts: async (): Promise<SupplierDebt[]> => {
+    const res =
+      await apiClient.get<ApiResponse<SupplierDebt[]>>("/suppliers/debts");
+    return res.data.data || [];
+  },
+
+  getSupplierStatement: async (
+    supplierId: number | string,
+  ): Promise<SupplierStatement> => {
+    const res = await apiClient.get<ApiResponse<SupplierStatement>>(
+      `/suppliers/${supplierId}/statement`,
+    );
+    const data = res.data.data;
+    if (!data) throw new Error("Estado de cuenta no disponible");
+    return data;
+  },
+
+  registerPayment: async (
+    payload: RegisterPaymentPayload,
+  ): Promise<SupplierPayment> => {
+    const res = await apiClient.post<ApiResponse<SupplierPayment>>(
+      "/suppliers/payments",
+      payload,
+    );
+    const data = res.data.data;
+    if (!data) throw new Error("Error al registrar el pago");
+    return data;
   },
 };
+
+export const PurchaseService = PurchasingClientService;

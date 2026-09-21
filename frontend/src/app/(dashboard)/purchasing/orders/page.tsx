@@ -26,27 +26,48 @@ import {
   Coins,
   Loader2,
   PackageCheck,
+  Eye,
 } from "lucide-react";
 
 const STATUS_BADGES: Record<
   PurchaseOrderStatus,
   { label: string; className: string }
 > = {
+  BORRADOR: {
+    label: "Borrador",
+    className: "bg-slate-100 text-slate-700 border-slate-200",
+  },
   PENDIENTE: {
     label: "Pendiente",
     className: "bg-amber-50 text-amber-700 border-amber-200",
   },
+  APROBADA: {
+    label: "Aprobada",
+    className: "bg-blue-50 text-blue-700 border-blue-200",
+  },
   EN_PROCESO: {
     label: "En Tránsito",
-    className: "bg-blue-50 text-blue-700 border-blue-200",
+    className: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  },
+  PARCIAL: {
+    label: "Parcial",
+    className: "bg-purple-50 text-purple-700 border-purple-200",
+  },
+  COMPLETADA: {
+    label: "Completada",
+    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
   },
   RECIBIDO: {
     label: "Recibido",
     className: "bg-emerald-50 text-emerald-700 border-emerald-200",
   },
+  CANCELADA: {
+    label: "Cancelada",
+    className: "bg-rose-50 text-rose-700 border-rose-200",
+  },
   CANCELADO: {
     label: "Cancelado",
-    className: "bg-red-50 text-red-700 border-red-200",
+    className: "bg-rose-50 text-rose-700 border-rose-200",
   },
 };
 
@@ -114,7 +135,7 @@ export default function PurchaseOrdersPage() {
     const init = async () => {
       if (isMounted) await loadData();
     };
-    init();
+    void init();
     return () => {
       isMounted = false;
     };
@@ -245,11 +266,12 @@ export default function PurchaseOrdersPage() {
         </div>
 
         <button
+          type="button"
           onClick={() => {
             setIsModalOpen(true);
             setFeedback(null);
           }}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto"
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           Nueva Orden de Compra
@@ -263,19 +285,24 @@ export default function PurchaseOrdersPage() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-blue-500"
+            className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none"
           >
             <option value="">Todos los estados</option>
+            <option value="BORRADOR">Borradores</option>
             <option value="PENDIENTE">Pendientes</option>
+            <option value="APROBADA">Aprobadas</option>
             <option value="EN_PROCESO">En Tránsito</option>
+            <option value="PARCIAL">Entregas Parciales</option>
+            <option value="COMPLETADA">Completadas</option>
             <option value="RECIBIDO">Recibidos</option>
-            <option value="CANCELADO">Cancelados</option>
+            <option value="CANCELADA">Canceladas</option>
           </select>
         </div>
 
         <button
+          type="button"
           onClick={() => loadData()}
-          className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs"
+          className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs cursor-pointer"
           title="Actualizar listado"
         >
           <RefreshCw
@@ -296,7 +323,7 @@ export default function PurchaseOrdersPage() {
                 <th className="py-3 px-4 text-center">Moneda</th>
                 <th className="py-3 px-4 text-center">Renglones</th>
                 <th className="py-3 px-4 text-center">Estado</th>
-                <th className="py-3 px-4 text-center">Acción</th>
+                <th className="py-3 px-4 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -319,6 +346,12 @@ export default function PurchaseOrdersPage() {
                     label: order.status,
                     className: "bg-slate-50 text-slate-700",
                   };
+                  const canReceive =
+                    order.status !== "RECIBIDO" &&
+                    order.status !== "COMPLETADA" &&
+                    order.status !== "CANCELADA" &&
+                    order.status !== "CANCELADO";
+
                   return (
                     <tr
                       key={String(order.id)}
@@ -332,9 +365,9 @@ export default function PurchaseOrdersPage() {
                           <Building2 className="w-3.5 h-3.5 text-slate-400" />
                           {order.supplier?.name || "Proveedor General"}
                         </div>
-                        {order.supplier?.rifOrId && (
+                        {(order.supplier?.rifOrId || order.supplier?.rif) && (
                           <div className="text-[10px] text-slate-400 font-mono">
-                            {order.supplier.rifOrId}
+                            {order.supplier.rifOrId || order.supplier.rif}
                           </div>
                         )}
                       </td>
@@ -356,18 +389,24 @@ export default function PurchaseOrdersPage() {
                           {badge.label}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-center">
-                        {order.status !== "RECIBIDO" &&
-                        order.status !== "CANCELADO" ? (
+                      <td className="py-3 px-4 text-center space-x-1.5">
+                        <Link
+                          href={`/purchasing/orders/${order.id}`}
+                          className="inline-flex items-center gap-1 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors"
+                          title="Ver detalle de la orden"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Detalle
+                        </Link>
+                        {canReceive && (
                           <Link
                             href={`/purchasing/orders/${order.id}/receive`}
-                            className="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors"
+                            className="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors"
+                            title="Recibir mercancía"
                           >
                             <PackageCheck className="w-3.5 h-3.5" />
                             Recibir
                           </Link>
-                        ) : (
-                          <span className="text-slate-300 text-xs">-</span>
                         )}
                       </td>
                     </tr>
@@ -391,8 +430,9 @@ export default function PurchaseOrdersPage() {
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -425,14 +465,14 @@ export default function PurchaseOrdersPage() {
                   <select
                     value={supplierId}
                     onChange={(e) => setSupplierId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
                   >
                     <option value="">
                       -- Proveedor Opcional / Caja Chica --
                     </option>
                     {suppliers.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.name} ({s.rifOrId})
+                        {s.name} ({s.rifOrId || s.rif || "N/A"})
                       </option>
                     ))}
                   </select>
@@ -446,7 +486,7 @@ export default function PurchaseOrdersPage() {
                   <select
                     value={currencyId}
                     onChange={(e) => setCurrencyId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
                     required
                   >
                     {currencies.map((c) => (
@@ -467,7 +507,7 @@ export default function PurchaseOrdersPage() {
                   <button
                     type="button"
                     onClick={handleAddItem}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" /> Agregar renglón
                   </button>
@@ -484,7 +524,7 @@ export default function PurchaseOrdersPage() {
                         onChange={(e) =>
                           handleProductSelect(idx, Number(e.target.value))
                         }
-                        className="w-full bg-white border border-slate-300 rounded-md px-2 py-1.5 text-xs text-slate-800"
+                        className="w-full bg-white border border-slate-300 rounded-md px-2 py-1.5 text-xs text-slate-800 outline-none"
                         required
                       >
                         <option value="0">-- Seleccionar insumo --</option>
@@ -509,7 +549,7 @@ export default function PurchaseOrdersPage() {
                             Number(e.target.value),
                           )
                         }
-                        className="w-full bg-white border border-slate-300 rounded-md px-2 py-1.5 text-xs text-slate-800"
+                        className="w-full bg-white border border-slate-300 rounded-md px-2 py-1.5 text-xs text-slate-800 outline-none"
                         required
                       />
                     </div>
@@ -532,7 +572,7 @@ export default function PurchaseOrdersPage() {
                               Number(e.target.value),
                             )
                           }
-                          className="w-full bg-white border border-slate-300 rounded-md pl-6 pr-2 py-1.5 text-xs text-slate-800"
+                          className="w-full bg-white border border-slate-300 rounded-md pl-6 pr-2 py-1.5 text-xs text-slate-800 outline-none"
                           required
                         />
                       </div>
@@ -543,7 +583,7 @@ export default function PurchaseOrdersPage() {
                         type="button"
                         onClick={() => handleRemoveItem(idx)}
                         disabled={items.length === 1}
-                        className="text-slate-400 hover:text-red-500 disabled:opacity-30"
+                        className="text-slate-400 hover:text-red-500 disabled:opacity-30 cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -574,7 +614,7 @@ export default function PurchaseOrdersPage() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Especificaciones sobre transporte en frío, acuerdos de pago..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
 
@@ -583,14 +623,14 @@ export default function PurchaseOrdersPage() {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
+                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50"
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   {submitting ? "Emitiendo orden..." : "Crear Orden de Compra"}

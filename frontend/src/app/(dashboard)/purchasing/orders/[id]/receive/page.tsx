@@ -4,8 +4,10 @@ import { useState, useEffect, useCallback, type FormEvent } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { PurchasingClientService } from "@/services/purchasing.service";
+import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
 import type { PurchaseOrder, PurchaseOrderItem } from "@/types/purchasing";
+import type { Location } from "@/types/inventory";
 import {
   PackageCheck,
   ArrowLeft,
@@ -23,19 +25,22 @@ interface ReceptionRow {
   productName: string;
   sku: string;
   unitOfMeasure: string;
+  multiplier: number;
   orderedQuantity: number;
   pendingQuantity: number;
   receivedQuantity: number;
   lotNumber: string;
   expirationDate: string;
+  locationId: number;
 }
 
 export default function ReceiveOrderPage() {
   const router = useRouter();
   const params = useParams();
-  const orderId = Number(params.id);
+  const orderId = Number(params?.id);
 
   const [order, setOrder] = useState<PurchaseOrder | null>(null);
+  const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
   const [itemsData, setItemsData] = useState<ReceptionRow[]>([]);
@@ -45,18 +50,26 @@ export default function ReceiveOrderPage() {
     message: string;
   } | null>(null);
 
-  const loadOrder = useCallback(async () => {
+  const loadOrderAndCatalogs = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await PurchasingClientService.getOrderById(orderId);
-      setOrder(data);
+      const [orderData, locs] = await Promise.all([
+        PurchasingClientService.getOrderById(orderId),
+        InventoryClientService.getLocations().catch(() => []),
+      ]);
 
-      const rows: ReceptionRow[] = (data.items || [])
+      setOrder(orderData);
+      setLocations(locs);
+
+      const defaultLocId = locs[0]?.id ? Number(locs[0].id) : 1;
+
+      const rows: ReceptionRow[] = (orderData.items || [])
         .map((item: PurchaseOrderItem) => {
           const ordered = Number(item.quantityOrdered) || 0;
           const received = Number(item.quantityReceived) || 0;
           const rejected = Number(item.quantityRejected) || 0;
           const pending = Math.max(0, ordered - received + rejected);
+          const mult = Number(item.multiplier) || 1;
 
           return {
             orderItemId: Number(item.id),
@@ -64,21 +77,24 @@ export default function ReceiveOrderPage() {
             productName: item.product?.name || `Producto #${item.productId}`,
             sku: item.product?.sku || "N/A",
             unitOfMeasure:
+              item.unit?.abbreviation ||
               item.product?.baseUnit?.abbreviation ||
               item.product?.unitOfMeasure ||
-              "Unid",
+              "und",
+            multiplier: mult,
             orderedQuantity: ordered,
             pendingQuantity: pending,
             receivedQuantity: pending,
             lotNumber: "",
             expirationDate: "",
+            locationId: defaultLocId,
           };
         })
-        .filter((row) => row.pendingQuantity > 0);
+        .filter((row: ReceptionRow) => row.pendingQuantity > 0);
 
       setItemsData(rows);
-    } catch {
-      // Manejado por interceptor global
+    } catch (err: unknown) {
+      console.error("Error al cargar orden", err);
     } finally {
       setLoading(false);
     }
@@ -91,13 +107,13 @@ export default function ReceiveOrderPage() {
       return;
     }
     const init = async () => {
-      if (isMounted) await loadOrder();
+      if (isMounted) await loadOrderAndCatalogs();
     };
     init();
     return () => {
       isMounted = false;
     };
-  }, [router, loadOrder]);
+  }, [router, loadOrderAndCatalogs]);
 
   const handleRowChange = (
     index: number,
@@ -134,7 +150,7 @@ export default function ReceiveOrderPage() {
       setFeedback({
         status: "error",
         message:
-          "Verifique que todos los lotes tengan número, fecha de vencimiento y una cantidad no superior a la pendiente.",
+          "Verifique que todos los lotes tengan número de identificación, fecha de vencimiento y una cantidad válida dentro del saldo pendiente.",
       });
       return;
     }
@@ -149,17 +165,18 @@ export default function ReceiveOrderPage() {
           lotNumber: row.lotNumber.trim().toUpperCase(),
           expirationDate: row.expirationDate,
           quantityReceived: Number(row.receivedQuantity),
-          locationId: 1,
+          locationId: Number(row.locationId),
         })),
       });
 
       setFeedback({
         status: "success",
-        message: "Mercancía recibida. Los lotes ingresaron a Cuarentena.",
+        message:
+          "Mercancía recibida e inventario actualizado. Los lotes ingresaron a Cuarentena bajo control de calidad.",
       });
 
       setTimeout(() => {
-        router.push("/quality/quarantine");
+        router.push(`/purchasing/orders/${orderId}`);
       }, 1200);
     } catch (err: unknown) {
       setFeedback({
@@ -179,7 +196,7 @@ export default function ReceiveOrderPage() {
       <div className="h-96 flex items-center justify-center text-slate-500">
         <Loader2 className="w-6 h-6 animate-spin mr-2 text-blue-600" />
         <span className="text-sm font-medium">
-          Consultando orden de compra...
+          Consultando orden de compra y almacenes...
         </span>
       </div>
     );
@@ -198,9 +215,9 @@ export default function ReceiveOrderPage() {
       {/* Encabezado */}
       <div className="flex items-center gap-3">
         <Link
-          href="/purchasing/orders"
+          href={`/purchasing/orders/${orderId}`}
           className="p-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 transition-colors shadow-2xs"
-          title="Volver a Órdenes"
+          title="Volver al detalle de la orden"
         >
           <ArrowLeft className="w-4 h-4" />
         </Link>
@@ -272,14 +289,14 @@ export default function ReceiveOrderPage() {
           </h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
             Todos los renglones de esta orden ya han sido recibidos en su
-            totalidad.
+            totalidad en el inventario.
           </p>
           <div className="pt-2">
             <Link
-              href="/purchasing/orders"
+              href={`/purchasing/orders/${orderId}`}
               className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-semibold"
             >
-              Regresar a Órdenes
+              Regresar al Detalle
             </Link>
           </div>
         </div>
@@ -293,7 +310,7 @@ export default function ReceiveOrderPage() {
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ej: Factura 00492 / Despacho en frío"
+              placeholder="Ej: Guía de traslado 00492 / Cadena de frío preservada"
               className="w-full sm:w-96 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-mono"
             />
           </div>
@@ -304,93 +321,124 @@ export default function ReceiveOrderPage() {
                 <Package className="w-4 h-4 text-slate-500" />
                 Renglones Pendientes por Recibir
               </span>
-              <span className="text-[11px] text-slate-400">
-                Lotes registrados en <b>EN_CUARENTENA</b>
+              <span className="text-[11px] text-slate-500">
+                Estado asignado: <b className="text-amber-700">EN_CUARENTENA</b>
               </span>
             </div>
 
             <div className="divide-y divide-slate-100 p-5 space-y-4">
-              {itemsData.map((row, idx) => (
-                <div
-                  key={row.orderItemId || idx}
-                  className="pt-4 first:pt-0 grid grid-cols-1 md:grid-cols-12 gap-3 items-center"
-                >
-                  <div className="md:col-span-4">
-                    <div className="font-semibold text-xs text-slate-800">
-                      {row.productName}
+              {itemsData.map((row, idx) => {
+                const baseEquivalent = row.receivedQuantity * row.multiplier;
+                return (
+                  <div
+                    key={row.orderItemId || idx}
+                    className="pt-4 first:pt-0 grid grid-cols-1 md:grid-cols-12 gap-3 items-center"
+                  >
+                    <div className="md:col-span-3">
+                      <div className="font-semibold text-xs text-slate-800">
+                        {row.productName}
+                      </div>
+                      <div className="font-mono text-[10px] text-slate-400">
+                        SKU: {row.sku}
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        Pendiente:{" "}
+                        <b className="text-blue-700">
+                          {row.pendingQuantity} / {row.orderedQuantity}{" "}
+                          {row.unitOfMeasure}
+                        </b>
+                      </div>
+                      {row.multiplier > 1 && (
+                        <div className="text-[10px] text-blue-600 font-medium">
+                          Factor: x{row.multiplier} (= {baseEquivalent} base)
+                        </div>
+                      )}
                     </div>
-                    <div className="font-mono text-[10px] text-slate-400">
-                      SKU: {row.sku}
+
+                    <div className="md:col-span-2">
+                      <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">
+                        Cant. a Recibir
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="1"
+                        max={row.pendingQuantity}
+                        value={row.receivedQuantity}
+                        onChange={(e) =>
+                          handleRowChange(
+                            idx,
+                            "receivedQuantity",
+                            Number(e.target.value),
+                          )
+                        }
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold"
+                        required
+                      />
                     </div>
-                    <div className="text-[11px] text-slate-500">
-                      Pendiente:{" "}
-                      <b className="text-blue-700">
-                        {row.pendingQuantity} / {row.orderedQuantity}{" "}
-                        {row.unitOfMeasure}
-                      </b>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">
+                        Lote Fabricante *
+                      </label>
+                      <input
+                        type="text"
+                        value={row.lotNumber}
+                        onChange={(e) =>
+                          handleRowChange(idx, "lotNumber", e.target.value)
+                        }
+                        placeholder="LOTE-2026-X"
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-mono uppercase"
+                        required
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 uppercase mb-1">
+                        <Calendar className="w-3 h-3" /> Vencimiento *
+                      </label>
+                      <input
+                        type="date"
+                        value={row.expirationDate}
+                        onChange={(e) =>
+                          handleRowChange(idx, "expirationDate", e.target.value)
+                        }
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
+                        required
+                      />
+                    </div>
+
+                    <div className="md:col-span-3">
+                      <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">
+                        Ubicación Física
+                      </label>
+                      <select
+                        value={row.locationId}
+                        onChange={(e) =>
+                          handleRowChange(
+                            idx,
+                            "locationId",
+                            Number(e.target.value),
+                          )
+                        }
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
+                      >
+                        {locations.map((loc) => (
+                          <option key={loc.id} value={loc.id}>
+                            {loc.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">
-                      Cant. Recibida
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="1"
-                      max={row.pendingQuantity}
-                      value={row.receivedQuantity}
-                      onChange={(e) =>
-                        handleRowChange(
-                          idx,
-                          "receivedQuantity",
-                          Number(e.target.value),
-                        )
-                      }
-                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold"
-                      required
-                    />
-                  </div>
-
-                  <div className="md:col-span-3">
-                    <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">
-                      N° Lote Fabricante *
-                    </label>
-                    <input
-                      type="text"
-                      value={row.lotNumber}
-                      onChange={(e) =>
-                        handleRowChange(idx, "lotNumber", e.target.value)
-                      }
-                      placeholder="Lote del empaque"
-                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-mono"
-                      required
-                    />
-                  </div>
-
-                  <div className="md:col-span-3">
-                    <label className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 uppercase mb-1">
-                      <Calendar className="w-3 h-3" /> Fecha Expiración *
-                    </label>
-                    <input
-                      type="date"
-                      value={row.expirationDate}
-                      onChange={(e) =>
-                        handleRowChange(idx, "expirationDate", e.target.value)
-                      }
-                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
-                      required
-                    />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
           <div className="flex justify-end gap-3 pt-2">
             <Link
-              href="/purchasing/orders"
+              href={`/purchasing/orders/${orderId}`}
               className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors"
             >
               Cancelar

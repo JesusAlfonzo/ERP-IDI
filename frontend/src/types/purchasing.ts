@@ -1,8 +1,16 @@
 export type PurchaseOrderStatus =
+  | "BORRADOR"
   | "PENDIENTE"
+  | "APROBADA"
+  | "PARCIAL"
+  | "COMPLETADA"
+  | "CANCELADA"
   | "EN_PROCESO"
   | "RECIBIDO"
   | "CANCELADO";
+
+export type PaymentStatus = "PENDIENTE" | "PARCIAL" | "PAGADO";
+export type ReceptionStatus = "PENDIENTE" | "PARCIAL" | "COMPLETO";
 
 export interface Currency {
   id: number;
@@ -14,20 +22,26 @@ export interface Currency {
 
 export interface SupplierPayment {
   id: number;
-  amountUsd: number;
+  amountUsd?: number;
+  amount?: number;
   paymentMethod:
     | "TRANSFERENCIA_USD"
     | "TRANSFERENCIA_BS"
     | "EFECTIVO_USD"
-    | "PAGO_MOVIL";
-  referenceNumber: string;
-  paymentDate: string;
+    | "EFECTIVO_BS"
+    | "PAGO_MOVIL"
+    | string;
+  referenceNumber?: string;
+  reference?: string | null;
+  paymentDate?: string;
   notes?: string | null;
+  createdAt?: string;
 }
 
 export interface Supplier {
   id: number;
-  rifOrId: string;
+  rifOrId?: string;
+  rif?: string;
   name: string;
   contactName?: string | null;
   phone?: string | null;
@@ -94,18 +108,33 @@ export interface SupplierStatement {
 
 export interface PurchaseOrderItem {
   id: number;
+  orderId?: number;
   productId: number;
-  unitId: number;
+  unitId?: number;
   quantityOrdered: number;
   quantityReceived?: number;
   quantityRejected?: number;
+  multiplier?: number;
+  baseQuantity?: number;
   unitPrice: number;
+  taxRate?: number;
+  totalLine?: number;
   product?: {
     id: number;
     name: string;
     sku?: string | null;
+    isReagent?: boolean;
     unitOfMeasure?: string;
-    baseUnit?: { abbreviation: string; name: string };
+    baseUnit?: {
+      id?: number;
+      name?: string;
+      abbreviation: string;
+    };
+  };
+  unit?: {
+    id: number;
+    name: string;
+    abbreviation: string;
   };
 }
 
@@ -113,16 +142,30 @@ export interface PurchaseOrder {
   id: number;
   orderNumber?: string;
   status: PurchaseOrderStatus;
+  paymentStatus?: PaymentStatus;
+  receptionStatus?: ReceptionStatus;
   supplierId?: number | null;
   currencyId: number;
+  exchangeRate?: number;
   supplier?: Supplier | null;
   currency?: Currency;
+  subtotal?: number;
+  taxTotal?: number;
+  total?: number;
   totalAmount?: number;
   totalAmountUsd?: number;
   notes?: string | null;
   expectedDeliveryDate?: string | null;
   createdAt: string;
   items: PurchaseOrderItem[];
+  payments?: SupplierPayment[];
+  invoices?: Array<{
+    id: number;
+    invoiceNumber: string;
+    controlNumber?: string | null;
+    total: number;
+    createdAt: string;
+  }>;
 }
 
 export interface CreateOrderItemPayload {

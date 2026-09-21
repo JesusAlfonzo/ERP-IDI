@@ -66,21 +66,16 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
     AuthService.logout();
   };
 
-  // Extraer tasa más reciente soportando exchangeRates o rates
-  const getLatestRate = (code: string) => {
-    const curr = currencies.find((c) => c.code === code);
-    const rateObj = curr?.exchangeRates?.[0] || curr?.rates?.[0];
-    return rateObj?.rate ? Number(rateObj.rate) : null;
-  };
+  // Lectura directa desde latestRate mapeado por el backend
+  const vesItem = currencies.find((c) => c.code === "VES");
+  const eurItem = currencies.find((c) => c.code === "EUR");
 
-  const vesRate = getLatestRate("VES");
-  const eurRate = getLatestRate("EUR");
+  const vesRate = vesItem?.latestRate ? Number(vesItem.latestRate) : null;
+  const eurRate = eurItem?.latestRate ? Number(eurItem.latestRate) : null;
 
   const handleOpenRateModal = () => {
-    // Por defecto seleccionar VES si existe
-    const ves = currencies.find((c) => c.code === "VES");
-    if (ves) {
-      setSelectedCurrencyId(ves.id);
+    if (vesItem) {
+      setSelectedCurrencyId(vesItem.id);
       setNewRate(vesRate ? String(vesRate) : "");
     }
     setShowRateModal(true);
@@ -89,8 +84,7 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
   const handleCurrencySelectionChange = (currId: number) => {
     setSelectedCurrencyId(currId);
     const curr = currencies.find((c) => c.id === currId);
-    const r = curr?.exchangeRates?.[0] || curr?.rates?.[0];
-    setNewRate(r?.rate ? String(r.rate) : "");
+    setNewRate(curr?.latestRate ? String(curr.latestRate) : "");
   };
 
   const handleSaveRate = async (e: React.FormEvent) => {
@@ -273,7 +267,7 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
             </div>
             <p className="text-xs text-slate-500">
               Selecciona la divisa a actualizar contra el Dólar Estadounidense
-              ($1 USD).
+              ($1 USD base).
             </p>
 
             <form onSubmit={handleSaveRate} className="space-y-3">
@@ -286,10 +280,10 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
                   onChange={(e) =>
                     handleCurrencySelectionChange(Number(e.target.value))
                   }
-                  className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-600 outline-none text-slate-700"
+                  className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-600 outline-none text-slate-500"
                 >
                   {currencies
-                    .filter((c) => c.code !== "USD") // El dólar es base 1.0
+                    .filter((c) => !c.isDefault && c.code !== "USD")
                     .map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name} ({c.code} - {c.symbol})
@@ -309,7 +303,7 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
                   placeholder="Ej: 45.2500"
                   value={newRate}
                   onChange={(e) => setNewRate(e.target.value)}
-                  className="w-full text-sm font-mono border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-600 outline-none text-slate-700" 
+                  className="w-full text-sm font-mono border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-600 outline-none text-slate-500"
                 />
               </div>
 

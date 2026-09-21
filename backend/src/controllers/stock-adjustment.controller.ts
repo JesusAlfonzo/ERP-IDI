@@ -216,3 +216,30 @@ export const listStockMovements = async (
     next(error);
   }
 };
+
+export const getStockMovementById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    if (!id) {
+      res
+        .status(400)
+        .json({ status: 'BAD_REQUEST', message: 'ID no proporcionado' });
+      return;
+    }
+
+    const movement = await StockAdjustmentService.getMovementById(BigInt(id));
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      data: serializeBigInt(movement),
+    });
+  } catch (error) {
+    next(error);
+  }
+};

@@ -4,6 +4,7 @@ import {
   registerDirectWaste,
   updateBatchStatus,
   listStockMovements,
+  getStockMovementById,
 } from '../controllers/stock-adjustment.controller.js';
 import { authenticateJWT } from '../middlewares/auth.middleware.js';
 import { requireRoles } from '../middlewares/role.middleware.js';
@@ -22,6 +23,12 @@ router.get(
   '/movements',
   requireRoles(['ADMINISTRADOR', 'ALMACENISTA']),
   listStockMovements
+);
+
+router.get(
+  '/movements/:id',
+  requireRoles(['ADMINISTRADOR', 'ALMACENISTA']),
+  getStockMovementById
 );
 
 router.post(

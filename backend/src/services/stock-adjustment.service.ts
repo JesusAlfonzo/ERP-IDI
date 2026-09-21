@@ -396,4 +396,54 @@ export class StockAdjustmentService {
 
     return createPaginatedResponse(movements, totalItems, pagination);
   }
+
+  /**
+   * Obtiene el detalle completo de un movimiento individual de Kardex
+   */
+  static async getMovementById(id: bigint) {
+    const movement = await prisma.stockMovement.findUnique({
+      where: { id },
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            fullName: true,
+            username: true,
+            department: true,
+          },
+        },
+        originLocation: true,
+        destinationLocation: true,
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            supplier: { select: { name: true } },
+          },
+        },
+        items: {
+          include: {
+            batch: {
+              include: {
+                product: {
+                  include: {
+                    baseUnit: true,
+                    purchaseUnit: true,
+                    category: true,
+                  },
+                },
+                location: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!movement) {
+      throw new Error('Movimiento de inventario no encontrado');
+    }
+
+    return movement;
+  }
 }

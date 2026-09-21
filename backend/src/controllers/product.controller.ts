@@ -35,12 +35,10 @@ export const createCategory = async (
   try {
     const { name, description } = req.body;
     if (!name) {
-      res
-        .status(400)
-        .json({
-          status: 'BAD_REQUEST',
-          message: 'El nombre de la categoría es requerido',
-        });
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'El nombre de la categoría es requerido',
+      });
       return;
     }
     const category = await ProductService.createCategory(
@@ -61,12 +59,10 @@ export const createBrand = async (
   try {
     const { name } = req.body;
     if (!name) {
-      res
-        .status(400)
-        .json({
-          status: 'BAD_REQUEST',
-          message: 'El nombre de la marca es requerido',
-        });
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'El nombre de la marca es requerido',
+      });
       return;
     }
     const brand = await ProductService.createBrand(name);
@@ -151,6 +147,31 @@ export const createProduct = async (
     const product = await ProductService.createProduct(newProductData);
 
     res.status(201).json({
+      status: 'SUCCESS',
+      data: serializeBigInt(product),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getProductById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!id) {
+      res
+        .status(400)
+        .json({ status: 'BAD_REQUEST', message: 'ID no proporcionado' });
+      return;
+    }
+
+    const product = await ProductService.getProductById(BigInt(id));
+    res.status(200).json({
       status: 'SUCCESS',
       data: serializeBigInt(product),
     });

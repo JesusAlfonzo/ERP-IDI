@@ -4,6 +4,7 @@ import {
   createCategory,
   createBrand,
   getProducts,
+  getProductById,
   createProduct,
 } from '../controllers/product.controller.js';
 import { authenticateJWT } from '../middlewares/auth.middleware.js';
@@ -11,13 +12,13 @@ import { requireRoles } from '../middlewares/role.middleware.js';
 
 const router: Router = Router();
 
-// Rutas protegidas (lectura permitida a usuarios autenticados)
 router.use(authenticateJWT);
 
 router.get('/catalogs', getCatalogs);
 router.get('/', getProducts);
+router.get('/:id', getProductById);
 
-// Creación reservada para administración, compras y laboratorio
+// Creación
 router.post(
   '/categories',
   requireRoles(['ADMINISTRADOR', 'COMPRAS']),

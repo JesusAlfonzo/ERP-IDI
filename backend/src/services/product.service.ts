@@ -104,6 +104,12 @@ export class ProductService {
         brand: true,
         baseUnit: true,
         purchaseUnit: true,
+        stockBatches: {
+          include: {
+            location: true,
+          },
+          orderBy: [{ expirationDate: 'asc' }, { createdAt: 'desc' }],
+        },
       },
     });
 
@@ -111,7 +117,14 @@ export class ProductService {
       throw new Error('Producto no encontrado');
     }
 
-    return product;
+    const totalStock = product.stockBatches
+      .filter((b) => b.status === BatchStatus.DISPONIBLE)
+      .reduce((acc, b) => acc + Number(b.currentQuantity), 0);
+
+    return {
+      ...product,
+      totalStock,
+    };
   }
 
   static async createProduct(data: CreateProductDTO) {

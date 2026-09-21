@@ -1,584 +1,352 @@
 "use client";
 
-import { useState, useEffect, useCallback, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
-import { UserClientService } from "@/services/user.service";
-import { AuthService } from "@/services/auth.service";
-import type { SystemUser, UserRole } from "@/types/users";
+import React, { useState, useEffect, useTransition } from "react";
+import { UserService, UserItem, UserRole } from "@/services/user.service";
 import {
-  Users,
-  UserPlus,
   Shield,
-  Search,
-  RefreshCw,
-  KeyRound,
-  UserCheck,
-  UserX,
-  X,
-  CheckCircle2,
-  AlertCircle,
+  UserPlus,
+  Key,
+  ShieldCheck,
+  Check,
   Loader2,
   Lock,
+  UserCheck,
+  UserX,
 } from "lucide-react";
 
-const ROLE_BADGES: Record<UserRole, { label: string; className: string }> = {
-  ADMINISTRADOR: {
-    label: "Admin Global",
-    className: "bg-purple-50 text-purple-700 border-purple-200",
-  },
-  ALMACENISTA: {
-    label: "Almacén Central",
-    className: "bg-blue-50 text-blue-700 border-blue-200",
-  },
-  ANALISTA_LABORATORIO: {
-    label: "Bioanálisis / Sala",
-    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  },
-  COMPRAS: {
-    label: "Adquisiciones",
-    className: "bg-amber-50 text-amber-700 border-amber-200",
-  },
-  SOLICITANTE: {
-    label: "Solicitante",
-    className: "bg-slate-50 text-slate-700 border-slate-200",
-  },
-};
-
-const DEPARTMENTS = [
-  "Dirección / Administración",
-  "Almacén y Suministros",
-  "Inmunogenética",
-  "Inmunología Celular",
-  "Inmunopatología",
-  "Alergia e Inmunología Clínica",
-  "Laboratorio General",
-  "Compras y Finanzas",
-  "Aseguramiento de Calidad",
-];
-
 export default function AdminUsersPage() {
-  const router = useRouter();
-  const [users, setUsers] = useState<SystemUser[]>([]);
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [roles, setRoles] = useState<UserRole[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [, startTransition] = useTransition();
 
-  // Modal Crear Usuario
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [fullName, setFullName] = useState("");
-  const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [roles, setRoles] = useState<UserRole[]>(["SOLICITANTE"]);
-  const [department, setDepartment] = useState(DEPARTMENTS[0]);
-  const [submittingUser, setSubmittingUser] = useState(false);
+  // Modales
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
-  // Modal Reseteo de Password
-  const [userToReset, setUserToReset] = useState<SystemUser | null>(null);
+  // Estados de trabajo
+  const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
+  const [selectedRoleIds, setSelectedRoleIds] = useState<number[]>([]);
   const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [submittingReset, setSubmittingReset] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Notificaciones
-  const [feedback, setFeedback] = useState<{
-    status: "success" | "error";
-    message: string;
-  } | null>(null);
+  // Formulario nuevo usuario
+  const [createForm, setCreateForm] = useState({
+    username: "",
+    email: "",
+    password: "",
+    fullName: "",
+    department: "Laboratorio de Inmunología",
+    roleIds: [] as number[],
+  });
 
-  const loadUsers = useCallback(async () => {
-    setLoading(true);
+  const loadData = async () => {
     try {
-      const data = await UserClientService.getUsers();
-      setUsers(data);
-    } catch {
-      // Manejado por interceptor global
+      const [uData, rData] = await Promise.all([
+        UserService.getUsers(),
+        UserService.getAvailableRoles(),
+      ]);
+      setUsers(uData);
+      setRoles(rData);
+    } catch (err) {
+      console.error("Error al cargar datos de usuarios", err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
+
   useEffect(() => {
-    const init = async () => {
-      const user = AuthService.getCurrentUser();
-      if (!AuthService.isAuthenticated()) {
-        router.replace("/login");
-        return;
-      }
-      if (!user?.roles?.includes("ADMINISTRADOR")) {
-        router.replace("/dashboard");
-        return;
-      }
-      await loadUsers();
-    };
-    init();
-  }, [router, loadUsers]);
+    startTransition(() => {
+      void loadData();
+    });
+  }, []);
 
-  const filteredUsers = users.filter(
-    (u) =>
-      u.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+  // Abrir modal para editar roles
+  const handleOpenRoleModal = (user: UserItem) => {
+    setSelectedUser(user);
+    // Identificar IDs de los roles actuales
+    const currentRoleIds = roles
+      .filter((r) => user.roles.includes(r.name))
+      .map((r) => r.id);
+    setSelectedRoleIds(currentRoleIds);
+    setShowRoleModal(true);
+  };
 
-  const handleCreateUser = async (e: FormEvent) => {
+  const handleToggleRoleSelection = (roleId: number) => {
+    setSelectedRoleIds((prev) =>
+      prev.includes(roleId)
+        ? prev.filter((id) => id !== roleId)
+        : [...prev, roleId],
+    );
+  };
+
+  const handleSaveRoles = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFeedback(null);
-
-    if (
-      !fullName.trim() ||
-      !username.trim() ||
-      !email.trim() ||
-      roles.length === 0
-    ) {
-      setFeedback({
-        status: "error",
-        message:
-          "Complete todos los campos obligatorios y asigne al menos un rol.",
-      });
-      return;
-    }
-
-    setSubmittingUser(true);
+    if (!selectedUser) return;
+    setSubmitting(true);
     try {
-      await UserClientService.createUser({
-        fullName: fullName.trim(),
-        username: username.trim().toLowerCase(),
-        email: email.trim().toLowerCase(),
-        password: password.trim() || undefined,
-        roles,
-        department,
-      });
-
-      setFeedback({
-        status: "success",
-        message: "Usuario institucional registrado exitosamente.",
-      });
-      await loadUsers();
-
-      setTimeout(() => {
-        setIsCreateModalOpen(false);
-        setFullName("");
-        setUsername("");
-        setEmail("");
-        setPassword("");
-        setFeedback(null);
-      }, 1000);
-    } catch (err: unknown) {
-      setFeedback({
-        status: "error",
-        message:
-          err instanceof Error ? err.message : "Error al registrar usuario.",
-      });
+      await UserService.syncUserRoles(selectedUser.id, selectedRoleIds);
+      await loadData();
+      setShowRoleModal(false);
+    } catch (err) {
+      console.error("Error sincronizando roles", err);
+      alert("Error al actualizar los roles del usuario");
     } finally {
-      setSubmittingUser(false);
+      setSubmitting(false);
     }
   };
 
-  const handleToggleStatus = async (user: SystemUser) => {
-    const actionText = user.isActive ? "desactivar" : "reactivar";
-    if (
-      !confirm(`¿Está seguro de ${actionText} la cuenta de ${user.fullName}?`)
-    )
-      return;
-
+  // Alternar estado activo / inactivo
+  const handleToggleActive = async (user: UserItem) => {
     try {
-      await UserClientService.toggleUserStatus(user.id, !user.isActive);
-      await loadUsers();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Error al modificar estado");
+      await UserService.updateUser(user.id, { isActive: !user.isActive });
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === user.id ? { ...u, isActive: !u.isActive } : u,
+        ),
+      );
+    } catch (err) {
+      console.error("Error cambiando estado", err);
+      alert("No se pudo cambiar el estado del usuario");
     }
   };
 
-  const handleResetPassword = async (e: FormEvent) => {
+  // Restablecer contraseña
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (
-      !userToReset ||
-      newPassword.length < 8 ||
-      newPassword !== confirmPassword
-    ) {
-      setFeedback({
-        status: "error",
-        message:
-          "La contraseña debe tener 8 caracteres y coincidir con su confirmación.",
-      });
+    if (!selectedUser || newPassword.length < 8) {
+      alert("La contraseña debe tener mínimo 8 caracteres");
       return;
     }
-    setFeedback(null);
-
-    setSubmittingReset(true);
+    setSubmitting(true);
     try {
-      await UserClientService.resetPassword(userToReset.id, {
-        newPassword: newPassword.trim(),
-      });
-      setFeedback({
-        status: "success",
-        message: "Contraseña actualizada exitosamente.",
-      });
-
-      setTimeout(() => {
-        setUserToReset(null);
-        setNewPassword("");
-        setConfirmPassword("");
-        setFeedback(null);
-      }, 1000);
-    } catch (err: unknown) {
-      setFeedback({
-        status: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "Error al restablecer contraseña.",
-      });
+      await UserService.resetPassword(selectedUser.id, newPassword);
+      alert("Contraseña restablecida exitosamente");
+      setShowPasswordModal(false);
+      setNewPassword("");
+    } catch (err) {
+      console.error("Error restableciendo contraseña", err);
+      alert("Error al restablecer la contraseña");
     } finally {
-      setSubmittingReset(false);
+      setSubmitting(false);
+    }
+  };
+
+  // Crear usuario
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (createForm.roleIds.length === 0) {
+      alert("Debe seleccionar al menos un rol para el usuario");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await UserService.createUser(createForm);
+      await loadData();
+      setShowCreateModal(false);
+      setCreateForm({
+        username: "",
+        email: "",
+        password: "",
+        fullName: "",
+        department: "Laboratorio de Inmunología",
+        roleIds: [],
+      });
+    } catch (err: unknown) {
+      console.error("Error creando usuario", err);
+      alert(
+        "Error al registrar usuario. Verifique si el usuario o email ya existe.",
+      );
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Encabezado */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <Shield className="w-6 h-6 text-purple-600" />
-            Administración de Usuarios y Permisos RBAC
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <Shield className="w-6 h-6 text-blue-600" />
+            Usuarios y Control de Acceso (RBAC)
           </h1>
-          <p className="text-xs text-slate-500">
-            Control de cuentas del personal, roles de acceso y credenciales de
-            seguridad
+          <p className="text-sm text-slate-500">
+            Administración de cuentas departamentales, asignación de permisos y
+            estados de acceso.
           </p>
         </div>
-
         <button
-          onClick={() => {
-            setIsCreateModalOpen(true);
-            setFeedback(null);
-          }}
-          className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto"
+          onClick={() => setShowCreateModal(true)}
+          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-all shadow-xs"
         >
           <UserPlus className="w-4 h-4" />
-          Registrar Usuario
+          Nuevo Usuario
         </button>
       </div>
 
-      {/* Barra de Búsqueda y Actualizar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-4">
-        <div className="relative w-full sm:w-80">
-          <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-            <Search className="w-4 h-4" />
-          </span>
-          <input
-            type="text"
-            placeholder="Buscar por nombre, usuario o email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:ring-2 focus:ring-purple-500"
-          />
+      {loading ? (
+        <div className="flex justify-center p-12">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
-
-        <button
-          onClick={() => loadUsers()}
-          className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs"
-          title="Actualizar listado"
-        >
-          <RefreshCw
-            className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
-          />
-        </button>
-      </div>
-
-      {/* Tabla de Usuarios */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-              <tr>
-                <th className="py-3 px-4">Usuario</th>
-                <th className="py-3 px-4">Nombre Completo</th>
-                <th className="py-3 px-4">Departamento</th>
-                <th className="py-3 px-4 text-center">Rol Asignado</th>
-                <th className="py-3 px-4 text-center">Estado</th>
-                <th className="py-3 px-4 text-center">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading ? (
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-xs font-semibold text-slate-500 text-left">
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-purple-600 mb-2" />
-                    Cargando directorio de usuarios...
-                  </td>
+                  <th className="py-3 px-4">Usuario</th>
+                  <th className="py-3 px-4">Nombre Completo</th>
+                  <th className="py-3 px-4">Departamento</th>
+                  <th className="py-3 px-4">Roles Asignados</th>
+                  <th className="py-3 px-4 text-center">Estado</th>
+                  <th className="py-3 px-4 text-right">Acciones</th>
                 </tr>
-              ) : filteredUsers.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400">
-                    No se encontraron usuarios coincidentes.
-                  </td>
-                </tr>
-              ) : (
-                filteredUsers.map((user) => {
-                  const userRoles = user.roles || [];
-
-                  return (
-                    <tr
-                      key={user.id}
-                      className="hover:bg-slate-50/60 transition-colors"
-                    >
-                      <td className="py-3 px-4">
-                        <div className="font-mono font-bold text-slate-800">
-                          @{user.username}
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          {user.email}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 font-semibold text-slate-800">
-                        {user.fullName}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600">
-                        {user.department}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex flex-wrap justify-center gap-1">
-                          {userRoles.map((userRole) => {
-                            const roleBadge = ROLE_BADGES[userRole];
-                            return roleBadge ? (
-                              <span
-                                key={userRole}
-                                className={`inline-block rounded border px-2 py-0.5 text-[10px] font-bold ${roleBadge.className}`}
-                              >
-                                {roleBadge.label}
-                              </span>
-                            ) : null;
-                          })}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${
-                            user.isActive
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : "bg-slate-100 text-slate-500 border-slate-200"
-                          }`}
-                        >
-                          {user.isActive ? "Activo" : "Inactivo"}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => {
-                              setUserToReset(user);
-                              setNewPassword("");
-                              setConfirmPassword("");
-                              setFeedback(null);
-                            }}
-                            className="p-1 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors"
-                            title="Restablecer Contraseña"
-                          >
-                            <KeyRound className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleToggleStatus(user)}
-                            className={`p-1 rounded transition-colors ${
-                              user.isActive
-                                ? "text-slate-400 hover:text-red-600 hover:bg-red-50"
-                                : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50"
-                            }`}
-                            title={
-                              user.isActive
-                                ? "Desactivar Usuario"
-                                : "Activar Usuario"
-                            }
-                          >
-                            {user.isActive ? (
-                              <UserX className="w-3.5 h-3.5" />
-                            ) : (
-                              <UserCheck className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Modal: Crear Nuevo Usuario */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-purple-600" />
-                <h3 className="font-bold text-slate-800 text-base">
-                  Registrar Nuevo Personal
-                </h3>
-              </div>
-              <button
-                onClick={() => setIsCreateModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {feedback && (
-              <div
-                className={`p-3 rounded-lg text-xs flex items-center gap-2 border ${
-                  feedback.status === "success"
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                    : "bg-red-50 border-red-200 text-red-800"
-                }`}
-              >
-                {feedback.status === "success" ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                )}
-                <span>{feedback.message}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCreateUser} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Nombre Completo
-                </label>
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Ej: Dra. María González"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-purple-500"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Nombre de Usuario
-                  </label>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="mgonzalez"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-purple-500 font-mono"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Correo Electrónico
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="mgonzalez@idi.ucv.ve"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-purple-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <span className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Roles Institucionales
-                  </span>
-                  <div className="space-y-1 rounded-lg border border-slate-300 bg-slate-50 p-2">
-                    {(
-                      [
-                        ["ADMINISTRADOR", "Administrador Global"],
-                        ["ALMACENISTA", "Almacén Central"],
-                        ["ANALISTA_LABORATORIO", "Laboratorio / Bioanalista"],
-                        ["COMPRAS", "Compras y Proveedores"],
-                        ["SOLICITANTE", "Solicitante"],
-                      ] as const
-                    ).map(([value, label]) => (
-                      <label
-                        key={value}
-                        className="flex items-center gap-2 text-xs text-slate-800"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={roles.includes(value)}
-                          onChange={(e) =>
-                            setRoles((current) =>
-                              e.target.checked
-                                ? [...new Set([...current, value])]
-                                : current.filter(
-                                    (roleValue) => roleValue !== value,
-                                  ),
-                            )
-                          }
-                          className="h-3.5 w-3.5 accent-purple-600"
-                        />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Departamento
-                  </label>
-                  <select
-                    value={department}
-                    onChange={(e) => setDepartment(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-purple-500"
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {users.map((u) => (
+                  <tr
+                    key={u.id}
+                    className="hover:bg-slate-50/80 transition-colors"
                   >
-                    {DEPARTMENTS.map((dept) => (
-                      <option key={dept} value={dept}>
-                        {dept}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <td className="py-3 px-4 font-mono font-semibold text-slate-900">
+                      {u.username}
+                      <div className="text-xs text-slate-400 font-sans font-normal">
+                        {u.email}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 font-medium text-slate-800">
+                      {u.fullName}
+                    </td>
+                    <td className="py-3 px-4 text-xs text-slate-600">
+                      {u.department ?? "N/A"}
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex flex-wrap gap-1">
+                        {u.roles.map((r) => (
+                          <span
+                            key={r}
+                            className="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200"
+                          >
+                            {r}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <button
+                        onClick={() => handleToggleActive(u)}
+                        className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full border cursor-pointer ${
+                          u.isActive
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-rose-50 text-rose-700 border-rose-200"
+                        }`}
+                        title="Click para alternar estado"
+                      >
+                        {u.isActive ? (
+                          <>
+                            <UserCheck className="w-3 h-3" /> Activo
+                          </>
+                        ) : (
+                          <>
+                            <UserX className="w-3 h-3" /> Inactivo
+                          </>
+                        )}
+                      </button>
+                    </td>
+                    <td className="py-3 px-4 text-right space-x-2">
+                      <button
+                        onClick={() => handleOpenRoleModal(u)}
+                        className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 transition-colors"
+                        title="Reasignar roles"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        Roles
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedUser(u);
+                          setShowPasswordModal(true);
+                        }}
+                        className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded bg-slate-100 hover:bg-amber-50 hover:text-amber-700 text-slate-700 transition-colors"
+                        title="Restablecer clave"
+                      >
+                        <Key className="w-3.5 h-3.5" />
+                        Clave
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Reasignar Roles */}
+      {showRoleModal && selectedUser && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl space-y-4">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-blue-600" />
+              Reasignar Roles a {selectedUser.username}
+            </h3>
+            <p className="text-xs text-slate-500">
+              Seleccione los permisos operativos que este usuario tendrá
+              vigentes en el sistema.
+            </p>
+
+            <form onSubmit={handleSaveRoles} className="space-y-3 pt-2">
+              <div className="space-y-2">
+                {roles.map((r) => {
+                  const checked = selectedRoleIds.includes(r.id);
+                  return (
+                    <div
+                      key={r.id}
+                      onClick={() => handleToggleRoleSelection(r.id)}
+                      className={`p-3 rounded-lg border cursor-pointer flex items-center justify-between transition-colors ${
+                        checked
+                          ? "border-blue-500 bg-blue-50/50 text-blue-900"
+                          : "border-slate-200 hover:bg-slate-50 text-slate-700"
+                      }`}
+                    >
+                      <div>
+                        <div className="text-xs font-bold">{r.name}</div>
+                        <div className="text-[11px] text-slate-500">
+                          {r.description}
+                        </div>
+                      </div>
+                      <div
+                        className={`w-5 h-5 rounded border flex items-center justify-center ${
+                          checked
+                            ? "bg-blue-600 border-blue-600 text-white"
+                            : "border-slate-300"
+                        }`}
+                      >
+                        {checked && <Check className="w-3.5 h-3.5" />}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Contraseña Temporal (Opcional)
-                </label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-2.5 flex items-center text-slate-400">
-                    <Lock className="w-3.5 h-3.5" />
-                  </span>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Dejar en blanco para autogenerar"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-8 pr-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-purple-500"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <div className="flex justify-end gap-2 pt-3">
                 <button
                   type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
+                  onClick={() => setShowRoleModal(false)}
+                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingUser}
-                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50"
+                  disabled={submitting}
+                  className="px-4 py-2 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg flex items-center gap-1.5"
                 >
-                  {submittingUser && (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                  {submitting && (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   )}
-                  {submittingUser ? "Registrando..." : "Guardar Personal"}
+                  Guardar Cambios
                 </button>
               </div>
             </form>
@@ -586,90 +354,213 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      {/* Modal: Reseteo de Contraseña */}
-      {userToReset && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-sm w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="font-bold text-slate-800 text-base">
-                  Restablecer Contraseña
-                </h3>
-                <p className="text-xs text-slate-500">
-                  @{userToReset.username} ({userToReset.fullName})
-                </p>
-              </div>
-              <button
-                onClick={() => setUserToReset(null)}
-                className="text-slate-400 hover:text-slate-600 p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {feedback && (
-              <div
-                className={`p-3 rounded-lg text-xs flex items-center gap-2 border ${
-                  feedback.status === "success"
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                    : "bg-red-50 border-red-200 text-red-800"
-                }`}
-              >
-                {feedback.status === "success" ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                )}
-                <span>{feedback.message}</span>
-              </div>
-            )}
+      {/* Modal Restablecer Clave */}
+      {showPasswordModal && selectedUser && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-sm w-full p-6 shadow-xl space-y-4">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Key className="w-5 h-5 text-amber-600" />
+              Restablecer Contraseña
+            </h3>
+            <p className="text-xs text-slate-500">
+              Usuario:{" "}
+              <span className="font-semibold text-slate-800">
+                {selectedUser.username}
+              </span>
+            </p>
 
             <form onSubmit={handleResetPassword} className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Nueva Contraseña
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nueva Contraseña (mínimo 8 caracteres)
                 </label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Mínimo 8 caracteres"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-purple-500"
-                  required
-                />
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                    <Lock className="w-4 h-4" />
+                  </span>
+                  <input
+                    type="password"
+                    required
+                    minLength={8}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-600 outline-none"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Confirmar Contraseña
-                </label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repita la contraseña"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-purple-500"
-                  required
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setUserToReset(null)}
-                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
+                  onClick={() => setShowPasswordModal(false)}
+                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingReset}
-                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50"
+                  disabled={submitting}
+                  className="px-4 py-2 text-xs bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg flex items-center gap-1.5"
                 >
-                  {submittingReset && (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                  {submitting && (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   )}
-                  {submittingReset ? "Guardando..." : "Cambiar Contraseña"}
+                  Actualizar Clave
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Nuevo Usuario */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <UserPlus className="w-5 h-5 text-blue-600" />
+              Crear Nuevo Usuario Institucional
+            </h3>
+
+            <form onSubmit={handleCreateUser} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Usuario
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="ej. jsanchez"
+                    value={createForm.username}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, username: e.target.value })
+                    }
+                    className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Correo UCV / IDI
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="correo@idi.ucv.ve"
+                    value={createForm.email}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, email: e.target.value })
+                    }
+                    className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nombre Completo
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="ej. Dra. Juana Sánchez"
+                  value={createForm.fullName}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, fullName: e.target.value })
+                  }
+                  className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Contraseña Inicial
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    minLength={8}
+                    placeholder="••••••••"
+                    value={createForm.password}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, password: e.target.value })
+                    }
+                    className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Departamento
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={createForm.department}
+                    onChange={(e) =>
+                      setCreateForm({
+                        ...createForm,
+                        department: e.target.value,
+                      })
+                    }
+                    className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Roles Asignados (Marque al menos uno)
+                </label>
+                <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto border p-2 rounded-lg bg-slate-50">
+                  {roles.map((r) => {
+                    const checked = createForm.roleIds.includes(r.id);
+                    return (
+                      <label
+                        key={r.id}
+                        className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer p-1 rounded hover:bg-slate-100"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setCreateForm((prev) => ({
+                              ...prev,
+                              roleIds: checked
+                                ? prev.roleIds.filter((id) => id !== r.id)
+                                : [...prev.roleIds, r.id],
+                            }));
+                          }}
+                          className="rounded text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="font-semibold">{r.name}</span>
+                        <span className="text-[10px] text-slate-400 truncate">
+                          ({r.description})
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-2 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg flex items-center gap-1.5"
+                >
+                  {submitting && (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  )}
+                  Crear Usuario
                 </button>
               </div>
             </form>

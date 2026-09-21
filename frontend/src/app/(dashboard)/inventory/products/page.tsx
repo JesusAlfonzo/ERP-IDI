@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
 import type { Product, Category, Brand, Unit } from "@/types/inventory";
@@ -18,6 +19,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  Eye,
 } from "lucide-react";
 
 export default function ProductsPage() {
@@ -251,19 +253,20 @@ export default function ProductsPage() {
                 <th className="py-3 px-4 text-center">Tipo</th>
                 <th className="py-3 px-4 text-right">Stock Disponible</th>
                 <th className="py-3 px-4 text-right">Alerta Mínima</th>
+                <th className="py-3 px-4 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2" />
                     Cargando catálogo de productos...
                   </td>
                 </tr>
               ) : products.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
                     No se encontraron insumos registrados en el catálogo.
                   </td>
                 </tr>
@@ -320,6 +323,16 @@ export default function ProductsPage() {
                       <span className="text-[10px] text-slate-400">
                         {p.baseUnit?.abbreviation}
                       </span>
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <Link
+                        href={`/inventory/products/${p.id}`}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 text-slate-600 hover:text-blue-700 text-xs font-semibold transition-all shadow-2xs"
+                        title="Ver detalle del insumo"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Ver Ficha</span>
+                      </Link>
                     </td>
                   </tr>
                 ))

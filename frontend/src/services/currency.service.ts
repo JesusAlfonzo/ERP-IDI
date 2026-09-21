@@ -1,21 +1,28 @@
 import { apiClient } from "@/lib/api-client";
 
-export interface CurrencyExchange {
-  id: number;
-  currencyId: number;
-  rate: string | number;
-  effectiveDate: string;
-  createdAt: string;
-}
-
 export interface CurrencyItem {
   id: number;
   code: string;
   name: string;
   symbol: string;
   isDefault: boolean;
-  exchangeRates?: CurrencyExchange[];
-  rates?: CurrencyExchange[];
+  latestRate: string | number | null;
+  effectiveDate: string | null;
+}
+
+export interface CurrencyExchangeRecord {
+  id: number;
+  currencyId: number;
+  rate: string | number;
+  effectiveDate: string;
+  createdById: number;
+  createdAt?: string;
+  currency?: {
+    id: number;
+    code: string;
+    name: string;
+    symbol: string;
+  };
 }
 
 export const CurrencyService = {
@@ -28,7 +35,7 @@ export const CurrencyService = {
     currencyId: number;
     rate: number;
     effectiveDate?: string;
-  }): Promise<CurrencyExchange> => {
+  }): Promise<CurrencyExchangeRecord> => {
     const res = await apiClient.post("/currencies/rate", data);
     return res.data?.data ?? res.data;
   },

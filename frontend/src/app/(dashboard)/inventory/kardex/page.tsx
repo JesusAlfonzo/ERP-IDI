@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { InventoryClientService } from "@/services/inventory.service";
 import { downloadCsv } from "@/lib/csv";
 import { AuthService } from "@/services/auth.service";
@@ -17,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  Eye,
 } from "lucide-react";
 
 const MOVEMENT_LABELS: Record<MovementType, { label: string; color: string }> =
@@ -135,9 +137,10 @@ export default function KardexPage() {
         </div>
 
         <button
+          type="button"
           onClick={handleExportCSV}
           disabled={downloading}
-          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors disabled:opacity-50 self-start sm:self-auto"
+          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors disabled:opacity-50 self-start sm:self-auto cursor-pointer"
         >
           <FileSpreadsheet className="w-4 h-4" />
           {downloading ? "Generando..." : "Exportar CSV"}
@@ -202,8 +205,9 @@ export default function KardexPage() {
           </div>
 
           <button
+            type="button"
             onClick={() => loadKardex()}
-            className="p-2 border border-slate-300 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs"
+            className="p-2 border border-slate-300 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs cursor-pointer"
             title="Recargar tabla"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -225,19 +229,20 @@ export default function KardexPage() {
                 <th className="py-3 px-4 text-right">Saldo Tras Mov.</th>
                 <th className="py-3 px-4">Responsable</th>
                 <th className="py-3 px-4">Observación</th>
+                <th className="py-3 px-4 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2" />
                     Cargando movimientos...
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
                     No se registraron movimientos con los filtros aplicados.
                   </td>
                 </tr>
@@ -308,6 +313,16 @@ export default function KardexPage() {
                       <td className="py-3 px-4 text-slate-500 max-w-xs truncate">
                         {row.reason || "-"}
                       </td>
+                      <td className="py-3 px-4 text-center">
+                        <Link
+                          href={`/inventory/kardex/${row.id}`}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 text-slate-600 hover:text-blue-700 text-xs font-semibold transition-all shadow-2xs"
+                          title="Ver comprobante de asiento"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Auditar</span>
+                        </Link>
+                      </td>
                     </tr>
                   );
                 })
@@ -326,17 +341,19 @@ export default function KardexPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               disabled={page <= 1 || loading}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="p-1.5 border border-slate-200 rounded-md bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="p-1.5 border border-slate-200 rounded-md bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               title="Página anterior"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
             <button
+              type="button"
               disabled={page >= meta.totalPages || loading}
               onClick={() => setPage((p) => p + 1)}
-              className="p-1.5 border border-slate-200 rounded-md bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="p-1.5 border border-slate-200 rounded-md bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               title="Página siguiente"
             >
               <ChevronRight className="w-4 h-4" />

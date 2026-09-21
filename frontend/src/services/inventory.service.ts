@@ -22,6 +22,11 @@ export const InventoryClientService = {
    * Obtiene la lista de productos
    * Endpoint backend: GET /api/products
    */
+  // Dentro del objeto o clase InventoryClientService
+  getMovementById: async (id: string | number) => {
+    const res = await apiClient.get(`/inventory/movements/${id}`);
+    return res.data?.data ?? res.data;
+  },
   async getProducts(filters?: ProductFilters): Promise<Product[]> {
     const params = new URLSearchParams();
     if (filters?.search) params.append("search", filters.search);

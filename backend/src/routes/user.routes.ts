@@ -26,11 +26,6 @@ router.patch(
   requireRoles(['ADMINISTRADOR']),
   resetPassword
 );
-router.post(
-  '/:id/reset-password',
-  requireRoles(['ADMINISTRADOR']),
-  resetPassword
-);
 router.put('/:id/roles', requireRoles(['ADMINISTRADOR']), syncUserRoles);
 
 export default router;

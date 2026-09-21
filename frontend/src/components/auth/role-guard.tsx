@@ -54,6 +54,12 @@ const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
       "SOLICITANTE",
     ],
   },
+  // En ROUTE_PERMISSIONS, añade la regla hija de Kardex antes del listado base:
+  {
+    pattern: /^\/inventory\/kardex\/[^/]+$/,
+    roles: ["ADMINISTRADOR", "ALMACENISTA"],
+  },
+  { pattern: "/inventory/kardex", roles: ["ADMINISTRADOR", "ALMACENISTA"] },
 ];
 
 interface RoleGuardProps {

@@ -1,62 +1,62 @@
 import { apiClient } from "@/lib/api-client";
-import type { ApiResponse } from "@/types/api";
-import type {
-  SystemUser,
-  CreateUserPayload,
-  UpdateUserPayload,
-  ResetPasswordPayload,
-} from "@/types/users";
 
-export const UserClientService = {
-  async getUsers(): Promise<SystemUser[]> {
-    const response = await apiClient.get<ApiResponse<SystemUser[]>>("/users");
-    return response.data.data || [];
+export interface UserRole {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
+export interface UserItem {
+  id: number;
+  username: string;
+  email: string;
+  fullName: string;
+  department: string | null;
+  isActive: boolean;
+  roles: string[];
+  createdAt: string;
+}
+
+export const UserService = {
+  getUsers: async (): Promise<UserItem[]> => {
+    const res = await apiClient.get("/users");
+    return res.data?.data ?? res.data;
   },
 
-  async createUser(payload: CreateUserPayload): Promise<SystemUser> {
-    const response = await apiClient.post<ApiResponse<SystemUser>>(
-      "/users",
-      payload,
-    );
-    if (!response.data.data) {
-      throw new Error(response.data.message || "Error al registrar el usuario");
-    }
-    return response.data.data;
+  getAvailableRoles: async (): Promise<UserRole[]> => {
+    const res = await apiClient.get("/users/roles");
+    return res.data?.data ?? res.data;
   },
 
-  async updateUser(
-    userId: number,
-    payload: UpdateUserPayload,
-  ): Promise<SystemUser> {
-    const response = await apiClient.patch<ApiResponse<SystemUser>>(
-      `/users/${userId}`,
-      payload,
-    );
-    if (!response.data.data) {
-      throw new Error(
-        response.data.message || "Error al actualizar el usuario",
-      );
-    }
-    return response.data.data;
+  createUser: async (payload: {
+    username: string;
+    email: string;
+    password: string;
+    fullName: string;
+    department: string;
+    roleIds: number[];
+  }): Promise<UserItem> => {
+    const res = await apiClient.post("/users", payload);
+    return res.data?.data ?? res.data;
   },
 
-  async toggleUserStatus(
-    userId: number,
-    isActive: boolean,
-  ): Promise<SystemUser> {
-    return this.updateUser(userId, { isActive });
+  updateUser: async (
+    id: number,
+    payload: Partial<{
+      fullName: string;
+      department: string;
+      isActive: boolean;
+    }>,
+  ): Promise<UserItem> => {
+    const res = await apiClient.patch(`/users/${id}`, payload);
+    return res.data?.data ?? res.data;
   },
 
-  async resetPassword(
-    userId: number,
-    payload: ResetPasswordPayload,
-  ): Promise<{ message: string }> {
-    const response = await apiClient.patch<ApiResponse<{ message: string }>>(
-      `/users/${userId}/reset-password`,
-      payload,
-    );
-    return (
-      response.data.data || { message: "Contraseña restablecida con éxito" }
-    );
+  syncUserRoles: async (id: number, roleIds: number[]): Promise<void> => {
+    await apiClient.put(`/users/${id}/roles`, { roleIds });
+  },
+
+  resetPassword: async (id: number, newPassword: string): Promise<void> => {
+    await apiClient.patch(`/users/${id}/reset-password`, { newPassword });
   },
 };

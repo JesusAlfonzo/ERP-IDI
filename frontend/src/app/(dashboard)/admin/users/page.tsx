@@ -192,7 +192,7 @@ export default function AdminUsersPage() {
       ) : (
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <table className="min-w-full divide-y divide-slate-200 text-sm ">
               <thead className="bg-slate-50 text-xs font-semibold text-slate-500 text-left">
                 <tr>
                   <th className="py-3 px-4">Usuario</th>
@@ -437,7 +437,7 @@ export default function AdminUsersPage() {
                     onChange={(e) =>
                       setCreateForm({ ...createForm, username: e.target.value })
                     }
-                    className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none"
+                    className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none text-slate-500"
                   />
                 </div>
                 <div>
@@ -452,7 +452,7 @@ export default function AdminUsersPage() {
                     onChange={(e) =>
                       setCreateForm({ ...createForm, email: e.target.value })
                     }
-                    className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none"
+                    className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none text-slate-500"
                   />
                 </div>
               </div>
@@ -469,7 +469,7 @@ export default function AdminUsersPage() {
                   onChange={(e) =>
                     setCreateForm({ ...createForm, fullName: e.target.value })
                   }
-                  className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none"
+                  className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none text-slate-500"
                 />
               </div>
 
@@ -487,7 +487,7 @@ export default function AdminUsersPage() {
                     onChange={(e) =>
                       setCreateForm({ ...createForm, password: e.target.value })
                     }
-                    className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none"
+                    className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none text-slate-500"
                   />
                 </div>
                 <div>
@@ -504,7 +504,7 @@ export default function AdminUsersPage() {
                         department: e.target.value,
                       })
                     }
-                    className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none"
+                    className="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-blue-600 outline-none text-slate-500"
                   />
                 </div>
               </div>

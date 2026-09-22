@@ -25,7 +25,19 @@ export const QualityClientService = {
     const response = await apiClient.get<ApiResponse<QuarantineBatch[]>>(
       `/inventory/batches?status=${status}`,
     );
-    return response.data.data || [];
+    const data = response.data.data || [];
+    return data.map((b) => ({
+      ...b,
+      id: Number(b.id),
+      currentQuantity: Number(b.currentQuantity),
+      costPrice: Number(b.costPrice ?? 0),
+      product: {
+        ...b.product,
+        id: Number(b.product.id),
+        unitOfMeasure:
+          b.product.baseUnit?.abbreviation || b.product.unitOfMeasure || "und",
+      },
+    }));
   },
 
   /**
@@ -38,12 +50,22 @@ export const QualityClientService = {
     const targetStatus =
       payload.verdict === "LIBERAR" ? "DISPONIBLE" : "DEFECTUOSO";
 
+    const body: {
+      status: "DISPONIBLE" | "DEFECTUOSO";
+      reason: string;
+      incidentType?: string;
+    } = {
+      status: targetStatus,
+      reason: payload.technicalNotes.trim(),
+    };
+
+    if (payload.verdict === "RECHAZAR") {
+      body.incidentType = payload.incidentType || "FALLA_CONTROL_CALIDAD";
+    }
+
     const response = await apiClient.patch<ApiResponse<QuarantineBatch>>(
       `/inventory/batches/${payload.batchId}/status`,
-      {
-        status: targetStatus,
-        reason: payload.technicalNotes.trim(),
-      },
+      body,
     );
 
     return {

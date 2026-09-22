@@ -18,6 +18,28 @@ export interface MovementFilterDTO {
   orderId?: bigint;
 }
 
+export interface InventoryAdjustmentItemDTO {
+  batchId: number;
+  action: 'INCREMENTO' | 'DECREMENTO';
+  quantity: number;
+  reason?: string;
+}
+
+export interface InventoryAdjustmentDTO {
+  notes?: string;
+  items: InventoryAdjustmentItemDTO[];
+  executedById: number;
+}
+
+export interface DirectWasteDTO {
+  wastes: {
+    batchId: number;
+    quantity: number;
+    reason: string;
+  }[];
+  executedById: number;
+}
+
 export class InventoryService {
   /**
    * Resumen de inventario consolidado por producto
@@ -346,6 +368,187 @@ export class InventoryService {
           },
         },
       },
+    });
+  }
+
+  /**
+   * Registro de Ajustes de Inventario (Incrementos / Decrementos)
+   */
+  static async createAdjustment(data: InventoryAdjustmentDTO) {
+    if (!data.items || data.items.length === 0) {
+      throw new Error('Debe especificar al menos un renglón para ajustar.');
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const movementCount = await tx.stockMovement.count();
+      const referenceNumber = `AJUSTE-${new Date().getFullYear()}-${String(
+        movementCount + 1
+      ).padStart(4, '0')}`;
+
+      const movement = await tx.stockMovement.create({
+        data: {
+          referenceNumber,
+          type: StockMovementType.AJUSTE_INVENTARIO,
+          notes: data.notes || 'Ajuste manual de existencias',
+          createdById: data.executedById,
+        },
+      });
+
+      const details = [];
+
+      for (const item of data.items) {
+        if (item.quantity <= 0) {
+          throw new Error('La cantidad ajustada debe ser mayor a 0');
+        }
+
+        const batch = await tx.stockBatch.findUnique({
+          where: { id: BigInt(item.batchId) },
+        });
+
+        if (!batch) {
+          throw new Error(`El lote #${item.batchId} no fue encontrado`);
+        }
+
+        const currentQty = Number(batch.currentQuantity);
+        let newQty = currentQty;
+        let deltaQty = item.quantity;
+
+        if (item.action === 'DECREMENTO') {
+          if (item.quantity > currentQty) {
+            throw new Error(
+              `El decremento (${item.quantity}) supera el saldo actual del lote (${currentQty})`
+            );
+          }
+          newQty = currentQty - item.quantity;
+          deltaQty = -item.quantity;
+        } else {
+          newQty = currentQty + item.quantity;
+        }
+
+        const updatedBatch = await tx.stockBatch.update({
+          where: { id: batch.id },
+          data: {
+            currentQuantity: newQty,
+            status:
+              newQty === 0
+                ? BatchStatus.AGOTADO
+                : batch.status === BatchStatus.AGOTADO && newQty > 0
+                  ? BatchStatus.DISPONIBLE
+                  : batch.status,
+          },
+        });
+
+        await tx.stockMovementItem.create({
+          data: {
+            stockMovementId: movement.id,
+            batchId: batch.id,
+            quantity: deltaQty,
+            unitCost: batch.costPrice,
+          },
+        });
+
+        details.push({
+          batch: {
+            id: Number(updatedBatch.id),
+            currentQuantity: Number(updatedBatch.currentQuantity),
+          },
+          action: item.action,
+          quantity: item.quantity,
+          reason: item.reason,
+        });
+      }
+
+      return {
+        movement: {
+          id: Number(movement.id),
+          referenceNumber: movement.referenceNumber,
+        },
+        details,
+      };
+    });
+  }
+
+  /**
+   * Registro directo de Mermas (Roturas, Vencimientos, Mermas Operativas)
+   */
+  static async registerDirectWaste(data: DirectWasteDTO) {
+    if (!data.wastes || data.wastes.length === 0) {
+      throw new Error('Debe especificar al menos una merma a procesar.');
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const movementCount = await tx.stockMovement.count();
+      const referenceNumber = `MERMA-${new Date().getFullYear()}-${String(
+        movementCount + 1
+      ).padStart(4, '0')}`;
+
+      const movement = await tx.stockMovement.create({
+        data: {
+          referenceNumber,
+          type: StockMovementType.DESCARTE_MERMA,
+          notes: data.wastes.map((w) => w.reason).join(' | '),
+          createdById: data.executedById,
+        },
+      });
+
+      const details = [];
+
+      for (const waste of data.wastes) {
+        if (waste.quantity <= 0) {
+          throw new Error('La cantidad a descartar debe ser mayor a 0');
+        }
+
+        const batch = await tx.stockBatch.findUnique({
+          where: { id: BigInt(waste.batchId) },
+        });
+
+        if (!batch) {
+          throw new Error(`El lote #${waste.batchId} no fue encontrado`);
+        }
+
+        const currentQty = Number(batch.currentQuantity);
+        if (waste.quantity > currentQty) {
+          throw new Error(
+            `La merma solicitada (${waste.quantity}) supera la existencia disponible del lote (${currentQty})`
+          );
+        }
+
+        const newQty = currentQty - waste.quantity;
+
+        const updatedBatch = await tx.stockBatch.update({
+          where: { id: batch.id },
+          data: {
+            currentQuantity: newQty,
+            status: newQty === 0 ? BatchStatus.AGOTADO : batch.status,
+          },
+        });
+
+        await tx.stockMovementItem.create({
+          data: {
+            stockMovementId: movement.id,
+            batchId: batch.id,
+            quantity: -waste.quantity,
+            unitCost: batch.costPrice,
+          },
+        });
+
+        details.push({
+          batch: {
+            id: Number(updatedBatch.id),
+            currentQuantity: Number(updatedBatch.currentQuantity),
+          },
+          quantity: waste.quantity,
+          reason: waste.reason,
+        });
+      }
+
+      return {
+        movement: {
+          id: Number(movement.id),
+          referenceNumber: movement.referenceNumber,
+        },
+        details,
+      };
     });
   }
 }

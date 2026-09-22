@@ -16,6 +16,8 @@ import {
   Package,
   Search,
   Calendar,
+  Layers,
+  ArrowRight,
 } from "lucide-react";
 
 interface ActiveBatchOption {
@@ -71,6 +73,8 @@ export default function AdjustmentsPage() {
 
   // Estado del Formulario
   const [selectedBatchId, setSelectedBatchId] = useState<string>("");
+  const [selectedBatchData, setSelectedBatchData] =
+    useState<ActiveBatchOption | null>(null);
   const [adjustmentType, setAdjustmentType] =
     useState<AdjustmentType>("ENTRADA_AJUSTE");
   const [quantity, setQuantity] = useState<number | "">("");
@@ -112,7 +116,16 @@ export default function AdjustmentsPage() {
     return () => window.clearTimeout(timer);
   }, [batchSearch, loadBatches]);
 
-  const selectedBatch = batches.find((b) => b.id === Number(selectedBatchId));
+  const activeBatch =
+    selectedBatchData || batches.find((b) => b.id === Number(selectedBatchId));
+
+  // Cálculo del stock proyectado posterior a la acción
+  const currentStock = activeBatch ? Number(activeBatch.currentQuantity) : 0;
+  const numQuantity = Number(quantity) || 0;
+  const isIncrement = adjustmentType === "ENTRADA_AJUSTE";
+  const projectedStock = isIncrement
+    ? currentStock + numQuantity
+    : Math.max(0, currentStock - numQuantity);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -140,12 +153,12 @@ export default function AdjustmentsPage() {
 
     if (
       adjustmentType !== "ENTRADA_AJUSTE" &&
-      selectedBatch &&
-      Number(quantity) > selectedBatch.currentQuantity
+      activeBatch &&
+      Number(quantity) > activeBatch.currentQuantity
     ) {
       setFeedback({
         status: "error",
-        message: `La cantidad a descontar (${quantity}) no puede superar el stock actual del lote (${selectedBatch.currentQuantity} ${selectedBatch.product.unitOfMeasure}).`,
+        message: `La cantidad a descontar (${quantity}) no puede superar el stock actual del lote (${activeBatch.currentQuantity} ${activeBatch.product.unitOfMeasure}).`,
       });
       return;
     }
@@ -177,13 +190,16 @@ export default function AdjustmentsPage() {
 
       setFeedback({
         status: "success",
-        message: `${res.message || "Ajuste aplicado exitosamente."} Saldo actualizado: ${res.newBalance} ${selectedBatch?.product.unitOfMeasure || ""}`,
+        message: `${res.message || "Ajuste aplicado exitosamente."} Saldo actualizado: ${res.newBalance} ${activeBatch?.product.unitOfMeasure || ""}`,
       });
 
       // Limpiar formulario y recargar stock de lotes
       setQuantity("");
       setReason("");
       setReferenceDoc("");
+      setSelectedBatchId("");
+      setSelectedBatchData(null);
+      setBatchSearch("");
       await loadBatches();
     } catch (err: unknown) {
       setFeedback({
@@ -269,7 +285,7 @@ export default function AdjustmentsPage() {
         {/* Selección de Lote y Producto */}
         <div>
           <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-            Lote Afectado
+            Lote Afectado *
           </label>
           <div className="relative">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
@@ -278,6 +294,7 @@ export default function AdjustmentsPage() {
               onChange={(e) => {
                 setBatchSearch(e.target.value);
                 setSelectedBatchId("");
+                setSelectedBatchData(null);
               }}
               placeholder="Buscar por insumo, SKU o número de lote..."
               className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
@@ -300,11 +317,12 @@ export default function AdjustmentsPage() {
                       key={batch.id}
                       onClick={() => {
                         setSelectedBatchId(String(batch.id));
+                        setSelectedBatchData(batch);
                         setBatchSearch(
                           `${batch.product.name} · #${batch.lotNumber}`,
                         );
                       }}
-                      className="w-full text-left px-3 py-2.5 border-b border-slate-100 hover:bg-blue-50 transition-colors"
+                      className="w-full text-left px-3 py-2.5 border-b border-slate-100 hover:bg-blue-50 transition-colors cursor-pointer"
                     >
                       <div className="flex items-center justify-between gap-3">
                         <strong className="text-xs text-slate-800 truncate">
@@ -317,7 +335,8 @@ export default function AdjustmentsPage() {
                       <div className="flex items-center justify-between mt-1 text-[10px] text-slate-500">
                         <span>{batch.product.sku}</span>
                         <span className="font-semibold text-emerald-700">
-                          {batch.currentQuantity} {batch.product.unitOfMeasure}
+                          Stock: {batch.currentQuantity}{" "}
+                          {batch.product.unitOfMeasure}
                         </span>
                         <span className="inline-flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
@@ -335,24 +354,52 @@ export default function AdjustmentsPage() {
             )}
           </div>
 
-          {/* Ficha rápida del lote seleccionado */}
-          {selectedBatch && (
-            <div className="mt-2.5 p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <Package className="w-4 h-4 text-slate-400" />
-                <span className="font-semibold text-slate-800">
-                  {selectedBatch.product.name}
-                </span>
-                <span className="text-slate-500 font-mono text-[10px]">
-                  ({selectedBatch.product.sku})
-                </span>
+          {/* Ficha Visual Ampliada del Lote Seleccionado con Stock */}
+          {activeBatch && (
+            <div className="mt-3 p-3.5 bg-blue-50/50 border border-blue-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Package className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span className="font-bold text-slate-900 text-sm">
+                    {activeBatch.product.name}
+                  </span>
+                  <span className="font-mono text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-semibold">
+                    SKU: {activeBatch.product.sku}
+                  </span>
+                </div>
+                <div className="text-slate-500 text-[11px] flex items-center gap-3 font-mono">
+                  <span>
+                    Lote:{" "}
+                    <strong className="text-slate-800">
+                      #{activeBatch.lotNumber}
+                    </strong>
+                  </span>
+                  <span>•</span>
+                  <span>
+                    Vence:{" "}
+                    {activeBatch.expirationDate
+                      ? new Date(
+                          activeBatch.expirationDate,
+                        ).toLocaleDateString()
+                      : "Sin vencimiento"}
+                  </span>
+                </div>
               </div>
-              <div className="text-right">
-                <span className="text-slate-500">Stock Actual: </span>
-                <span className="font-bold text-slate-800">
-                  {selectedBatch.currentQuantity}{" "}
-                  {selectedBatch.product.unitOfMeasure}
-                </span>
+
+              {/* Indicador de Stock Físico */}
+              <div className="flex items-center gap-2 sm:self-center bg-white border border-blue-200 px-3.5 py-2 rounded-lg shadow-2xs">
+                <Layers className="w-4 h-4 text-blue-600" />
+                <div>
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+                    Stock en Sistema
+                  </span>
+                  <span className="text-base font-bold font-mono text-blue-900">
+                    {activeBatch.currentQuantity}{" "}
+                    <span className="text-xs font-normal text-slate-600">
+                      {activeBatch.product.unitOfMeasure}
+                    </span>
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -361,21 +408,51 @@ export default function AdjustmentsPage() {
         {/* Cantidad y Documento de Referencia */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-              Cantidad a Ajustar
-            </label>
-            <input
-              type="number"
-              min="1"
-              step="any"
-              value={quantity}
-              onChange={(e) =>
-                setQuantity(e.target.value === "" ? "" : Number(e.target.value))
-              }
-              placeholder="Ej: 5"
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
-              required
-            />
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                Cantidad a Ajustar *
+              </label>
+              {activeBatch && Number(quantity) > 0 && (
+                <span className="text-[11px] font-mono flex items-center gap-1 text-slate-600">
+                  <span>Saldo:</span>
+                  <span className="font-semibold text-slate-800">
+                    {currentStock}
+                  </span>
+                  <ArrowRight className="w-3 h-3 text-slate-400" />
+                  <span
+                    className={`font-bold ${
+                      isIncrement
+                        ? "text-emerald-600"
+                        : projectedStock === 0
+                          ? "text-red-600"
+                          : "text-blue-600"
+                    }`}
+                  >
+                    {projectedStock} {activeBatch.product.unitOfMeasure}
+                  </span>
+                </span>
+              )}
+            </div>
+
+            <div className="relative">
+              <input
+                type="number"
+                min="0.01"
+                step="any"
+                value={quantity}
+                onChange={(e) =>
+                  setQuantity(
+                    e.target.value === "" ? "" : Number(e.target.value),
+                  )
+                }
+                placeholder="Ej: 5"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-3 pr-14 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 font-mono"
+                required
+              />
+              <span className="absolute inset-y-0 right-3 flex items-center text-[10px] font-semibold text-slate-400 pointer-events-none">
+                {activeBatch?.product.unitOfMeasure || "Unid"}
+              </span>
+            </div>
           </div>
 
           <div>
@@ -395,7 +472,7 @@ export default function AdjustmentsPage() {
         {/* Motivo / Justificación */}
         <div>
           <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-            Motivo / Justificación Técnica
+            Motivo / Justificación Técnica *
           </label>
           <textarea
             rows={3}
@@ -412,7 +489,7 @@ export default function AdjustmentsPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
             {submitting ? "Aplicando ajuste..." : "Confirmar y Guardar Ajuste"}

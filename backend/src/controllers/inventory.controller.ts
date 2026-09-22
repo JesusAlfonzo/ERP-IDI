@@ -164,3 +164,54 @@ export const getMovementById = async (
     next(error);
   }
 };
+
+export const createAdjustment = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { notes, items } = req.body;
+    const executedById =
+      (req as unknown as { user?: { id: number } }).user?.id || 1;
+
+    const result = await InventoryService.createAdjustment({
+      notes,
+      items,
+      executedById,
+    });
+
+    res.status(201).json({
+      status: 'SUCCESS',
+      message: 'Ajuste de inventario aplicado exitosamente.',
+      data: serializeBigInt(result),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const registerDirectWaste = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { wastes } = req.body;
+    const executedById =
+      (req as unknown as { user?: { id: number } }).user?.id || 1;
+
+    const result = await InventoryService.registerDirectWaste({
+      wastes,
+      executedById,
+    });
+
+    res.status(201).json({
+      status: 'SUCCESS',
+      message: 'Merma de inventario registrada exitosamente.',
+      data: serializeBigInt(result),
+    });
+  } catch (error) {
+    next(error);
+  }
+};

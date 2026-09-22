@@ -66,7 +66,7 @@ export default function SuppliersPage() {
       }
     };
 
-    init();
+    void init();
 
     return () => {
       isMounted = false;
@@ -75,9 +75,10 @@ export default function SuppliersPage() {
 
   const filteredSuppliers = suppliers.filter((s) => {
     const term = search.toLowerCase();
+    const rifValue = (s.rifOrId ?? s.rif ?? "").toLowerCase();
     return (
       s.name.toLowerCase().includes(term) ||
-      s.rifOrId.toLowerCase().includes(term) ||
+      rifValue.includes(term) ||
       (s.contactName && s.contactName.toLowerCase().includes(term))
     );
   });
@@ -153,7 +154,7 @@ export default function SuppliersPage() {
             setIsModalOpen(true);
             setFeedback(null);
           }}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto"
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           Registrar Proveedor
@@ -176,8 +177,8 @@ export default function SuppliersPage() {
         </div>
 
         <button
-          onClick={() => loadSuppliers()}
-          className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs"
+          onClick={() => void loadSuppliers()}
+          className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs cursor-pointer"
           title="Actualizar listado"
         >
           <RefreshCw
@@ -221,7 +222,7 @@ export default function SuppliersPage() {
                     className="hover:bg-slate-50/60 transition-colors"
                   >
                     <td className="py-3 px-4 font-mono font-bold text-slate-800">
-                      {sup.rifOrId}
+                      {sup.rifOrId || sup.rif || "-"}
                     </td>
                     <td className="py-3 px-4 font-semibold text-slate-800">
                       {sup.name}
@@ -274,7 +275,7 @@ export default function SuppliersPage() {
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -386,14 +387,14 @@ export default function SuppliersPage() {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
+                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50"
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   {submitting ? "Guardando..." : "Guardar Proveedor"}

@@ -440,9 +440,14 @@ export default function SupplierDebtsPage() {
                       key={payment.id}
                       className="mt-2 border-t border-slate-100 pt-2 text-slate-700"
                     >
-                      Pago {new Date(payment.paymentDate).toLocaleDateString()}{" "}
+                      Pago{" "}
+                      {new Date(
+                        payment.paymentDate || payment.createdAt || Date.now(),
+                      ).toLocaleDateString()}{" "}
                       · {payment.paymentMethod} ·{" "}
-                      {Number(payment.amount).toFixed(2)}
+                      {Number(payment.amount || payment.amountUsd || 0).toFixed(
+                        2,
+                      )}
                     </div>
                   ))}
                 </div>

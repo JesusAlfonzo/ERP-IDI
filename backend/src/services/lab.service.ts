@@ -219,7 +219,15 @@ export class LabService {
       include: {
         location: true,
         _count: {
-          select: { labReagentUnits: true },
+          select: {
+            labReagentUnits: {
+              where: {
+                status: {
+                  in: [LabUnitStatus.SELLADO, LabUnitStatus.EN_USO],
+                },
+              },
+            },
+          },
         },
       },
       orderBy: { code: 'asc' },
@@ -232,7 +240,11 @@ export class LabService {
       include: {
         location: true,
         labReagentUnits: {
-          where: { status: { not: LabUnitStatus.AGOTADO } },
+          where: {
+            status: {
+              in: [LabUnitStatus.SELLADO, LabUnitStatus.EN_USO],
+            },
+          },
           include: {
             product: { include: { baseUnit: true } },
             batch: true,
@@ -267,26 +279,69 @@ export class LabService {
     return prisma.$transaction(async (tx) => {
       const fridge = await tx.fridge.findUnique({ where: { id: fridgeId } });
       if (!fridge) throw new Error('Nevera no encontrada');
-      const units = await tx.labReagentUnit.findMany({
-        where: { batchId, status: { not: LabUnitStatus.AGOTADO } },
+
+      const batch = await tx.stockBatch.findUnique({
+        where: { id: batchId },
+        include: { product: true },
       });
-      for (const unit of units) {
-        await tx.labStockMovement.create({
-          data: {
-            labReagentUnitId: unit.id,
-            movementType: LabMovementType.TRASLADO_NEVERA,
-            amountUsed: 0,
-            fromFridgeId: unit.fridgeId,
-            toFridgeId: fridgeId,
-            reason: 'Asignación de lote a nevera',
-            executedById,
+      if (!batch) throw new Error('Lote no encontrado');
+
+      // Buscar si ya existen frascos unitarios para este lote
+      let units = await tx.labReagentUnit.findMany({
+        where: {
+          batchId,
+          status: { in: [LabUnitStatus.SELLADO, LabUnitStatus.EN_USO] },
+        },
+      });
+
+      // Si no existen frascos en frío, instanciarlos a partir de la cantidad disponible del lote
+      if (units.length === 0 && Number(batch.currentQuantity) > 0) {
+        const totalUnits = Math.floor(Number(batch.currentQuantity));
+        const createdUnits = [];
+
+        for (let i = 1; i <= totalUnits; i++) {
+          const unitCode = `${batch.lotNumber}-F${String(i).padStart(2, '0')}`;
+          const newUnit = await tx.labReagentUnit.create({
+            data: {
+              productId: batch.productId,
+              batchId: batch.id,
+              fridgeId: fridge.id,
+              unitCode,
+              initialVolume: 1,
+              currentVolume: 1,
+              status: LabUnitStatus.SELLADO,
+              expirationDate: batch.expirationDate,
+            },
+          });
+          createdUnits.push(newUnit);
+        }
+        units = createdUnits;
+      } else {
+        // Si ya existían, trasladarlos a la nueva nevera y dejar constancia en auditoría
+        for (const unit of units) {
+          if (unit.fridgeId !== fridgeId) {
+            await tx.labStockMovement.create({
+              data: {
+                labReagentUnitId: unit.id,
+                movementType: LabMovementType.TRASLADO_NEVERA,
+                amountUsed: 0,
+                fromFridgeId: unit.fridgeId,
+                toFridgeId: fridgeId,
+                reason: 'Asignación de lote a nevera',
+                executedById,
+              },
+            });
+          }
+        }
+        await tx.labReagentUnit.updateMany({
+          where: {
+            batchId,
+            status: { in: [LabUnitStatus.SELLADO, LabUnitStatus.EN_USO] },
           },
+          data: { fridgeId },
         });
       }
-      await tx.labReagentUnit.updateMany({
-        where: { batchId, status: { not: LabUnitStatus.AGOTADO } },
-        data: { fridgeId },
-      });
+
       return { batchId, fridgeId, assignedUnits: units.length };
     });
   }
@@ -308,7 +363,6 @@ export class LabService {
   }
 
   // --- TRAZABILIDAD DE FRASCOS / UNIDADES ---
-
   static async listLabUnits(filter?: {
     status?: LabUnitStatus;
     fridgeId?: number;
@@ -320,6 +374,15 @@ export class LabService {
         ...(filter?.status ? { status: filter.status } : {}),
         ...(filter?.fridgeId ? { fridgeId: filter.fridgeId } : {}),
         ...(filter?.productId ? { productId: filter.productId } : {}),
+        // Excluir frascos agotados o descartados
+        status: {
+          in: [LabUnitStatus.SELLADO, LabUnitStatus.EN_USO],
+        },
+        // Integridad: El lote padre debe estar DISPONIBLE y no en 0
+        batch: {
+          status: BatchStatus.DISPONIBLE,
+          currentQuantity: { gt: 0 },
+        },
         ...(filter?.search
           ? {
               OR: [
@@ -327,6 +390,11 @@ export class LabService {
                 {
                   product: {
                     name: { contains: filter.search, mode: 'insensitive' },
+                  },
+                },
+                {
+                  batch: {
+                    lotNumber: { contains: filter.search, mode: 'insensitive' },
                   },
                 },
               ],
@@ -466,7 +534,6 @@ export class LabService {
         data: {
           currentVolume: remainingVol,
           status: nextStatus,
-          // Si estaba sellado, se marca como abierto al primer consumo
           openedAt: unit.openedAt ?? new Date(),
           openedById: unit.openedById ?? data.executedById,
         },
@@ -579,6 +646,7 @@ export class LabService {
       });
     });
   }
+
   static async createLabUnit(data: CreateLabUnitDTO) {
     return prisma.labReagentUnit.create({
       data: {

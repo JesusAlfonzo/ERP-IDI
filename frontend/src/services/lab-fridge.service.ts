@@ -1,57 +1,20 @@
 import { apiClient } from "@/lib/api-client";
-
-export interface LabFridge {
-  id: number;
-  locationId: number;
-  code: string;
-  name: string;
-  targetTempCelsius: string | number | null;
-  status: "OPERATIVO" | "MANTENIMIENTO" | "DEFECTUOSO" | "FUERA_DE_SERVICIO";
-  description: string | null;
-  location?: { id: number; name: string; type: string };
-  _count?: { labReagentUnits: number };
-}
-
-export interface ReagentInFridge {
-  id: string | number;
-  productId: string | number;
-  unitCode: string;
-  initialVolume: string | number;
-  currentVolume: string | number;
-  status: "SELLADO" | "EN_USO" | "AGOTADO" | "DESCARTADO";
-  expirationDate: string | null;
-  product?: { name: string; sku: string; baseUnit?: { abbreviation: string } };
-  batch?: { lotNumber: string; expirationDate: string | null };
-}
-
-export interface FridgeContentsResponse {
-  id: number;
-  code: string;
-  name: string;
-  labReagentUnits: ReagentInFridge[];
-  location?: { id: number; name: string; type: string };
-}
-
-export interface AssignBatchResponse {
-  batchId: string | number;
-  fridgeId: number;
-  assignedUnits: number;
-}
+import type {
+  LabFridge,
+  FridgeContentsResponse,
+  AssignBatchResponse,
+  CreateFridgePayload,
+  ReagentInFridge,
+} from "@/types/laboratory";
 
 export const LabFridgeService = {
-  getFridges: async (): Promise<LabFridge[]> => {
-    const res = await apiClient.get("/lab/fridges");
-    return res.data?.data ?? res.data;
+  getFridges: async (locationId?: number): Promise<LabFridge[]> => {
+    const query = locationId ? `?locationId=${locationId}` : "";
+    const res = await apiClient.get(`/lab/fridges${query}`);
+    return res.data?.data ?? res.data ?? [];
   },
 
-  createFridge: async (data: {
-    locationId: number;
-    code: string;
-    name: string;
-    targetTempCelsius?: number | null;
-    status?: string;
-    description?: string | null;
-  }): Promise<LabFridge> => {
+  createFridge: async (data: CreateFridgePayload): Promise<LabFridge> => {
     const res = await apiClient.post("/lab/fridges", data);
     return res.data?.data ?? res.data;
   },
@@ -67,6 +30,33 @@ export const LabFridgeService = {
   ): Promise<AssignBatchResponse> => {
     const res = await apiClient.post(`/lab/fridges/${fridgeId}/assign-batch`, {
       batchId,
+    });
+    return res.data?.data ?? res.data;
+  },
+
+  transferUnit: async (
+    unitId: string | number,
+    toFridgeId: number,
+    reason?: string,
+  ): Promise<ReagentInFridge> => {
+    const res = await apiClient.post(`/lab/units/${unitId}/transfer`, {
+      toFridgeId,
+      reason,
+    });
+    return res.data?.data ?? res.data;
+  },
+
+  openUnit: async (unitId: string | number): Promise<ReagentInFridge> => {
+    const res = await apiClient.patch(`/lab/units/${unitId}/open`);
+    return res.data?.data ?? res.data;
+  },
+
+  discardUnit: async (
+    unitId: string | number,
+    reason: string,
+  ): Promise<ReagentInFridge> => {
+    const res = await apiClient.post(`/lab/units/${unitId}/discard`, {
+      reason,
     });
     return res.data?.data ?? res.data;
   },

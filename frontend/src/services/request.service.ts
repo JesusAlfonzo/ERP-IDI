@@ -19,6 +19,19 @@ export const RequestClientService = {
   },
 
   /**
+   * Obtiene una solicitud por su ID con sus detalles y movimientos
+   */
+  async getRequestById(id: string | number): Promise<InternalRequest> {
+    const response = await apiClient.get<ApiResponse<InternalRequest>>(
+      `/requests/${id}`,
+    );
+    if (!response.data.data) {
+      throw new Error(response.data.message || "Solicitud no encontrada");
+    }
+    return response.data.data;
+  },
+
+  /**
    * Crea una nueva requisición de insumos
    */
   async createRequest(
@@ -35,6 +48,23 @@ export const RequestClientService = {
       );
     }
 
+    return response.data.data;
+  },
+
+  /**
+   * Aprueba formalmente una solicitud
+   */
+  async approveRequest(
+    requestId: number,
+    items: { itemId: number; quantityApproved: number }[],
+  ): Promise<InternalRequest> {
+    const response = await apiClient.patch<ApiResponse<InternalRequest>>(
+      `/requests/${requestId}/approve`,
+      { items },
+    );
+    if (!response.data.data) {
+      throw new Error(response.data.message || "Error al aprobar la solicitud");
+    }
     return response.data.data;
   },
 

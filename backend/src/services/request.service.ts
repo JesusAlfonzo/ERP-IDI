@@ -4,7 +4,6 @@ import {
   RequestPriority,
   StockMovementType,
   BatchStatus,
-  LabUnitStatus,
 } from '@prisma/client';
 
 export interface DispatchBatchAllocationDTO {
@@ -49,9 +48,6 @@ export interface ApproveRequestDTO {
   items: ApproveRequestItemDTO[];
 }
 
-/**
- * Calcula el ciclo semanal en formato ISO (ej: 2026-W36)
- */
 function getIsoWeeklyCycle(date: Date = new Date()): string {
   const tempDate = new Date(date.getTime());
   tempDate.setHours(0, 0, 0, 0);
@@ -74,7 +70,7 @@ export class RequestService {
     userId?: number;
     cycle?: string;
   }) {
-    return prisma.request.findMany({
+    const list = await prisma.request.findMany({
       where: {
         ...(filter?.status ? { status: filter.status } : {}),
         ...(filter?.userId ? { userId: filter.userId } : {}),
@@ -102,6 +98,12 @@ export class RequestService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    // Mapear user -> applicant para compatibilidad con el frontend
+    return list.map((r) => ({
+      ...r,
+      applicant: r.user,
+    }));
   }
 
   static async getRequestById(id: bigint) {
@@ -126,7 +128,15 @@ export class RequestService {
             },
           },
         },
-        dispatchedMovement: true,
+        dispatchedMovement: {
+          include: {
+            items: {
+              include: {
+                batch: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -134,7 +144,10 @@ export class RequestService {
       throw new Error('Solicitud no encontrada');
     }
 
-    return req;
+    return {
+      ...req,
+      applicant: req.user,
+    };
   }
 
   static async createRequest(data: CreateRequestDTO) {
@@ -202,14 +215,22 @@ export class RequestService {
           );
         }
 
-        if (itemApproval.quantityApproved < 0) {
+        // Si por alguna razón quantityApproved no vino definida, toma quantityRequested
+        const approvedQty =
+          itemApproval.quantityApproved !== undefined &&
+          itemApproval.quantityApproved !== null &&
+          !Number.isNaN(Number(itemApproval.quantityApproved))
+            ? Number(itemApproval.quantityApproved)
+            : Number(item.quantityRequested);
+
+        if (approvedQty < 0) {
           throw new Error('La cantidad aprobada no puede ser negativa');
         }
 
         await tx.requestItem.update({
           where: { id: item.id },
           data: {
-            quantityApproved: itemApproval.quantityApproved,
+            quantityApproved: approvedQty,
           },
         });
       }
@@ -307,7 +328,7 @@ export class RequestService {
         );
       }
 
-      // 2. Generar correlativo del movimiento de salida
+      // 2. Generar correlativo del movimiento de salida para Kardex
       const count = await tx.stockMovement.count();
       const currentYear = new Date().getFullYear();
       const refNumber = `MOV-DESP-${currentYear}-${String(count + 1).padStart(4, '0')}`;
@@ -316,7 +337,9 @@ export class RequestService {
         data: {
           referenceNumber: refNumber,
           type: StockMovementType.DESPACHO_SOLICITUD,
-          notes: data.notes ?? `Despacho de solicitud ${request.requestNumber}`,
+          notes:
+            data.notes ??
+            `Despacho de solicitud ${request.requestNumber} a ${request.departmentSection}`,
           createdById: data.dispatchedById,
         },
       });
@@ -385,7 +408,7 @@ export class RequestService {
             },
           });
 
-          // Registrar detalle del movimiento de inventario
+          // Registrar en el Kardex institucional
           await tx.stockMovementItem.create({
             data: {
               stockMovementId: movement.id,
@@ -394,25 +417,6 @@ export class RequestService {
               unitCost: batch.costPrice,
             },
           });
-
-          // Si el producto es un reactivo de laboratorio, crear frascos individuales
-          if (reqItem.product.isReagent) {
-            const currentUnitsCount = await tx.labReagentUnit.count();
-            for (let i = 0; i < alloc.quantity; i++) {
-              const unitCode = `LAB-${reqItem.product.sku}-${String(currentUnitsCount + i + 1).padStart(5, '0')}`;
-              await tx.labReagentUnit.create({
-                data: {
-                  productId: reqItem.productId,
-                  batchId: batch.id,
-                  unitCode,
-                  initialVolume: 100,
-                  currentVolume: 100,
-                  status: LabUnitStatus.SELLADO,
-                  expirationDate: batch.expirationDate,
-                },
-              });
-            }
-          }
         }
       }
 
@@ -434,7 +438,7 @@ export class RequestService {
         );
       });
 
-      // 4. Actualizar estado y enlazar con el movimiento generado
+      // 4. Actualizar estado de la solicitud y enlazar con el movimiento generado
       return tx.request.update({
         where: { id: request.id },
         data: {

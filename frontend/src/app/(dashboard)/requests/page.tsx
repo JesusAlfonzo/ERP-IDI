@@ -25,6 +25,8 @@ import {
   Ban,
   AlertTriangle,
   XCircle,
+  Eye,
+  CheckCheck,
 } from "lucide-react";
 
 const STATUS_CONFIG: Record<
@@ -41,7 +43,7 @@ const STATUS_CONFIG: Record<
   },
   DESPACHADA_PARCIAL: {
     label: "Despacho parcial",
-    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    className: "bg-purple-50 text-purple-700 border-purple-200",
   },
   COMPLETADA: {
     label: "Completada",
@@ -115,10 +117,15 @@ export default function InternalRequestsPage() {
   >({});
   const [dispatchNotes, setDispatchNotes] = useState("");
   const [dispatching, setDispatching] = useState(false);
+
+  // Modal Rechazo
   const [requestToReject, setRequestToReject] =
     useState<InternalRequest | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [rejecting, setRejecting] = useState(false);
+
+  // Acción rápida Aprobar
+  const [approvingId, setApprovingId] = useState<number | null>(null);
 
   const [feedback, setFeedback] = useState<{
     status: "success" | "error";
@@ -154,7 +161,6 @@ export default function InternalRequestsPage() {
     init();
   }, [router, loadData]);
 
-  // Manejo de renglones en la creación
   const handleAddItem = () => {
     setFormItems((prev) => [...prev, { productId: 0, requestedQuantity: 1 }]);
   };
@@ -204,14 +210,10 @@ export default function InternalRequestsPage() {
         status: "success",
         message: "Solicitud enviada a almacén exitosamente.",
       });
+      setIsNewModalOpen(false);
+      setJustification("");
+      setFormItems([{ productId: 0, requestedQuantity: 1 }]);
       await loadData();
-
-      setTimeout(() => {
-        setIsNewModalOpen(false);
-        setJustification("");
-        setFormItems([{ productId: 0, requestedQuantity: 1 }]);
-        setFeedback(null);
-      }, 1000);
     } catch (err: unknown) {
       setFeedback({
         status: "error",
@@ -225,7 +227,41 @@ export default function InternalRequestsPage() {
     }
   };
 
-  // Preparación modal de despacho
+  const handleApprove = async (req: InternalRequest) => {
+    setApprovingId(req.id);
+    setFeedback(null);
+    try {
+      const itemsToApprove = req.items.map((it) => {
+        // Soporta tanto quantityRequested (nombre de base de datos) como requestedQuantity
+        const qty = Number(
+          (it as unknown as { quantityRequested?: number }).quantityRequested ??
+            it.requestedQuantity ??
+            1,
+        );
+
+        return {
+          itemId: Number(it.id),
+          quantityApproved: qty,
+        };
+      });
+
+      await RequestClientService.approveRequest(req.id, itemsToApprove);
+      setFeedback({
+        status: "success",
+        message: `Solicitud #${req.requestNumber} aprobada con éxito. Lista para despacho.`,
+      });
+      await loadData();
+    } catch (err: unknown) {
+      setFeedback({
+        status: "error",
+        message:
+          err instanceof Error ? err.message : "Error al aprobar la solicitud.",
+      });
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
   const handleOpenDispatch = (req: InternalRequest) => {
     setSelectedForDispatch(req);
     const initialMap: Record<
@@ -236,10 +272,10 @@ export default function InternalRequestsPage() {
       if (it.id) {
         const pendingQuantity = Math.max(
           0,
-          (it.quantityApproved ?? it.requestedQuantity) -
-            (it.quantityDispatched ?? 0),
+          (it.quantityApproved && it.quantityApproved > 0
+            ? it.quantityApproved
+            : it.requestedQuantity) - (it.quantityDispatched ?? 0),
         );
-        // Buscar por b.product.id o b.productId
         const matchBatch = availableBatches.find(
           (b) => (b.productId ?? b.product?.id) === it.productId,
         );
@@ -295,12 +331,8 @@ export default function InternalRequestsPage() {
         status: "success",
         message: "Insumos despachados y descontados del inventario.",
       });
+      setSelectedForDispatch(null);
       await loadData();
-
-      setTimeout(() => {
-        setSelectedForDispatch(null);
-        setFeedback(null);
-      }, 1000);
     } catch (err: unknown) {
       setFeedback({
         status: "error",
@@ -328,9 +360,13 @@ export default function InternalRequestsPage() {
         requestToReject.id,
         rejectReason.trim(),
       );
-      await loadData();
+      setFeedback({
+        status: "success",
+        message: `Solicitud #${requestToReject.requestNumber} rechazada.`,
+      });
       setRequestToReject(null);
       setRejectReason("");
+      await loadData();
     } catch (err: unknown) {
       setFeedback({
         status: "error",
@@ -357,16 +393,34 @@ export default function InternalRequestsPage() {
         </div>
 
         <button
+          type="button"
           onClick={() => {
             setIsNewModalOpen(true);
             setFeedback(null);
           }}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto"
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           Nueva Solicitud
         </button>
       </div>
+
+      {feedback && (
+        <div
+          className={`p-3 rounded-lg text-xs flex items-center gap-2 border ${
+            feedback.status === "success"
+              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+              : "bg-red-50 border-red-200 text-red-800"
+          }`}
+        >
+          {feedback.status === "success" ? (
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+          ) : (
+            <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+          )}
+          <span>{feedback.message}</span>
+        </div>
+      )}
 
       {/* Barra de Filtros */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-4">
@@ -380,14 +434,16 @@ export default function InternalRequestsPage() {
             <option value="">Todos los estados</option>
             <option value="PENDIENTE">Pendientes</option>
             <option value="APROBADA">Aprobadas</option>
-            <option value="DESPACHADA">Despachadas</option>
+            <option value="DESPACHADA_PARCIAL">Despacho parcial</option>
+            <option value="COMPLETADA">Completadas</option>
             <option value="RECHAZADA">Rechazadas</option>
           </select>
         </div>
 
         <button
-          onClick={() => loadData()}
-          className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs"
+          type="button"
+          onClick={() => void loadData()}
+          className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs cursor-pointer"
           title="Actualizar listado"
         >
           <RefreshCw
@@ -437,6 +493,11 @@ export default function InternalRequestsPage() {
                     className: "bg-slate-100 text-slate-600",
                   };
 
+                  const canDispatch =
+                    req.status === "PENDIENTE" ||
+                    req.status === "APROBADA" ||
+                    req.status === "DESPACHADA_PARCIAL";
+
                   return (
                     <tr
                       key={req.id}
@@ -472,30 +533,63 @@ export default function InternalRequestsPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        {req.status === "PENDIENTE" ? (
-                          <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {/* Botón Ver Ficha / Comprobante */}
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/requests/${req.id}`)}
+                            className="inline-flex items-center p-1 rounded bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 cursor-pointer"
+                            title="Ver detalles del comprobante"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Botón Aprobar si está pendiente */}
+                          {req.status === "PENDIENTE" && (
                             <button
+                              type="button"
+                              onClick={() => void handleApprove(req)}
+                              disabled={approvingId === req.id}
+                              className="inline-flex items-center gap-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer"
+                              title="Aprobar solicitud"
+                            >
+                              {approvingId === req.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <CheckCheck className="w-3.5 h-3.5" />
+                              )}
+                              Aprobar
+                            </button>
+                          )}
+
+                          {/* Botón Despachar */}
+                          {canDispatch && (
+                            <button
+                              type="button"
                               onClick={() => handleOpenDispatch(req)}
-                              className="inline-flex items-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2 py-1 rounded text-[11px] font-semibold transition-colors"
-                              title="Despachar pedido"
+                              className="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer"
+                              title="Despachar materiales"
                             >
                               <Check className="w-3.5 h-3.5" /> Despachar
                             </button>
+                          )}
+
+                          {/* Botón Rechazar */}
+                          {req.status === "PENDIENTE" && (
                             <button
+                              type="button"
                               onClick={() => {
                                 setRequestToReject(req);
                                 setRejectReason("");
                                 setFeedback(null);
                               }}
-                              className="inline-flex items-center bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 p-1 rounded transition-colors"
+                              className="inline-flex items-center bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 p-1 rounded transition-colors cursor-pointer"
                               title="Rechazar solicitud"
                             >
                               <Ban className="w-3.5 h-3.5" />
                             </button>
-                          </div>
-                        ) : (
-                          <span className="text-slate-300 text-xs">-</span>
-                        )}
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -518,29 +612,13 @@ export default function InternalRequestsPage() {
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setIsNewModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-
-            {feedback && (
-              <div
-                className={`p-3 rounded-lg text-xs flex items-center gap-2 border ${
-                  feedback.status === "success"
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                    : "bg-red-50 border-red-200 text-red-800"
-                }`}
-              >
-                {feedback.status === "success" ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                )}
-                <span>{feedback.message}</span>
-              </div>
-            )}
 
             <form onSubmit={handleSubmitRequest} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
@@ -588,7 +666,7 @@ export default function InternalRequestsPage() {
                   <button
                     type="button"
                     onClick={handleAddItem}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" /> Agregar renglón
                   </button>
@@ -646,7 +724,7 @@ export default function InternalRequestsPage() {
                         type="button"
                         onClick={() => handleRemoveItem(idx)}
                         disabled={formItems.length === 1}
-                        className="text-slate-400 hover:text-red-500 disabled:opacity-30"
+                        className="text-slate-400 hover:text-red-500 disabled:opacity-30 cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -673,14 +751,14 @@ export default function InternalRequestsPage() {
                 <button
                   type="button"
                   onClick={() => setIsNewModalOpen(false)}
-                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
+                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50"
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   {submitting ? "Enviando..." : "Enviar Solicitud"}
@@ -706,29 +784,13 @@ export default function InternalRequestsPage() {
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedForDispatch(null)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-
-            {feedback && (
-              <div
-                className={`p-3 rounded-lg text-xs flex items-center gap-2 border ${
-                  feedback.status === "success"
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                    : "bg-red-50 border-red-200 text-red-800"
-                }`}
-              >
-                {feedback.status === "success" ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                )}
-                <span>{feedback.message}</span>
-              </div>
-            )}
 
             <form onSubmit={handleConfirmDispatch} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs">
@@ -770,6 +832,7 @@ export default function InternalRequestsPage() {
                   </p>
                 </div>
               </div>
+
               <div className="space-y-3">
                 <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider block">
                   Asignación de Lotes Físicos a Despachar
@@ -779,8 +842,9 @@ export default function InternalRequestsPage() {
                   const itId = it.id as number;
                   const pendingQuantity = Math.max(
                     0,
-                    (it.quantityApproved ?? it.requestedQuantity) -
-                      (it.quantityDispatched ?? 0),
+                    (it.quantityApproved && it.quantityApproved > 0
+                      ? it.quantityApproved
+                      : it.requestedQuantity) - (it.quantityDispatched ?? 0),
                   );
                   const candidateBatches = availableBatches.filter(
                     (b) => (b.productId ?? b.product?.id) === it.productId,
@@ -854,22 +918,6 @@ export default function InternalRequestsPage() {
                               </option>
                             ))}
                           </select>
-                          {(() => {
-                            const selected = candidateBatches.find(
-                              (batch) => batch.id === currentAlloc.batchId,
-                            );
-                            if (
-                              !selected ||
-                              selected.currentQuantity >= pendingQuantity
-                            )
-                              return null;
-                            return (
-                              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
-                                Stock en almacén insuficiente para entrega
-                                completa. Se realizará un despacho parcial.
-                              </div>
-                            );
-                          })()}
                         </div>
 
                         <div className="col-span-4">
@@ -892,7 +940,7 @@ export default function InternalRequestsPage() {
                                 },
                               }))
                             }
-                            className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-800"
+                            className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-800 font-mono"
                             required
                           />
                         </div>
@@ -919,14 +967,14 @@ export default function InternalRequestsPage() {
                 <button
                   type="button"
                   onClick={() => setSelectedForDispatch(null)}
-                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
+                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={dispatching}
-                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50"
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
                 >
                   {dispatching && <Loader2 className="w-4 h-4 animate-spin" />}
                   {dispatching ? "Despachando..." : "Confirmar y Despachar"}
@@ -937,6 +985,7 @@ export default function InternalRequestsPage() {
         </div>
       )}
 
+      {/* Modal: Rechazo */}
       {requestToReject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-5">
@@ -944,13 +993,13 @@ export default function InternalRequestsPage() {
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-red-600" />
                 <h3 className="font-bold text-slate-800">
-                  Rechazar requisición
+                  Rechazar requisición #{requestToReject.requestNumber}
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setRequestToReject(null)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -958,8 +1007,7 @@ export default function InternalRequestsPage() {
             <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-xs text-red-800 flex gap-2">
               <XCircle className="w-4 h-4 shrink-0" />
               <span>
-                Solicitud {requestToReject.requestNumber}. El rechazo quedará
-                registrado con el usuario actual.
+                Indique el motivo de rechazo técnico o administrativo.
               </span>
             </div>
             <textarea
@@ -974,7 +1022,7 @@ export default function InternalRequestsPage() {
               <button
                 type="button"
                 onClick={() => setRequestToReject(null)}
-                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
+                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium cursor-pointer"
               >
                 Cancelar
               </button>
@@ -982,7 +1030,7 @@ export default function InternalRequestsPage() {
                 type="button"
                 onClick={() => void handleReject()}
                 disabled={rejecting || rejectReason.trim().length < 5}
-                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-50"
+                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer"
               >
                 {rejecting && <Loader2 className="w-4 h-4 animate-spin" />}
                 {rejecting ? "Rechazando..." : "Confirmar Rechazo"}

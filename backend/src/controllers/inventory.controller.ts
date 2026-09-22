@@ -106,17 +106,59 @@ export const getMovements = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { orderId, limit } = req.query;
+    const { page, limit, type, startDate, endDate, search, orderId } =
+      req.query;
 
-    const filter: { orderId?: bigint; take?: number } = {};
-    if (orderId) filter.orderId = BigInt(String(orderId));
-    if (limit) filter.take = Number(limit);
-
-    const movements = await InventoryService.listMovements(filter);
+    const result = await InventoryService.listMovements({
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 15,
+      type:
+        typeof type === 'string' && type.trim() !== ''
+          ? type.trim()
+          : undefined,
+      startDate: typeof startDate === 'string' ? startDate : undefined,
+      endDate: typeof endDate === 'string' ? endDate : undefined,
+      search: typeof search === 'string' ? search.trim() : undefined,
+      orderId: orderId ? BigInt(String(orderId)) : undefined,
+    });
 
     res.status(200).json({
       status: 'SUCCESS',
-      data: serializeBigInt(movements),
+      data: serializeBigInt(result.data),
+      meta: result.meta,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getMovementById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const idStr = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    if (!idStr) {
+      res
+        .status(400)
+        .json({ status: 'BAD_REQUEST', message: 'ID no proporcionado' });
+      return;
+    }
+
+    const movement = await InventoryService.getMovementById(BigInt(idStr));
+    if (!movement) {
+      res
+        .status(404)
+        .json({ status: 'NOT_FOUND', message: 'Movimiento no encontrado' });
+      return;
+    }
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      data: serializeBigInt(movement),
     });
   } catch (error) {
     next(error);

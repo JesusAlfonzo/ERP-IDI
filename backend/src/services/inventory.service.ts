@@ -1,11 +1,21 @@
 import { prisma } from '../config/prisma.js';
-import { BatchStatus } from '@prisma/client';
+import { BatchStatus, StockMovementType, Prisma } from '@prisma/client';
 
 export interface InventoryFilterDTO {
   categoryId?: number;
   locationId?: number;
   search?: string;
   lowStockOnly?: boolean;
+}
+
+export interface MovementFilterDTO {
+  page?: number;
+  limit?: number;
+  type?: string;
+  startDate?: string;
+  endDate?: string;
+  search?: string;
+  orderId?: bigint;
 }
 
 export class InventoryService {
@@ -181,29 +191,153 @@ export class InventoryService {
   }
 
   /**
-   * Kardex general / Historial de movimientos de inventario
+   * Kardex general / Historial de movimientos de inventario con paginación y filtros
    */
-  static async listMovements(filter?: { orderId?: bigint; take?: number }) {
-    return prisma.stockMovement.findMany({
-      where: {
-        ...(filter?.orderId !== undefined ? { orderId: filter.orderId } : {}),
+  static async listMovements(filters: MovementFilterDTO) {
+    const page = Math.max(filters.page || 1, 1);
+    const limit = Math.min(Math.max(filters.limit || 15, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const whereClause: Prisma.StockMovementWhereInput = {
+      ...(filters.orderId ? { orderId: filters.orderId } : {}),
+      ...(filters.type &&
+      Object.values(StockMovementType).includes(
+        filters.type as StockMovementType
+      )
+        ? { type: filters.type as StockMovementType }
+        : {}),
+      ...(filters.startDate || filters.endDate
+        ? {
+            createdAt: {
+              ...(filters.startDate
+                ? { gte: new Date(`${filters.startDate}T00:00:00.000Z`) }
+                : {}),
+              ...(filters.endDate
+                ? { lte: new Date(`${filters.endDate}T23:59:59.999Z`) }
+                : {}),
+            },
+          }
+        : {}),
+      ...(filters.search
+        ? {
+            OR: [
+              {
+                referenceNumber: {
+                  contains: filters.search,
+                  mode: 'insensitive',
+                },
+              },
+              { notes: { contains: filters.search, mode: 'insensitive' } },
+              {
+                items: {
+                  some: {
+                    batch: {
+                      OR: [
+                        {
+                          lotNumber: {
+                            contains: filters.search,
+                            mode: 'insensitive',
+                          },
+                        },
+                        {
+                          product: {
+                            name: {
+                              contains: filters.search,
+                              mode: 'insensitive',
+                            },
+                          },
+                        },
+                        {
+                          product: {
+                            sku: {
+                              contains: filters.search,
+                              mode: 'insensitive',
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [totalItems, movements] = await prisma.$transaction([
+      prisma.stockMovement.count({ where: whereClause }),
+      prisma.stockMovement.findMany({
+        where: whereClause,
+        include: {
+          createdBy: {
+            select: {
+              id: true,
+              fullName: true,
+              username: true,
+            },
+          },
+          originLocation: true,
+          destinationLocation: true,
+          items: {
+            include: {
+              batch: {
+                include: {
+                  product: {
+                    include: {
+                      baseUnit: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return {
+      data: movements,
+      meta: {
+        currentPage: page,
+        itemsPerPage: limit,
+        totalItems,
+        totalPages: Math.ceil(totalItems / limit) || 1,
       },
+    };
+  }
+
+  /**
+   * Consulta de detalle de un movimiento para auditoría por ID
+   */
+  static async getMovementById(id: bigint) {
+    return prisma.stockMovement.findUnique({
+      where: { id },
       include: {
         createdBy: {
           select: {
-            id: true,
             fullName: true,
             username: true,
+            department: true,
           },
         },
         originLocation: true,
         destinationLocation: true,
+        order: {
+          include: {
+            supplier: true,
+          },
+        },
         items: {
           include: {
             batch: {
               include: {
                 product: {
                   include: {
+                    category: true,
                     baseUnit: true,
                   },
                 },
@@ -212,8 +346,6 @@ export class InventoryService {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
-      take: filter?.take ?? 50,
     });
   }
 }

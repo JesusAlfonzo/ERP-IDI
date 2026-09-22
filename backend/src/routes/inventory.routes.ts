@@ -4,6 +4,7 @@ import {
   getBatches,
   getAlerts,
   getMovements,
+  getMovementById,
 } from '../controllers/inventory.controller.js';
 import { authenticateJWT } from '../middlewares/auth.middleware.js';
 
@@ -11,10 +12,10 @@ const router: Router = Router();
 
 router.use(authenticateJWT);
 
-// Todos los usuarios autenticados (Almacén, Laboratorio, Compras, Admin) pueden consultar inventario
 router.get('/', getInventorySummary);
 router.get('/batches', getBatches);
 router.get('/alerts', getAlerts);
-// router.get('/movements', getMovements);
+router.get('/movements', getMovements);
+router.get('/movements/:id', getMovementById);
 
 export default router;

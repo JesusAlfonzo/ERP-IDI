@@ -217,6 +217,7 @@ export const InventoryClientService = {
           batch: {
             id: string;
             lotNumber: string;
+            currentQuantity: number | string;
             expirationDate: string | null;
             product: {
               id: string;
@@ -230,15 +231,21 @@ export const InventoryClientService = {
     >(`/inventory/movements?${params.toString()}`);
 
     const rows: KardexItem[] = [];
-    for (const movement of response.data.data || []) {
+    const rawList = response.data?.data || [];
+
+    for (const movement of rawList) {
       for (const item of movement.items) {
         rows.push({
-          id: Number(item.id),
+          id: Number(movement.id), // ID del movimiento para poder auditar
           createdAt: movement.createdAt,
           type: movement.type as KardexItem["type"],
           quantity: Number(item.quantity),
-          balanceAfter: null,
-          unitCost: item.unitCost === null ? null : Number(item.unitCost),
+          // Saldo actual registrado en el lote para este renglón
+          balanceAfter: Number(item.batch.currentQuantity),
+          unitCost:
+            item.unitCost !== null && item.unitCost !== undefined
+              ? Number(item.unitCost)
+              : null,
           performedBy: movement.createdBy,
           reason: movement.notes,
           batch: {
@@ -254,7 +261,16 @@ export const InventoryClientService = {
       }
     }
 
-    return { ...response.data, data: rows };
+    return {
+      ...response.data,
+      data: rows,
+      meta: response.data.meta || {
+        currentPage: filters?.page || 1,
+        itemsPerPage: filters?.limit || 15,
+        totalItems: rows.length,
+        totalPages: 1,
+      },
+    };
   },
 
   /**

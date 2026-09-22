@@ -60,7 +60,8 @@ interface MovementDetail {
 export default function KardexDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const movementId = params?.id as string;
+  const rawId = params?.id;
+  const movementId = Array.isArray(rawId) ? rawId[0] : (rawId as string);
 
   const [movement, setMovement] = useState<MovementDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,7 +107,7 @@ export default function KardexDetailPage() {
         <button
           type="button"
           onClick={() => router.push("/inventory/kardex")}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs bg-slate-900 text-white rounded-lg"
+          className="inline-flex items-center gap-2 px-4 py-2 text-xs bg-slate-900 text-white rounded-lg cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" /> Volver al Kardex
         </button>
@@ -137,7 +138,7 @@ export default function KardexDetailPage() {
           <button
             type="button"
             onClick={() => router.push("/inventory/kardex")}
-            className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors"
+            className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
             title="Regresar al Kardex"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -152,7 +153,7 @@ export default function KardexDetailPage() {
                   movement.type,
                 )}`}
               >
-                {movement.type.replace("_", " ")}
+                {movement.type.replace(/_/g, " ")}
               </span>
             </div>
             <h1 className="text-xl font-bold text-slate-900 mt-1">
@@ -164,7 +165,7 @@ export default function KardexDetailPage() {
         <button
           type="button"
           onClick={() => window.print()}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-xs transition-colors"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-xs transition-colors cursor-pointer"
         >
           <Printer className="w-3.5 h-3.5" /> Imprimir Comprobante
         </button>

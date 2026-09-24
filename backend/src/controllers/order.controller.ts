@@ -3,12 +3,24 @@ import { OrderService } from '../services/order.service.js';
 import { serializeBigInt } from '../utils/serializer.js';
 
 export const getOrders = async (
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const orders = await OrderService.listOrders();
+    const { status, search } = req.query;
+
+    const orders = await OrderService.listOrders({
+      status:
+        typeof status === 'string' && status.trim() !== ''
+          ? status.trim()
+          : undefined,
+      search:
+        typeof search === 'string' && search.trim() !== ''
+          ? search.trim()
+          : undefined,
+    });
+
     res.status(200).json({
       status: 'SUCCESS',
       data: serializeBigInt(orders),
@@ -102,12 +114,10 @@ export const receiveOrder = async (
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
     if (!id) {
-      res
-        .status(400)
-        .json({
-          status: 'BAD_REQUEST',
-          message: 'ID de orden no proporcionado',
-        });
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'ID de orden no proporcionado',
+      });
       return;
     }
 

@@ -5,6 +5,7 @@ import {
   ReceptionStatus,
   BatchStatus,
   StockMovementType,
+  Prisma,
 } from '@prisma/client';
 
 export interface ReceiveOrderItemDTO {
@@ -38,8 +39,33 @@ export interface CreateOrderDTO {
 }
 
 export class OrderService {
-  static async listOrders() {
+  static async listOrders(filter?: { status?: string; search?: string }) {
+    const whereClause: Prisma.OrderWhereInput = {
+      ...(filter?.status &&
+      Object.values(OrderStatus).includes(filter.status as OrderStatus)
+        ? { status: filter.status as OrderStatus }
+        : {}),
+      ...(filter?.search
+        ? {
+            OR: [
+              { orderNumber: { contains: filter.search, mode: 'insensitive' } },
+              {
+                supplier: {
+                  name: { contains: filter.search, mode: 'insensitive' },
+                },
+              },
+              {
+                supplier: {
+                  rifOrId: { contains: filter.search, mode: 'insensitive' },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
     return prisma.order.findMany({
+      where: whereClause,
       include: {
         supplier: true,
         currency: true,
@@ -52,7 +78,9 @@ export class OrderService {
         },
         items: {
           include: {
-            product: true,
+            product: {
+              include: { baseUnit: true },
+            },
             unit: true,
           },
         },
@@ -78,7 +106,9 @@ export class OrderService {
         },
         items: {
           include: {
-            product: true,
+            product: {
+              include: { baseUnit: true },
+            },
             unit: true,
           },
         },
@@ -175,7 +205,7 @@ export class OrderService {
     const total = subtotal + taxTotal;
 
     return prisma.$transaction(async (tx) => {
-      const order = await tx.order.create({
+      return tx.order.create({
         data: {
           orderNumber,
           supplierId: data.supplierId ?? null,
@@ -213,8 +243,6 @@ export class OrderService {
           currency: true,
         },
       });
-
-      return order;
     });
   }
 
@@ -285,6 +313,12 @@ export class OrderService {
           receivedItem.locationId ?? destinationLocationId;
         const costPerBaseUnit = Number(orderItem.unitPrice) / multiplier;
 
+        // Si es un reactivo clínico, entra a cuarentena para verificación analítica.
+        // Si es material general, queda disponible directamente para uso.
+        const initialStatus = orderItem.product.isReagent
+          ? BatchStatus.EN_CUARENTENA
+          : BatchStatus.DISPONIBLE;
+
         const stockBatch = await tx.stockBatch.create({
           data: {
             productId: orderItem.productId,
@@ -293,7 +327,7 @@ export class OrderService {
             currentQuantity: baseQuantityToAdd,
             costPrice: costPerBaseUnit,
             expirationDate: receivedItem.expirationDate,
-            status: BatchStatus.EN_CUARENTENA,
+            status: initialStatus,
           },
         });
 

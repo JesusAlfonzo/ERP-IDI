@@ -1,5 +1,11 @@
 import { prisma } from '../config/prisma.js';
-import { BatchStatus, StockMovementType, Prisma } from '@prisma/client';
+import {
+  BatchStatus,
+  StockMovementType,
+  IncidentType,
+  IncidentStatus,
+  Prisma,
+} from '@prisma/client';
 
 export interface InventoryFilterDTO {
   categoryId?: number;
@@ -38,6 +44,14 @@ export interface DirectWasteDTO {
     reason: string;
   }[];
   executedById: number;
+}
+
+export interface UpdateBatchStatusDTO {
+  batchId: bigint;
+  status: BatchStatus;
+  reason: string;
+  incidentType?: string;
+  userId: number;
 }
 
 export class InventoryService {
@@ -549,6 +563,64 @@ export class InventoryService {
         },
         details,
       };
+    });
+  }
+
+  /**
+   * Dictamen técnico de control de calidad / Liberación o Rechazo de Cuarentena
+   */
+  static async updateBatchStatus(data: UpdateBatchStatusDTO) {
+    return prisma.$transaction(async (tx) => {
+      const batch = await tx.stockBatch.findUnique({
+        where: { id: data.batchId },
+        include: { product: true },
+      });
+
+      if (!batch) {
+        throw new Error(`Lote #${data.batchId} no encontrado`);
+      }
+
+      const updatedBatch = await tx.stockBatch.update({
+        where: { id: data.batchId },
+        data: {
+          status: data.status,
+        },
+        include: {
+          product: {
+            include: { baseUnit: true },
+          },
+          location: true,
+        },
+      });
+
+      if (data.status === BatchStatus.DEFECTUOSO) {
+        let resolvedIncidentType: IncidentType =
+          IncidentType.FALLA_CONTROL_CALIDAD;
+        if (
+          data.incidentType &&
+          Object.values(IncidentType).includes(
+            data.incidentType as IncidentType
+          )
+        ) {
+          resolvedIncidentType = data.incidentType as IncidentType;
+        }
+
+        await tx.batchIncident.create({
+          data: {
+            batchId: batch.id,
+            reportedById: data.userId,
+            incidentType: resolvedIncidentType,
+            description: data.reason,
+            affectedQuantity: batch.currentQuantity,
+            status: IncidentStatus.CONFIRMADA,
+            resolvedById: data.userId,
+            resolutionNotes: `Lote declarado defectuoso en inspección de control de calidad: ${data.reason}`,
+            resolvedAt: new Date(),
+          },
+        });
+      }
+
+      return updatedBatch;
     });
   }
 }

@@ -215,3 +215,56 @@ export const registerDirectWaste = async (
     next(error);
   }
 };
+
+export const updateBatchStatus = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const idStr = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    if (!idStr) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'ID de lote no proporcionado',
+      });
+      return;
+    }
+
+    const { status, reason, incidentType } = req.body;
+
+    if (
+      !status ||
+      !Object.values(BatchStatus).includes(status as BatchStatus)
+    ) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: `Estado inválido. Debe ser uno de: ${Object.values(BatchStatus).join(', ')}`,
+      });
+      return;
+    }
+
+    const userId = (req as unknown as { user?: { id: number } }).user?.id || 1;
+
+    const updatedBatch = await InventoryService.updateBatchStatus({
+      batchId: BigInt(idStr),
+      status: status as BatchStatus,
+      reason: String(reason || '').trim(),
+      incidentType: typeof incidentType === 'string' ? incidentType : undefined,
+      userId,
+    });
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message:
+        status === 'DISPONIBLE'
+          ? 'Lote liberado e integrado al inventario disponible exitosamente.'
+          : 'Lote declarado defectuoso y apartado de operaciones.',
+      data: serializeBigInt(updatedBatch),
+    });
+  } catch (error) {
+    next(error);
+  }
+};

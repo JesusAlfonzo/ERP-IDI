@@ -119,6 +119,12 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     roles: ["ADMINISTRADOR", "COMPRAS"],
     children: [
       {
+        label: "Preórdenes de Compra",
+        href: "/purchasing/requisitions",
+        icon: FileText,
+        roles: ["ADMINISTRADOR", "COMPRAS"],
+      },
+      {
         label: "Órdenes de Compra",
         href: "/purchasing/orders",
         icon: ShoppingCart,
@@ -143,6 +149,12 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     label: "Seguridad & Usuarios",
     href: "/admin/users",
     icon: Shield,
+    roles: ["ADMINISTRADOR"],
+  },
+  {
+    label: "Políticas & Ventana",
+    href: "/admin/security",
+    icon: SlidersHorizontal,
     roles: ["ADMINISTRADOR"],
   },
 ];

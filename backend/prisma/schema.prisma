@@ -239,6 +239,7 @@ model CurrencyExchange {
 
 model Category {
   id          Int       @id @default(autoincrement())
+  code        String?   @unique
   name        String    @unique
   description String?
   products    Product[]

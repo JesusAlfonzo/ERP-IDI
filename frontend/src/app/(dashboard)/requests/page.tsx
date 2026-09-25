@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { useState, useEffect, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { RequestClientService } from "@/services/request.service";
 import { InventoryClientService } from "@/services/inventory.service";
@@ -11,6 +11,7 @@ import type {
   RequestPriority,
 } from "@/types/requests";
 import type { Product, StockBatch } from "@/types/inventory";
+import type { AuthUser } from "@/types/auth";
 import {
   ClipboardList,
   Plus,
@@ -83,6 +84,9 @@ interface FormItem {
 
 export default function InternalRequestsPage() {
   const router = useRouter();
+  const [currentUser] = useState<AuthUser | null>(() =>
+    AuthService.getCurrentUser(),
+  );
   const [requests, setRequests] = useState<InternalRequest[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [availableBatches, setAvailableBatches] = useState<
@@ -98,6 +102,18 @@ export default function InternalRequestsPage() {
   >([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [, startTransition] = useTransition();
+
+  // Permisos basados en Roles (RBAC estricto)
+  const userRoles = currentUser?.roles || [];
+  const isWarehouseStaff =
+    userRoles.includes("ADMINISTRADOR") || userRoles.includes("ALMACENISTA");
+  const canCreate =
+    userRoles.includes("SOLICITANTE") ||
+    userRoles.includes("ADMINISTRADOR") ||
+    userRoles.includes("ALMACENISTA") ||
+    userRoles.includes("ANALISTA_LABORATORIO") ||
+    userRoles.includes("COMPRAS");
 
   // Modal Nueva Solicitud
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
@@ -109,7 +125,7 @@ export default function InternalRequestsPage() {
   ]);
   const [submitting, setSubmitting] = useState(false);
 
-  // Modal Despacho (Almacén)
+  // Modal Despacho (Solo Almacén)
   const [selectedForDispatch, setSelectedForDispatch] =
     useState<InternalRequest | null>(null);
   const [dispatchItemAllocations, setDispatchItemAllocations] = useState<
@@ -118,7 +134,7 @@ export default function InternalRequestsPage() {
   const [dispatchNotes, setDispatchNotes] = useState("");
   const [dispatching, setDispatching] = useState(false);
 
-  // Modal Rechazo
+  // Modal Rechazo (Solo Almacén)
   const [requestToReject, setRequestToReject] =
     useState<InternalRequest | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -132,7 +148,8 @@ export default function InternalRequestsPage() {
     message: string;
   } | null>(null);
 
-  const loadData = useCallback(async () => {
+  // Función reutilizable para recargar datos manualmente tras una acción
+  const refreshData = async () => {
     setLoading(true);
     try {
       const [reqs, prods, batches] = await Promise.all([
@@ -140,7 +157,9 @@ export default function InternalRequestsPage() {
           () => [],
         ),
         InventoryClientService.getProducts().catch(() => []),
-        InventoryClientService.getActiveBatches().catch(() => []),
+        isWarehouseStaff
+          ? InventoryClientService.getActiveBatches().catch(() => [])
+          : Promise.resolve([]),
       ]);
       setRequests(reqs);
       setProducts(prods);
@@ -148,18 +167,46 @@ export default function InternalRequestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  };
 
   useEffect(() => {
-    const init = async () => {
-      if (!AuthService.isAuthenticated()) {
-        router.replace("/login");
-        return;
-      }
-      await loadData();
+    if (!AuthService.isAuthenticated()) {
+      router.replace("/login");
+      return;
+    }
+
+    let isMounted = true;
+
+    startTransition(() => {
+      void (async () => {
+        try {
+          const [reqs, prods, batches] = await Promise.all([
+            RequestClientService.getRequests(statusFilter || undefined).catch(
+              () => [],
+            ),
+            InventoryClientService.getProducts().catch(() => []),
+            isWarehouseStaff
+              ? InventoryClientService.getActiveBatches().catch(() => [])
+              : Promise.resolve([]),
+          ]);
+          if (isMounted) {
+            setRequests(reqs);
+            setProducts(prods);
+            setAvailableBatches(batches);
+            setLoading(false);
+          }
+        } catch {
+          if (isMounted) {
+            setLoading(false);
+          }
+        }
+      })();
+    });
+
+    return () => {
+      isMounted = false;
     };
-    init();
-  }, [router, loadData]);
+  }, [router, statusFilter, isWarehouseStaff]);
 
   const handleAddItem = () => {
     setFormItems((prev) => [...prev, { productId: 0, requestedQuantity: 1 }]);
@@ -213,7 +260,7 @@ export default function InternalRequestsPage() {
       setIsNewModalOpen(false);
       setJustification("");
       setFormItems([{ productId: 0, requestedQuantity: 1 }]);
-      await loadData();
+      await refreshData();
     } catch (err: unknown) {
       setFeedback({
         status: "error",
@@ -228,11 +275,11 @@ export default function InternalRequestsPage() {
   };
 
   const handleApprove = async (req: InternalRequest) => {
+    if (!isWarehouseStaff) return;
     setApprovingId(req.id);
     setFeedback(null);
     try {
       const itemsToApprove = req.items.map((it) => {
-        // Soporta tanto quantityRequested (nombre de base de datos) como requestedQuantity
         const qty = Number(
           (it as unknown as { quantityRequested?: number }).quantityRequested ??
             it.requestedQuantity ??
@@ -250,7 +297,7 @@ export default function InternalRequestsPage() {
         status: "success",
         message: `Solicitud #${req.requestNumber} aprobada con éxito. Lista para despacho.`,
       });
-      await loadData();
+      await refreshData();
     } catch (err: unknown) {
       setFeedback({
         status: "error",
@@ -263,6 +310,7 @@ export default function InternalRequestsPage() {
   };
 
   const handleOpenDispatch = (req: InternalRequest) => {
+    if (!isWarehouseStaff) return;
     setSelectedForDispatch(req);
     const initialMap: Record<
       number,
@@ -294,7 +342,7 @@ export default function InternalRequestsPage() {
 
   const handleConfirmDispatch = async (e: FormEvent) => {
     e.preventDefault();
-    if (!selectedForDispatch) return;
+    if (!selectedForDispatch || !isWarehouseStaff) return;
     setFeedback(null);
 
     const allocationsList = Object.entries(dispatchItemAllocations).map(
@@ -332,7 +380,7 @@ export default function InternalRequestsPage() {
         message: "Insumos despachados y descontados del inventario.",
       });
       setSelectedForDispatch(null);
-      await loadData();
+      await refreshData();
     } catch (err: unknown) {
       setFeedback({
         status: "error",
@@ -347,7 +395,11 @@ export default function InternalRequestsPage() {
   };
 
   const handleReject = async () => {
-    if (!requestToReject || rejectReason.trim().length < 5) {
+    if (
+      !requestToReject ||
+      !isWarehouseStaff ||
+      rejectReason.trim().length < 5
+    ) {
       setFeedback({
         status: "error",
         message: "El motivo de rechazo debe tener al menos 5 caracteres.",
@@ -366,7 +418,7 @@ export default function InternalRequestsPage() {
       });
       setRequestToReject(null);
       setRejectReason("");
-      await loadData();
+      await refreshData();
     } catch (err: unknown) {
       setFeedback({
         status: "error",
@@ -387,22 +439,25 @@ export default function InternalRequestsPage() {
             Solicitudes Internas de Material y Reactivos
           </h1>
           <p className="text-xs text-slate-500">
-            Requisiciones desde áreas diagnósticas y despacho controlado por
-            almacén
+            {isWarehouseStaff
+              ? "Gestión, aprobación y despacho de requisiciones institucionales"
+              : "Mis requisiciones de material e insumos de laboratorio"}
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setIsNewModalOpen(true);
-            setFeedback(null);
-          }}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Nueva Solicitud
-        </button>
+        {canCreate && (
+          <button
+            type="button"
+            onClick={() => {
+              setIsNewModalOpen(true);
+              setFeedback(null);
+            }}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Nueva Solicitud
+          </button>
+        )}
       </div>
 
       {feedback && (
@@ -442,7 +497,7 @@ export default function InternalRequestsPage() {
 
         <button
           type="button"
-          onClick={() => void loadData()}
+          onClick={() => void refreshData()}
           className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs cursor-pointer"
           title="Actualizar listado"
         >
@@ -473,7 +528,7 @@ export default function InternalRequestsPage() {
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2" />
-                    Cargando requisiciones internas...
+                    Cargando requisiciones...
                   </td>
                 </tr>
               ) : requests.length === 0 ? (
@@ -534,7 +589,7 @@ export default function InternalRequestsPage() {
                       </td>
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* Botón Ver Ficha / Comprobante */}
+                          {/* Botón Ver Comprobante */}
                           <button
                             type="button"
                             onClick={() => router.push(`/requests/${req.id}`)}
@@ -544,50 +599,52 @@ export default function InternalRequestsPage() {
                             <Eye className="w-3.5 h-3.5" />
                           </button>
 
-                          {/* Botón Aprobar si está pendiente */}
-                          {req.status === "PENDIENTE" && (
-                            <button
-                              type="button"
-                              onClick={() => void handleApprove(req)}
-                              disabled={approvingId === req.id}
-                              className="inline-flex items-center gap-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer"
-                              title="Aprobar solicitud"
-                            >
-                              {approvingId === req.id ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <CheckCheck className="w-3.5 h-3.5" />
+                          {/* ACCIONES EXCLUSIVAS DE ALMACÉN / ADMINISTRACIÓN */}
+                          {isWarehouseStaff && (
+                            <>
+                              {req.status === "PENDIENTE" && (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleApprove(req)}
+                                  disabled={approvingId === req.id}
+                                  className="inline-flex items-center gap-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer"
+                                  title="Aprobar solicitud"
+                                >
+                                  {approvingId === req.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <CheckCheck className="w-3.5 h-3.5" />
+                                  )}
+                                  Aprobar
+                                </button>
                               )}
-                              Aprobar
-                            </button>
-                          )}
 
-                          {/* Botón Despachar */}
-                          {canDispatch && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDispatch(req)}
-                              className="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer"
-                              title="Despachar materiales"
-                            >
-                              <Check className="w-3.5 h-3.5" /> Despachar
-                            </button>
-                          )}
+                              {canDispatch && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenDispatch(req)}
+                                  className="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer"
+                                  title="Despachar materiales"
+                                >
+                                  <Check className="w-3.5 h-3.5" /> Despachar
+                                </button>
+                              )}
 
-                          {/* Botón Rechazar */}
-                          {req.status === "PENDIENTE" && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRequestToReject(req);
-                                setRejectReason("");
-                                setFeedback(null);
-                              }}
-                              className="inline-flex items-center bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 p-1 rounded transition-colors cursor-pointer"
-                              title="Rechazar solicitud"
-                            >
-                              <Ban className="w-3.5 h-3.5" />
-                            </button>
+                              {req.status === "PENDIENTE" && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRequestToReject(req);
+                                    setRejectReason("");
+                                    setFeedback(null);
+                                  }}
+                                  className="inline-flex items-center bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 p-1 rounded transition-colors cursor-pointer"
+                                  title="Rechazar solicitud"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
@@ -600,8 +657,8 @@ export default function InternalRequestsPage() {
         </div>
       </div>
 
-      {/* Modal: Nueva Solicitud (Laboratorio) */}
-      {isNewModalOpen && (
+      {/* Modal: Nueva Solicitud */}
+      {isNewModalOpen && canCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -657,7 +714,6 @@ export default function InternalRequestsPage() {
                 </div>
               </div>
 
-              {/* Renglones Solicitados */}
               <div className="space-y-2 pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
@@ -769,8 +825,8 @@ export default function InternalRequestsPage() {
         </div>
       )}
 
-      {/* Modal: Despacho y Asignación de Lotes (Almacén) */}
-      {selectedForDispatch && (
+      {/* Modal: Despacho (Solo Almacén) */}
+      {selectedForDispatch && isWarehouseStaff && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -985,8 +1041,8 @@ export default function InternalRequestsPage() {
         </div>
       )}
 
-      {/* Modal: Rechazo */}
-      {requestToReject && (
+      {/* Modal: Rechazo (Solo Almacén) */}
+      {requestToReject && isWarehouseStaff && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-5">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">

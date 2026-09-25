@@ -3,6 +3,11 @@ import { RequestService } from '../services/request.service.js';
 import { serializeBigInt } from '../utils/serializer.js';
 import { RequestPriority, RequestStatus } from '@prisma/client';
 
+// Helper local para comprobar permisos de almacén / administración
+const isWarehouseStaff = (roles: string[] = []): boolean => {
+  return roles.includes('ADMINISTRADOR') || roles.includes('ALMACENISTA');
+};
+
 export const getRequests = async (
   req: Request,
   res: Response,
@@ -25,9 +30,8 @@ export const getRequests = async (
     }
 
     const userRoles = req.user?.roles ?? [];
-    const isStaff =
-      userRoles.includes('ADMINISTRADOR') || userRoles.includes('ALMACENISTA');
-    if (!isStaff && req.user?.id) {
+    if (!isWarehouseStaff(userRoles) && req.user?.id) {
+      // Los solicitantes o personal no-almacén solo ven sus propias solicitudes
       filter.userId = req.user.id;
     }
 
@@ -60,6 +64,27 @@ export const getRequestById = async (
 
     const request = await RequestService.getRequestById(BigInt(id));
 
+    if (!request) {
+      res.status(404).json({
+        status: 'NOT_FOUND',
+        message: 'Solicitud no encontrada',
+      });
+      return;
+    }
+
+    // CONTROL DE ACCESO: Si no es Almacén/Admin, solo puede verla si es el autor
+    const userRoles = req.user?.roles ?? [];
+    if (
+      !isWarehouseStaff(userRoles) &&
+      req.user?.id !== Number(request.userId)
+    ) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message: 'No tienes autorización para acceder a esta solicitud.',
+      });
+      return;
+    }
+
     res.status(200).json({
       status: 'SUCCESS',
       data: serializeBigInt(request),
@@ -79,6 +104,22 @@ export const createRequest = async (
       res
         .status(401)
         .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const userRoles = req.user?.roles ?? [];
+    const canCreate =
+      userRoles.includes('SOLICITANTE') ||
+      userRoles.includes('ADMINISTRADOR') ||
+      userRoles.includes('ALMACENISTA') ||
+      userRoles.includes('ANALISTA_LABORATORIO') ||
+      userRoles.includes('COMPRAS');
+
+    if (!canCreate) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message: 'No posees permisos de solicitante para crear requisiciones.',
+      });
       return;
     }
 
@@ -178,6 +219,17 @@ export const approveRequest = async (
       return;
     }
 
+    // CONTROL ESTRICTO: Solo Almacén o Administrador pueden aprobar
+    const userRoles = req.user?.roles ?? [];
+    if (!isWarehouseStaff(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Solo el personal de Almacén o Administración puede aprobar requisiciones.',
+      });
+      return;
+    }
+
     const { items } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -232,6 +284,17 @@ export const rejectRequest = async (
       return;
     }
 
+    // CONTROL ESTRICTO: Solo Almacén o Administrador pueden rechazar
+    const userRoles = req.user?.roles ?? [];
+    if (!isWarehouseStaff(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Solo el personal de Almacén o Administración puede rechazar requisiciones.',
+      });
+      return;
+    }
+
     const reason = req.body.reason ?? req.body.notes;
 
     if (!reason || String(reason).trim().length < 5) {
@@ -278,6 +341,17 @@ export const dispatchRequest = async (
       res
         .status(401)
         .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    // CONTROL ESTRICTO: Solo Almacén o Administrador pueden despachar y descontar stock
+    const userRoles = req.user?.roles ?? [];
+    if (!isWarehouseStaff(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Solo el personal de Almacén o Administración puede despachar materiales.',
+      });
       return;
     }
 

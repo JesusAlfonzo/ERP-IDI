@@ -13,6 +13,7 @@ import currencyRoutes from './routes/currency.routes.js';
 import supplierRoutes from './routes/supplier.routes.js';
 import orderRoutes from './routes/order.routes.js';
 import purchaseFinanceRoutes from './routes/purchase-finance.routes.js';
+import purchaseRequisitionRoutes from './routes/purchase-requisition.routes.js';
 import stockAdjustmentRoutes from './routes/stock-adjustment.routes.js';
 import inventoryRoutes from './routes/inventory.routes.js';
 import inventoryMasterRoutes from './routes/inventory-master.routes.js';
@@ -60,6 +61,7 @@ app.use('/api/suppliers', supplierRoutes);
 // Compras y Finanzas
 app.use('/api/orders', orderRoutes);
 app.use('/api/orders', purchaseFinanceRoutes);
+app.use('/api/purchase-requisitions', purchaseRequisitionRoutes);
 
 // Inventario, Ajustes y Maestros
 app.use('/api/inventory', stockAdjustmentRoutes);

@@ -3,12 +3,26 @@ import { SupplierService } from '../services/supplier.service.js';
 import { PaymentMethod } from '@prisma/client';
 import { serializeBigInt } from '../utils/serializer.js';
 
+const isPurchasingOrAdmin = (roles: string[] = []): boolean => {
+  return roles.includes('ADMINISTRADOR') || roles.includes('COMPRAS');
+};
+
 export const getSupplierDebts = async (
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
+    const userRoles = req.user?.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'No posee privilegios para consultar las deudas comerciales de la institución.',
+      });
+      return;
+    }
+
     res
       .status(200)
       .json({ status: 'SUCCESS', data: await SupplierService.listDebts() });
@@ -23,14 +37,22 @@ export const getSupplierStatement = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    res
-      .status(200)
-      .json({
-        status: 'SUCCESS',
-        data: serializeBigInt(
-          await SupplierService.getStatement(Number(req.params.id))
-        ),
+    const userRoles = req.user?.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'No posee privilegios para consultar el estado de cuenta financiero del proveedor.',
       });
+      return;
+    }
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      data: serializeBigInt(
+        await SupplierService.getStatement(Number(req.params.id))
+      ),
+    });
   } catch (error) {
     next(error);
   }
@@ -48,6 +70,17 @@ export const registerSupplierPayment = async (
         .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
       return;
     }
+
+    const userRoles = req.user.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Solo el departamento de Compras o Administración puede registrar pagos.',
+      });
+      return;
+    }
+
     const { amountUsd, paymentMethod, referenceNumber, paymentDate, notes } =
       req.body;
     if (
@@ -56,14 +89,13 @@ export const registerSupplierPayment = async (
       !paymentMethod ||
       !Object.values(PaymentMethod).includes(paymentMethod)
     ) {
-      res
-        .status(400)
-        .json({
-          status: 'BAD_REQUEST',
-          message: `amountUsd y paymentMethod son obligatorios. Métodos: ${Object.values(PaymentMethod).join(', ')}`,
-        });
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: `amountUsd y paymentMethod son obligatorios. Métodos: ${Object.values(PaymentMethod).join(', ')}`,
+      });
       return;
     }
+
     const payment = await SupplierService.registerPayment({
       supplierId: Number(req.params.id),
       amountUsd: Number(amountUsd),
@@ -73,13 +105,12 @@ export const registerSupplierPayment = async (
       notes: notes ? String(notes) : null,
       registeredById: req.user.id,
     });
-    res
-      .status(201)
-      .json({
-        status: 'SUCCESS',
-        message: 'Pago registrado correctamente',
-        data: serializeBigInt(payment),
-      });
+
+    res.status(201).json({
+      status: 'SUCCESS',
+      message: 'Pago registrado correctamente',
+      data: serializeBigInt(payment),
+    });
   } catch (error) {
     next(error);
   }
@@ -114,6 +145,14 @@ export const getSupplierById = async (
     const { id } = req.params;
     const supplier = await SupplierService.getSupplierById(Number(id));
 
+    if (!supplier) {
+      res.status(404).json({
+        status: 'NOT_FOUND',
+        message: 'Proveedor no encontrado',
+      });
+      return;
+    }
+
     res.status(200).json({
       status: 'SUCCESS',
       data: supplier,
@@ -129,6 +168,16 @@ export const createSupplier = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const userRoles = req.user?.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'No posee privilegios para registrar proveedores en el sistema.',
+      });
+      return;
+    }
+
     const { rifOrId, name, contactName, phone, email, address } = req.body;
 
     if (!rifOrId || !name) {
@@ -150,6 +199,7 @@ export const createSupplier = async (
 
     res.status(201).json({
       status: 'SUCCESS',
+      message: 'Proveedor registrado exitosamente',
       data: supplier,
     });
   } catch (error) {
@@ -163,6 +213,15 @@ export const updateSupplier = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const userRoles = req.user?.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message: 'No posee privilegios para modificar datos de proveedores.',
+      });
+      return;
+    }
+
     const { id } = req.params;
     const { name, contactName, phone, email, address, isActive } = req.body;
 
@@ -181,6 +240,7 @@ export const updateSupplier = async (
 
     res.status(200).json({
       status: 'SUCCESS',
+      message: 'Proveedor actualizado correctamente',
       data: supplier,
     });
   } catch (error) {
@@ -194,6 +254,15 @@ export const deleteSupplier = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const userRoles = req.user?.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message: 'No posee privilegios para desactivar proveedores.',
+      });
+      return;
+    }
+
     const { id } = req.params;
     await SupplierService.deleteSupplier(Number(id));
 

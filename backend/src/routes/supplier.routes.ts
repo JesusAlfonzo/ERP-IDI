@@ -16,19 +16,36 @@ const router: Router = Router();
 
 router.use(authenticateJWT);
 
-router.get('/debts', getSupplierDebts);
-router.get('/:id/statement', getSupplierStatement);
+// Finanzas y deudas comerciales: Exclusivo Compras y Administrador
+router.get(
+  '/debts',
+  requireRoles(['ADMINISTRADOR', 'COMPRAS']),
+  getSupplierDebts
+);
+router.get(
+  '/:id/statement',
+  requireRoles(['ADMINISTRADOR', 'COMPRAS']),
+  getSupplierStatement
+);
 router.post(
   '/:id/payments',
   requireRoles(['ADMINISTRADOR', 'COMPRAS']),
   registerSupplierPayment
 );
 
-// Lectura para cualquier usuario autenticado (útil para ver ficha del proveedor)
-router.get('/', getSuppliers);
-router.get('/:id', getSupplierById);
+// Catálogo de proveedores: Lectura permitida para Compras, Almacén y Admin
+router.get(
+  '/',
+  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ALMACENISTA']),
+  getSuppliers
+);
+router.get(
+  '/:id',
+  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ALMACENISTA']),
+  getSupplierById
+);
 
-// Escritura restringida a Compras y Administrador
+// Mutaciones de ficha de proveedor
 router.post('/', requireRoles(['ADMINISTRADOR', 'COMPRAS']), createSupplier);
 router.put('/:id', requireRoles(['ADMINISTRADOR', 'COMPRAS']), updateSupplier);
 router.delete(

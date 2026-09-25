@@ -3,12 +3,33 @@ import { PurchaseFinanceService } from '../services/purchase-finance.service.js'
 import { serializeBigInt } from '../utils/serializer.js';
 import { PaymentMethod } from '@prisma/client';
 
+const isPurchasingOrAdmin = (roles: string[] = []): boolean => {
+  return roles.includes('ADMINISTRADOR') || roles.includes('COMPRAS');
+};
+
 export const registerInvoice = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
+    if (!req.user?.id) {
+      res
+        .status(401)
+        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const userRoles = req.user.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Solo el departamento de Compras o Administración puede cargar facturas.',
+      });
+      return;
+    }
+
     const rawId = req.params.orderId;
     const orderId = Array.isArray(rawId) ? rawId[0] : rawId;
 
@@ -62,6 +83,23 @@ export const registerPayment = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    if (!req.user?.id) {
+      res
+        .status(401)
+        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const userRoles = req.user.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Solo el departamento de Compras o Administración puede amortizar pagos de órdenes.',
+      });
+      return;
+    }
+
     const rawId = req.params.orderId;
     const orderId = Array.isArray(rawId) ? rawId[0] : rawId;
 
@@ -69,13 +107,6 @@ export const registerPayment = async (
       res
         .status(400)
         .json({ status: 'BAD_REQUEST', message: 'ID de orden requerido' });
-      return;
-    }
-
-    if (!req.user?.id) {
-      res
-        .status(401)
-        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
       return;
     }
 
@@ -135,6 +166,16 @@ export const getOrderFinancialSummary = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const userRoles = req.user?.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'No posee privilegios para consultar el balance financiero de esta orden.',
+      });
+      return;
+    }
+
     const rawId = req.params.orderId;
     const orderId = Array.isArray(rawId) ? rawId[0] : rawId;
 

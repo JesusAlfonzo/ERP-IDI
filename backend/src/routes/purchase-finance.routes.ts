@@ -12,9 +12,13 @@ const router: Router = Router();
 router.use(authenticateJWT);
 
 // Resumen financiero de la orden
-router.get('/:orderId/finance', getOrderFinancialSummary);
+router.get(
+  '/:orderId/finance',
+  requireRoles(['ADMINISTRADOR', 'COMPRAS']),
+  getOrderFinancialSummary
+);
 
-// Registro de facturas y pagos (Admin y Compras)
+// Registro de facturas y amortización de pagos
 router.post(
   '/:orderId/invoices',
   requireRoles(['ADMINISTRADOR', 'COMPRAS']),
@@ -28,4 +32,3 @@ router.post(
 );
 
 export default router;
- 

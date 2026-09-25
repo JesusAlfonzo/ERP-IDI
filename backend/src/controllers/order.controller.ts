@@ -116,7 +116,14 @@ export const createOrder = async (
       return;
     }
 
-    const { supplierId, currencyId, notes, items } = req.body;
+    const {
+      supplierId,
+      currencyId,
+      exchangeRate,
+      requisitionId,
+      notes,
+      items,
+    } = req.body;
 
     if (!currencyId || !Array.isArray(items) || items.length === 0) {
       res.status(400).json({
@@ -131,11 +138,14 @@ export const createOrder = async (
       unitId: Number(item.unitId),
       quantityOrdered: Number(item.quantityOrdered),
       unitPrice: Number(item.unitPrice),
+      isExempt: Boolean(item.isExempt),
     }));
 
     const order = await OrderService.createOrder({
       supplierId: supplierId ? Number(supplierId) : null,
       currencyId: Number(currencyId),
+      exchangeRate: exchangeRate ? Number(exchangeRate) : undefined,
+      requisitionId: requisitionId ? BigInt(requisitionId) : null,
       notes: notes ? String(notes) : null,
       createdById: req.user.id,
       items: formattedItems,

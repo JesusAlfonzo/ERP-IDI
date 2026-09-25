@@ -28,11 +28,14 @@ export interface CreateOrderItemDTO {
   unitId: number;
   quantityOrdered: number;
   unitPrice: number;
+  isExempt?: boolean;
 }
 
 export interface CreateOrderDTO {
   supplierId?: number | null;
   currencyId: number;
+  exchangeRate?: number;
+  requisitionId?: bigint | null;
   notes?: string | null;
   createdById: number;
   items: CreateOrderItemDTO[];
@@ -69,6 +72,13 @@ export class OrderService {
       include: {
         supplier: true,
         currency: true,
+        requisition: {
+          select: {
+            id: true,
+            requisitionNumber: true,
+            departmentSection: true,
+          },
+        },
         createdBy: {
           select: {
             id: true,
@@ -79,7 +89,7 @@ export class OrderService {
         items: {
           include: {
             product: {
-              include: { baseUnit: true },
+              include: { baseUnit: true, purchaseUnit: true },
             },
             unit: true,
           },
@@ -97,6 +107,13 @@ export class OrderService {
       include: {
         supplier: true,
         currency: true,
+        requisition: {
+          select: {
+            id: true,
+            requisitionNumber: true,
+            departmentSection: true,
+          },
+        },
         createdBy: {
           select: {
             id: true,
@@ -107,7 +124,7 @@ export class OrderService {
         items: {
           include: {
             product: {
-              include: { baseUnit: true },
+              include: { baseUnit: true, purchaseUnit: true },
             },
             unit: true,
           },
@@ -125,7 +142,7 @@ export class OrderService {
   }
 
   static async createOrder(data: CreateOrderDTO) {
-    if (data.items.length === 0) {
+    if (!data.items || data.items.length === 0) {
       throw new Error('La orden debe incluir al menos un ítem');
     }
 
@@ -143,18 +160,32 @@ export class OrderService {
       throw new Error('Moneda no encontrada');
     }
 
-    const exchangeRate = currency.isDefault
-      ? 1.0
-      : currency.exchanges[0]?.rate
-        ? Number(currency.exchanges[0].rate)
-        : 1.0;
+    const exchangeRate =
+      data.exchangeRate && Number(data.exchangeRate) > 0
+        ? Number(data.exchangeRate)
+        : currency.isDefault
+          ? 1.0
+          : currency.exchanges[0]?.rate
+            ? Number(currency.exchanges[0].rate)
+            : 1.0;
 
     const currentYear = new Date().getFullYear();
-    const count = await prisma.order.count();
-    const orderNumber = `ORD-${currentYear}-${String(count + 1).padStart(4, '0')}`;
+    const latestOrder = await prisma.order.findFirst({
+      where: { orderNumber: { startsWith: `ORD-${currentYear}-` } },
+      orderBy: { orderNumber: 'desc' },
+    });
 
-    let subtotal = 0;
-    let taxTotal = 0;
+    let nextSeq = 1;
+    if (latestOrder) {
+      const parts = latestOrder.orderNumber.split('-');
+      const seqStr = parts[2];
+      const seq = seqStr ? parseInt(seqStr, 10) : NaN;
+      if (!isNaN(seq)) nextSeq = seq + 1;
+    }
+    const orderNumber = `ORD-${currentYear}-${String(nextSeq).padStart(4, '0')}`;
+
+    let taxableAmountUsd = 0;
+    let exemptAmountUsd = 0;
 
     const processedItems: {
       productId: bigint;
@@ -164,6 +195,7 @@ export class OrderService {
       baseQuantity: number;
       unitPrice: number;
       taxRate: number;
+      isExempt: boolean;
       totalLine: number;
     }[] = [];
 
@@ -177,18 +209,28 @@ export class OrderService {
       }
 
       let multiplier = 1.0;
-      if (product.purchaseUnitId && product.purchaseUnitId === item.unitId) {
-        multiplier = Number(product.conversionFactor);
+      if (product.baseUnitId !== item.unitId) {
+        multiplier =
+          Number(product.conversionFactor) > 0
+            ? Number(product.conversionFactor)
+            : 1.0;
       }
 
       const baseQuantity = item.quantityOrdered * multiplier;
-      const taxRate = product.isTaxExempt ? 0.0 : 16.0;
-      const lineSubtotal = item.quantityOrdered * item.unitPrice;
-      const lineTax = lineSubtotal * (taxRate / 100);
-      const totalLine = lineSubtotal + lineTax;
+      const isExempt = item.isExempt ?? product.isTaxExempt;
+      const taxRate = isExempt ? 0.0 : 16.0;
+      const lineSubtotal =
+        Math.round(item.quantityOrdered * item.unitPrice * 100) / 100;
+      const lineTax = isExempt
+        ? 0.0
+        : Math.round(lineSubtotal * 0.16 * 100) / 100;
+      const totalLine = Math.round((lineSubtotal + lineTax) * 100) / 100;
 
-      subtotal += lineSubtotal;
-      taxTotal += lineTax;
+      if (isExempt) {
+        exemptAmountUsd += lineSubtotal;
+      } else {
+        taxableAmountUsd += lineSubtotal;
+      }
 
       processedItems.push({
         productId: item.productId,
@@ -198,14 +240,27 @@ export class OrderService {
         baseQuantity,
         unitPrice: item.unitPrice,
         taxRate,
+        isExempt,
         totalLine,
       });
     }
 
-    const total = subtotal + taxTotal;
+    taxableAmountUsd = Math.round(taxableAmountUsd * 100) / 100;
+    exemptAmountUsd = Math.round(exemptAmountUsd * 100) / 100;
+    const taxAmountUsd = Math.round(taxableAmountUsd * 0.16 * 100) / 100;
+    const totalAmountUsd =
+      Math.round((taxableAmountUsd + exemptAmountUsd + taxAmountUsd) * 100) /
+      100;
+    const totalAmountBs =
+      Math.round(totalAmountUsd * exchangeRate * 100) / 100;
+
+    const subtotal =
+      Math.round((taxableAmountUsd + exemptAmountUsd) * 100) / 100;
+    const taxTotal = taxAmountUsd;
+    const total = totalAmountUsd;
 
     return prisma.$transaction(async (tx) => {
-      return tx.order.create({
+      const createdOrder = await tx.order.create({
         data: {
           orderNumber,
           supplierId: data.supplierId ?? null,
@@ -217,6 +272,12 @@ export class OrderService {
           subtotal,
           taxTotal,
           total,
+          taxableAmountUsd,
+          exemptAmountUsd,
+          taxAmountUsd,
+          totalAmountUsd,
+          totalAmountBs,
+          requisitionId: data.requisitionId ?? null,
           notes: data.notes ?? null,
           createdById: data.createdById,
           items: {
@@ -228,6 +289,7 @@ export class OrderService {
               baseQuantity: pi.baseQuantity,
               unitPrice: pi.unitPrice,
               taxRate: pi.taxRate,
+              isExempt: pi.isExempt,
               totalLine: pi.totalLine,
             })),
           },
@@ -235,14 +297,32 @@ export class OrderService {
         include: {
           items: {
             include: {
-              product: true,
+              product: {
+                include: { baseUnit: true, purchaseUnit: true },
+              },
               unit: true,
             },
           },
           supplier: true,
           currency: true,
+          requisition: {
+            select: {
+              id: true,
+              requisitionNumber: true,
+              departmentSection: true,
+            },
+          },
         },
       });
+
+      if (data.requisitionId) {
+        await tx.purchaseRequisition.update({
+          where: { id: data.requisitionId },
+          data: { status: 'ADJUDICADA' },
+        });
+      }
+
+      return createdOrder;
     });
   }
 

@@ -136,6 +136,92 @@ export interface PurchaseOrderItem {
     name: string;
     abbreviation: string;
   };
+  isExempt?: boolean;
+}
+
+export type PurchaseRequisitionStatus =
+  | "BORRADOR"
+  | "EN_COTIZACION"
+  | "ADJUDICADA"
+  | "CANCELADA";
+
+export interface PurchaseRequisitionItem {
+  id: number;
+  requisitionId: number;
+  productId: number;
+  unitId: number;
+  quantityRequested: number;
+  estimatedPrice?: number | null;
+  product?: {
+    id: number;
+    name: string;
+    sku?: string | null;
+    isTaxExempt?: boolean;
+    conversionFactor?: number;
+    baseUnitId?: number;
+    purchaseUnitId?: number | null;
+    baseUnit?: { id?: number; name?: string; abbreviation: string };
+    purchaseUnit?: { id?: number; name?: string; abbreviation: string } | null;
+  };
+  unit?: {
+    id: number;
+    name: string;
+    abbreviation: string;
+  };
+}
+
+export interface PurchaseRequisition {
+  id: number;
+  requisitionNumber: string;
+  departmentSection: string;
+  justification: string;
+  status: PurchaseRequisitionStatus;
+  notes?: string | null;
+  createdById: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: {
+    id: number;
+    fullName: string;
+    email: string;
+  };
+  items: PurchaseRequisitionItem[];
+  orders?: Array<{
+    id: number;
+    orderNumber: string;
+    status: string;
+    totalAmountUsd?: number;
+    createdAt: string;
+  }>;
+}
+
+export interface CreatePurchaseRequisitionItemPayload {
+  productId: number;
+  unitId: number;
+  quantityRequested: number;
+  estimatedPrice?: number | null;
+}
+
+export interface CreatePurchaseRequisitionPayload {
+  departmentSection: string;
+  justification: string;
+  notes?: string | null;
+  items: CreatePurchaseRequisitionItemPayload[];
+}
+
+export interface ConvertRequisitionToOrderPayload {
+  supplierId: number;
+  currencyId: number;
+  exchangeRate?: number;
+  notes?: string | null;
+  items: Array<{
+    itemId?: number;
+    productId: number;
+    unitId: number;
+    quantityOrdered: number;
+    unitPrice: number;
+    isExempt: boolean;
+  }>;
 }
 
 export interface PurchaseOrder {
@@ -154,6 +240,16 @@ export interface PurchaseOrder {
   total?: number;
   totalAmount?: number;
   totalAmountUsd?: number;
+  taxableAmountUsd?: number;
+  exemptAmountUsd?: number;
+  taxAmountUsd?: number;
+  totalAmountBs?: number;
+  requisitionId?: number | null;
+  requisition?: {
+    id: number;
+    requisitionNumber: string;
+    departmentSection?: string;
+  } | null;
   notes?: string | null;
   expectedDeliveryDate?: string | null;
   createdAt: string;
@@ -173,11 +269,14 @@ export interface CreateOrderItemPayload {
   unitId: number;
   quantityOrdered: number;
   unitPrice: number;
+  isExempt?: boolean;
 }
 
 export interface CreatePurchaseOrderPayload {
   supplierId?: number | null;
   currencyId: number;
+  exchangeRate?: number;
+  requisitionId?: number | null;
   notes?: string | null;
   expectedDeliveryDate?: string;
   items: CreateOrderItemPayload[];

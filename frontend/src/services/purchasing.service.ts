@@ -11,6 +11,10 @@ import type {
   RegisterPaymentPayload,
   CreatePurchaseOrderPayload,
   ReceiveOrderPayload,
+  PurchaseRequisition,
+  PurchaseRequisitionStatus,
+  CreatePurchaseRequisitionPayload,
+  ConvertRequisitionToOrderPayload,
 } from "@/types/purchasing";
 
 export interface OrderItemDetail {
@@ -180,6 +184,76 @@ export const PurchasingClientService = {
     );
     const data = res.data.data;
     if (!data) throw new Error("Error al registrar recepción de orden");
+    return data;
+  },
+
+  // --- Preórdenes de Compra (Requisiciones) ---
+  getRequisitions: async (
+    filters?: { search?: string; status?: string } | string,
+  ): Promise<PurchaseRequisition[]> => {
+    let query = "";
+    if (typeof filters === "string" && filters.trim() !== "") {
+      query = `?status=${encodeURIComponent(filters.trim())}`;
+    } else if (typeof filters === "object" && filters !== null) {
+      const params = new URLSearchParams();
+      if (filters.search) params.append("search", filters.search);
+      if (filters.status) params.append("status", filters.status);
+      const str = params.toString();
+      if (str) query = `?${str}`;
+    }
+
+    const res = await apiClient.get<ApiResponse<PurchaseRequisition[]>>(
+      `/purchase-requisitions${query}`,
+    );
+    return res.data.data || [];
+  },
+
+  getRequisitionById: async (
+    id: string | number,
+  ): Promise<PurchaseRequisition> => {
+    const res = await apiClient.get<ApiResponse<PurchaseRequisition>>(
+      `/purchase-requisitions/${id}`,
+    );
+    const data = res.data.data;
+    if (!data) throw new Error("Preorden no encontrada");
+    return data;
+  },
+
+  createRequisition: async (
+    payload: CreatePurchaseRequisitionPayload,
+  ): Promise<PurchaseRequisition> => {
+    const res = await apiClient.post<ApiResponse<PurchaseRequisition>>(
+      "/purchase-requisitions",
+      payload,
+    );
+    const data = res.data.data;
+    if (!data) throw new Error("Error al registrar preorden de compra");
+    return data;
+  },
+
+  updateRequisitionStatus: async (
+    id: string | number,
+    status: PurchaseRequisitionStatus,
+  ): Promise<PurchaseRequisition> => {
+    const res = await apiClient.patch<ApiResponse<PurchaseRequisition>>(
+      `/purchase-requisitions/${id}/status`,
+      { status },
+    );
+    const data = res.data.data;
+    if (!data) throw new Error("Error al actualizar estado de la preorden");
+    return data;
+  },
+
+  convertToOrder: async (
+    id: string | number,
+    payload: ConvertRequisitionToOrderPayload,
+  ): Promise<PurchaseOrder> => {
+    const res = await apiClient.post<ApiResponse<PurchaseOrder>>(
+      `/purchase-requisitions/${id}/convert-to-order`,
+      payload,
+    );
+    const data = res.data.data;
+    if (!data) throw new Error("Error al convertir preorden en orden de compra");
     return data;
   },
 

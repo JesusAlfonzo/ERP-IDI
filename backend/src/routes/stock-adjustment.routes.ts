@@ -47,7 +47,7 @@ router.post(
 
 router.patch(
   '/batches/:id/status',
-  requireRoles(['ADMINISTRADOR', 'ALMACENISTA', 'ANALISTA_LABORATORIO']),
+  requireRoles(['ADMINISTRADOR', 'ALMACENISTA']),
   validateRequest(BatchStatusUpdateSchema),
   updateBatchStatus
 );

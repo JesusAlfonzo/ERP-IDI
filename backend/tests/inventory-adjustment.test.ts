@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 import app from '../src/app.js';
-import { getAdminAuthToken } from './setup.js';
+import { getAdminAuthToken, getAuthTokenForRoles } from './setup.js';
 
 describe('Integración: Ajustes de Inventario y Validación Zod', () => {
   let authToken = '';
@@ -69,5 +69,49 @@ describe('Integración: Ajustes de Inventario y Validación Zod', () => {
   it('Debe rechazar consultas al Kardex sin token con 401', async () => {
     const res = await request(app).get('/api/inventory/movements');
     expect(res.status).toBe(401);
+  });
+
+  // --- Blindaje RBAC (Defensa en Profundidad) ---
+  describe('RBAC Estricto: Exclusividad Almacén y Administración (403 Forbidden)', () => {
+    it('Debe rechazar con 403 Forbidden a usuarios SOLICITANTE en /adjustments', async () => {
+      const solicitanteToken = getAuthTokenForRoles(['SOLICITANTE']);
+      const res = await request(app)
+        .post('/api/inventory/adjustments')
+        .set('Authorization', `Bearer ${solicitanteToken}`)
+        .send({
+          notes: 'Intento de ajuste no autorizado',
+          items: [{ batchId: 1, action: 'INCREMENTO', quantity: 5 }],
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.status).toBe('FORBIDDEN');
+    });
+
+    it('Debe rechazar con 403 Forbidden a usuarios COMPRAS en /wastes', async () => {
+      const comprasToken = getAuthTokenForRoles(['COMPRAS']);
+      const res = await request(app)
+        .post('/api/inventory/wastes')
+        .set('Authorization', `Bearer ${comprasToken}`)
+        .send({
+          wastes: [{ batchId: 1, quantity: 2, reason: 'Frasco roto' }],
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.status).toBe('FORBIDDEN');
+    });
+
+    it('Debe rechazar con 403 Forbidden a ANALISTA_LABORATORIO en /batches/:id/status', async () => {
+      const labToken = getAuthTokenForRoles(['ANALISTA_LABORATORIO']);
+      const res = await request(app)
+        .patch('/api/inventory/batches/1/status')
+        .set('Authorization', `Bearer ${labToken}`)
+        .send({
+          status: 'DISPONIBLE',
+          reason: 'Aprobación analítica no autorizada',
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.status).toBe('FORBIDDEN');
+    });
   });
 });

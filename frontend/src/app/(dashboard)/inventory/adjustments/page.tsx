@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
+import type { AuthUser } from "@/types/auth";
 import type { AdjustmentType } from "@/types/adjustments";
 import {
   SlidersHorizontal,
@@ -18,6 +19,7 @@ import {
   Calendar,
   Layers,
   ArrowRight,
+  ShieldAlert,
 } from "lucide-react";
 
 interface ActiveBatchOption {
@@ -67,8 +69,16 @@ const ADJUSTMENT_OPTIONS: {
 
 export default function AdjustmentsPage() {
   const router = useRouter();
+  const [currentUser] = useState<AuthUser | null>(() =>
+    AuthService.getCurrentUser(),
+  );
+
+  const userRoles = currentUser?.roles || [];
+  const isAuthorized =
+    userRoles.includes("ADMINISTRADOR") || userRoles.includes("ALMACENISTA");
+
   const [batches, setBatches] = useState<ActiveBatchOption[]>([]);
-  const [loadingBatches, setLoadingBatches] = useState(true);
+  const [loadingBatches, setLoadingBatches] = useState(() => isAuthorized);
   const [batchSearch, setBatchSearch] = useState("");
 
   // Estado del Formulario
@@ -101,20 +111,27 @@ export default function AdjustmentsPage() {
   }, [batchSearch]);
 
   useEffect(() => {
-    const init = async () => {
-      if (!AuthService.isAuthenticated()) {
-        router.replace("/login");
-        return;
-      }
-      await loadBatches();
-    };
-    init();
-  }, [router, loadBatches]);
+    let isMounted = true;
+    if (!AuthService.isAuthenticated()) {
+      router.replace("/login");
+      return;
+    }
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => loadBatches(), 300);
-    return () => window.clearTimeout(timer);
-  }, [batchSearch, loadBatches]);
+    if (!isAuthorized) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      if (isMounted) {
+        void loadBatches();
+      }
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      window.clearTimeout(timer);
+    };
+  }, [router, isAuthorized, loadBatches]);
 
   const activeBatch =
     selectedBatchData || batches.find((b) => b.id === Number(selectedBatchId));
@@ -129,6 +146,7 @@ export default function AdjustmentsPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!isAuthorized) return;
     setFeedback(null);
 
     if (
@@ -226,25 +244,50 @@ export default function AdjustmentsPage() {
         </p>
       </div>
 
-      {feedback && (
-        <div
-          className={`p-4 rounded-xl text-xs flex items-center gap-2.5 border ${
-            feedback.status === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : "bg-red-50 border-red-200 text-red-800"
-          }`}
-        >
-          {feedback.status === "success" ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-          ) : (
-            <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-          )}
-          <span>{feedback.message}</span>
+      {!isAuthorized ? (
+        <div className="bg-white border border-amber-200 rounded-xl p-8 text-center space-y-4 shadow-xs">
+          <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-slate-800">
+              Módulo de Modificación Física Restringido
+            </h2>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              Los ajustes manuales de stock, ingresos de insumos por donación y bajas por descarte o merma son competencia exclusiva del personal de <strong>Almacén</strong> o <strong>Administración</strong>.
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => router.push("/inventory/kardex")}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition-colors cursor-pointer"
+            >
+              Consultar Kardex de Movimientos
+            </button>
+          </div>
         </div>
-      )}
+      ) : (
+        <>
+          {feedback && (
+            <div
+              className={`p-4 rounded-xl text-xs flex items-center gap-2.5 border ${
+                feedback.status === "success"
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                  : "bg-red-50 border-red-200 text-red-800"
+              }`}
+            >
+              {feedback.status === "success" ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+              )}
+              <span>{feedback.message}</span>
+            </div>
+          )}
 
-      {/* Formulario de Ajuste */}
-      <form
+          {/* Formulario de Ajuste */}
+          <form
         onSubmit={handleSubmit}
         className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-6"
       >
@@ -496,6 +539,8 @@ export default function AdjustmentsPage() {
           </button>
         </div>
       </form>
+        </>
+      )}
     </div>
   );
 }

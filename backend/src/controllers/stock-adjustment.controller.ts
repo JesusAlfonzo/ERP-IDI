@@ -21,6 +21,18 @@ export const createStockAdjustment = async (
       return;
     }
 
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') || userRoles.includes('ALMACENISTA');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Almacén o Administración.',
+      });
+      return;
+    }
+
     const { notes, items } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -75,6 +87,18 @@ export const registerDirectWaste = async (
       return;
     }
 
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') || userRoles.includes('ALMACENISTA');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Almacén o Administración.',
+      });
+      return;
+    }
+
     const { wastes } = req.body;
 
     if (!Array.isArray(wastes) || wastes.length === 0) {
@@ -117,6 +141,25 @@ export const updateBatchStatus = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    if (!req.user?.id) {
+      res
+        .status(401)
+        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') || userRoles.includes('ALMACENISTA');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Almacén o Administración.',
+      });
+      return;
+    }
+
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
 

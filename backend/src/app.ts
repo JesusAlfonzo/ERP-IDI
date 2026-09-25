@@ -20,6 +20,7 @@ import requestRoutes from './routes/request.routes.js';
 import labRoutes from './routes/lab.routes.js';
 import reportRoutes from './routes/report.routes.js';
 import exportRoutes from './routes/export.routes.js';
+import dashboardRoutes from './routes/dashboard.routes.js';
 
 const app: express.Application = express();
 
@@ -43,6 +44,9 @@ app.get('/api/docs.json', (_req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.send(swaggerSpec);
 });
+
+// Rutas del Dashboard
+app.use('/api/dashboard', dashboardRoutes);
 
 // Rutas de Identidad y Catálogo Base
 app.use('/api/health', healthRoutes);

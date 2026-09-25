@@ -125,9 +125,15 @@ const NAVIGATION_GROUPS: NavGroup[] = [
         roles: ["ADMINISTRADOR", "COMPRAS"],
       },
       {
-        label: "Proveedores & Cuentas",
+        label: "Pagos & Cuentas",
         href: "/purchasing/debts",
         icon: Building2,
+        roles: ["ADMINISTRADOR", "COMPRAS"],
+      },
+      {
+        label: "Proveedores & Contactos",
+        href: "/purchasing/suppliers",
+        icon: ClipboardList,
         roles: ["ADMINISTRADOR", "COMPRAS"],
       },
     ],

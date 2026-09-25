@@ -50,6 +50,20 @@ export const assignUnitToFridge = async (
         .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
       return;
     }
+
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') ||
+      userRoles.includes('ANALISTA_LABORATORIO');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Laboratorio Clínico o Administración.',
+      });
+      return;
+    }
+
     const { unitId, fridgeId, reason } = req.body;
     if (!unitId || !fridgeId) {
       res.status(400).json({
@@ -77,6 +91,26 @@ export const createFridge = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    if (!req.user?.id) {
+      res
+        .status(401)
+        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') ||
+      userRoles.includes('ANALISTA_LABORATORIO');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Laboratorio Clínico o Administración.',
+      });
+      return;
+    }
+
     const { locationId, code, name, targetTempCelsius, status, description } =
       req.body;
 
@@ -119,6 +153,20 @@ export const createLabUnit = async (
         .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
       return;
     }
+
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') ||
+      userRoles.includes('ANALISTA_LABORATORIO');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Laboratorio Clínico o Administración.',
+      });
+      return;
+    }
+
     const {
       productId,
       batchId,
@@ -268,6 +316,20 @@ export const registerReagentConsumption = async (
         .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
       return;
     }
+
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') ||
+      userRoles.includes('ANALISTA_LABORATORIO');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Laboratorio Clínico o Administración.',
+      });
+      return;
+    }
+
     const { batchId, quantity, diagnosticProtocol, departmentSection, notes } =
       req.body;
     if (!batchId || !quantity || !diagnosticProtocol || !departmentSection) {
@@ -308,6 +370,20 @@ export const assignBatchToFridge = async (
         .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
       return;
     }
+
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') ||
+      userRoles.includes('ANALISTA_LABORATORIO');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Laboratorio Clínico o Administración.',
+      });
+      return;
+    }
+
     const { batchId } = req.body;
     if (!batchId) {
       res
@@ -376,6 +452,19 @@ export const openLabUnit = async (
       return;
     }
 
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') ||
+      userRoles.includes('ANALISTA_LABORATORIO');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Laboratorio Clínico o Administración.',
+      });
+      return;
+    }
+
     const unit = await LabService.openLabUnit(BigInt(id), req.user.id);
 
     res.status(200).json({
@@ -408,6 +497,19 @@ export const consumeLabUnit = async (
       res
         .status(401)
         .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') ||
+      userRoles.includes('ANALISTA_LABORATORIO');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Laboratorio Clínico o Administración.',
+      });
       return;
     }
 
@@ -461,6 +563,19 @@ export const transferFridge = async (
       return;
     }
 
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') ||
+      userRoles.includes('ANALISTA_LABORATORIO');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Laboratorio Clínico o Administración.',
+      });
+      return;
+    }
+
     const { toFridgeId, reason } = req.body;
 
     if (!toFridgeId) {
@@ -508,6 +623,19 @@ export const discardLabUnit = async (
       res
         .status(401)
         .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') ||
+      userRoles.includes('ANALISTA_LABORATORIO');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Laboratorio Clínico o Administración.',
+      });
       return;
     }
 

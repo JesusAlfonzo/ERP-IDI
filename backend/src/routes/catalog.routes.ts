@@ -7,12 +7,15 @@ import {
   getBrands,
   createBrand,
   updateBrand,
+  deleteBrand,
   getUnits,
   createUnit,
   updateUnit,
+  deleteUnit,
   getLocations,
   createLocation,
   updateLocation,
+  deleteLocation,
   getDepartments,
 } from '../controllers/catalog.controller.js';
 import { authenticateJWT } from '../middlewares/auth.middleware.js';
@@ -29,24 +32,31 @@ router.get('/units', getUnits);
 router.get('/locations', getLocations);
 router.get('/departments', getDepartments);
 
-// Mutaciones administrativas y de almacén
-const adminOrWarehouse = requireRoles(['ADMINISTRADOR', 'ALMACENISTA']);
+// Mutaciones administrativas (EXCLUSIVAMENTE ADMINISTRADOR)
+const adminOnly = requireRoles(['ADMINISTRADOR']);
 
-router.post('/categories', adminOrWarehouse, createCategory);
-router.patch('/categories/:id', adminOrWarehouse, updateCategory);
-router.delete(
-  '/categories/:id',
-  requireRoles(['ADMINISTRADOR']),
-  deleteCategory
-);
+// Categorías
+router.post('/categories', adminOnly, createCategory);
+router.patch('/categories/:id', adminOnly, updateCategory);
+router.put('/categories/:id', adminOnly, updateCategory);
+router.delete('/categories/:id', adminOnly, deleteCategory);
 
-router.post('/brands', adminOrWarehouse, createBrand);
-router.patch('/brands/:id', adminOrWarehouse, updateBrand);
+// Marcas
+router.post('/brands', adminOnly, createBrand);
+router.patch('/brands/:id', adminOnly, updateBrand);
+router.put('/brands/:id', adminOnly, updateBrand);
+router.delete('/brands/:id', adminOnly, deleteBrand);
 
-router.post('/units', adminOrWarehouse, createUnit);
-router.patch('/units/:id', adminOrWarehouse, updateUnit);
+// Unidades de Medida
+router.post('/units', adminOnly, createUnit);
+router.patch('/units/:id', adminOnly, updateUnit);
+router.put('/units/:id', adminOnly, updateUnit);
+router.delete('/units/:id', adminOnly, deleteUnit);
 
-router.post('/locations', adminOrWarehouse, createLocation);
-router.patch('/locations/:id', adminOrWarehouse, updateLocation);
+// Ubicaciones Físicas
+router.post('/locations', adminOnly, createLocation);
+router.patch('/locations/:id', adminOnly, updateLocation);
+router.put('/locations/:id', adminOnly, updateLocation);
+router.delete('/locations/:id', adminOnly, deleteLocation);
 
 export default router;

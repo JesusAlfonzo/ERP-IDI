@@ -2,12 +2,29 @@ import type { Request, Response, NextFunction } from 'express';
 import { OrderService } from '../services/order.service.js';
 import { serializeBigInt } from '../utils/serializer.js';
 
+const isPurchasingOrAdmin = (roles: string[] = []): boolean => {
+  return roles.includes('ADMINISTRADOR') || roles.includes('COMPRAS');
+};
+
+const isWarehouseOrAdmin = (roles: string[] = []): boolean => {
+  return roles.includes('ADMINISTRADOR') || roles.includes('ALMACENISTA');
+};
+
 export const getOrders = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
+    const userRoles = req.user?.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles) && !isWarehouseOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message: 'No posee privilegios para consultar las órdenes de compra.',
+      });
+      return;
+    }
+
     const { status, search } = req.query;
 
     const orders = await OrderService.listOrders({
@@ -36,6 +53,16 @@ export const getOrderById = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const userRoles = req.user?.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles) && !isWarehouseOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'No posee privilegios para consultar el detalle de esta orden de compra.',
+      });
+      return;
+    }
+
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
@@ -48,6 +75,14 @@ export const getOrderById = async (
     }
 
     const order = await OrderService.getOrderById(BigInt(id));
+    if (!order) {
+      res.status(404).json({
+        status: 'NOT_FOUND',
+        message: 'Orden de compra no encontrada',
+      });
+      return;
+    }
+
     res.status(200).json({
       status: 'SUCCESS',
       data: serializeBigInt(order),
@@ -63,6 +98,24 @@ export const createOrder = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    if (!req.user?.id) {
+      res
+        .status(401)
+        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    // Defensa en profundidad: solo Compras y Administrador
+    const userRoles = req.user.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Solo el departamento de Compras o Administración puede generar órdenes.',
+      });
+      return;
+    }
+
     const { supplierId, currencyId, notes, items } = req.body;
 
     if (!currencyId || !Array.isArray(items) || items.length === 0) {
@@ -70,13 +123,6 @@ export const createOrder = async (
         status: 'BAD_REQUEST',
         message: 'Moneda e ítems son campos obligatorios',
       });
-      return;
-    }
-
-    if (!req.user?.id) {
-      res
-        .status(401)
-        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
       return;
     }
 
@@ -97,6 +143,7 @@ export const createOrder = async (
 
     res.status(201).json({
       status: 'SUCCESS',
+      message: 'Orden de compra creada exitosamente',
       data: serializeBigInt(order),
     });
   } catch (error) {
@@ -110,6 +157,24 @@ export const receiveOrder = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    if (!req.user?.id) {
+      res
+        .status(401)
+        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    // Defensa en profundidad: solo Almacén o Administrador pueden asentar inventario físico
+    const userRoles = req.user.roles ?? [];
+    if (!isWarehouseOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Solo el personal de Almacén o Administración puede recibir mercancía física y generar lotes.',
+      });
+      return;
+    }
+
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
@@ -118,13 +183,6 @@ export const receiveOrder = async (
         status: 'BAD_REQUEST',
         message: 'ID de orden no proporcionado',
       });
-      return;
-    }
-
-    if (!req.user?.id) {
-      res
-        .status(401)
-        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
       return;
     }
 

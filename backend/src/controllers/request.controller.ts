@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { RequestService } from '../services/request.service.js';
+import { RequestWindowService } from '../services/request-window.service.js';
 import { serializeBigInt } from '../utils/serializer.js';
 import { RequestPriority, RequestStatus } from '@prisma/client';
 
@@ -14,10 +15,14 @@ export const getRequests = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { status, cycle } = req.query;
+    const { status, cycle, search } = req.query;
 
-    const filter: { status?: RequestStatus; userId?: number; cycle?: string } =
-      {};
+    const filter: {
+      status?: RequestStatus;
+      userId?: number;
+      cycle?: string;
+      search?: string;
+    } = {};
 
     if (
       typeof status === 'string' &&
@@ -27,6 +32,9 @@ export const getRequests = async (
     }
     if (typeof cycle === 'string' && cycle.trim() !== '') {
       filter.cycle = cycle.trim();
+    }
+    if (typeof search === 'string' && search.trim() !== '') {
+      filter.search = search.trim();
     }
 
     const userRoles = req.user?.roles ?? [];
@@ -123,19 +131,22 @@ export const createRequest = async (
       return;
     }
 
-    const { priority, departmentSection, justification, items, notes } =
-      req.body;
+    // 1. Validar ventana operativa y token semanal (excepción total para Admin y Almacén)
+    await RequestWindowService.validateCanCreate({
+      id: req.user.id,
+      roles: userRoles,
+    });
 
-    if (
-      !priority ||
-      !Object.values(RequestPriority).includes(priority as RequestPriority)
-    ) {
-      res.status(400).json({
-        status: 'BAD_REQUEST',
-        message: `priority inválido. Debe ser uno de: ${Object.values(RequestPriority).join(', ')}`,
-      });
-      return;
-    }
+    const { departmentSection, justification, items, notes } = req.body;
+
+    // Prioridad opcional en UI: por defecto RUTINA
+    const rawPriority = req.body.priority;
+    const priority =
+      rawPriority &&
+      Object.values(RequestPriority).includes(rawPriority as RequestPriority)
+        ? (rawPriority as RequestPriority)
+        : RequestPriority.RUTINA;
+
     if (!departmentSection || String(departmentSection).trim().length < 2) {
       res.status(400).json({
         status: 'BAD_REQUEST',
@@ -162,24 +173,21 @@ export const createRequest = async (
     }
 
     const formattedItems = items.map((it: any) => {
-      if (
-        !it.productId ||
-        !Number.isFinite(Number(it.requestedQuantity)) ||
-        Number(it.requestedQuantity) <= 0
-      ) {
+      const qty = Number(it.requestedQuantity ?? it.quantityRequested);
+      if (!it.productId || !Number.isFinite(qty) || qty <= 0) {
         throw new Error(
           'Cada ítem requiere productId y requestedQuantity mayor que 0'
         );
       }
       return {
         productId: BigInt(it.productId),
-        quantityRequested: Number(it.requestedQuantity),
+        quantityRequested: qty,
       };
     });
 
     const newRequest = await RequestService.createRequest({
       userId: req.user.id,
-      priority: priority as RequestPriority,
+      priority,
       departmentSection: String(departmentSection).trim(),
       justification: String(justification).trim(),
       notes: notes ? String(notes) : null,
@@ -371,22 +379,33 @@ export const dispatchRequest = async (
         throw new Error('itemId debe ser un entero positivo');
       }
 
-      const rawAllocations = it.allocations
+      // Permite asignaciones multi-lote (array allocations) o asignación única tradicional
+      const rawAllocations = Array.isArray(it.allocations)
         ? it.allocations
-        : [{ batchId: it.batchId, quantity: it.dispatchedQuantity }];
-      const allocations = rawAllocations.map((allocation: any) => {
-        const batchId = Number(allocation.batchId);
-        const quantity = Number(
-          allocation.quantity ?? allocation.dispatchedQuantity
-        );
-        if (!Number.isSafeInteger(batchId) || batchId <= 0) {
-          throw new Error('batchId debe ser un entero positivo');
-        }
-        if (!Number.isFinite(quantity) || quantity <= 0) {
-          throw new Error('La cantidad a despachar debe ser mayor que 0');
-        }
-        return { batchId: BigInt(batchId), quantity };
-      });
+        : it.batchId
+          ? [{ batchId: it.batchId, quantity: it.dispatchedQuantity }]
+          : [];
+
+      const allocations = rawAllocations
+        .filter((allocation: any) => {
+          const qty = Number(
+            allocation.quantity ?? allocation.dispatchedQuantity ?? 0
+          );
+          return allocation.batchId && qty > 0;
+        })
+        .map((allocation: any) => {
+          const batchId = Number(allocation.batchId);
+          const quantity = Number(
+            allocation.quantity ?? allocation.dispatchedQuantity
+          );
+          if (!Number.isSafeInteger(batchId) || batchId <= 0) {
+            throw new Error('batchId debe ser un entero positivo');
+          }
+          if (!Number.isFinite(quantity) || quantity <= 0) {
+            throw new Error('La cantidad a despachar debe ser mayor que 0');
+          }
+          return { batchId: BigInt(batchId), quantity };
+        });
 
       return { itemId: BigInt(itemId), allocations };
     });
@@ -406,6 +425,55 @@ export const dispatchRequest = async (
       status: 'SUCCESS',
       message: 'Solicitud despachada y stock rebajado correctamente',
       data: serializeBigInt(dispatched),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getWindowStatus = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const status = await RequestWindowService.getWindowStatus(req.user);
+    res.status(200).json({
+      status: 'SUCCESS',
+      data: status,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getWindowConfig = async (
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const config = await RequestWindowService.getConfig();
+    res.status(200).json({
+      status: 'SUCCESS',
+      data: config,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateWindowConfig = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const updated = await RequestWindowService.updateConfig(req.body);
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Configuración de ventana actualizada exitosamente',
+      data: updated,
     });
   } catch (error) {
     next(error);

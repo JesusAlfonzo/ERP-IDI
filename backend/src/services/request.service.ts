@@ -5,6 +5,7 @@ import {
   StockMovementType,
   BatchStatus,
 } from '@prisma/client';
+import { getCaracasTime } from './request-window.service.js';
 
 export interface DispatchBatchAllocationDTO {
   batchId: bigint;
@@ -30,7 +31,7 @@ export interface CreateRequestItemDTO {
 
 export interface CreateRequestDTO {
   userId: number;
-  priority: RequestPriority;
+  priority?: RequestPriority;
   departmentSection: string;
   justification: string;
   notes?: string | null;
@@ -48,33 +49,107 @@ export interface ApproveRequestDTO {
   items: ApproveRequestItemDTO[];
 }
 
-function getIsoWeeklyCycle(date: Date = new Date()): string {
-  const tempDate = new Date(date.getTime());
-  tempDate.setHours(0, 0, 0, 0);
-  tempDate.setDate(tempDate.getDate() + 3 - ((tempDate.getDay() + 6) % 7));
-  const week1 = new Date(tempDate.getFullYear(), 0, 4);
-  const weekNumber =
-    1 +
-    Math.round(
-      ((tempDate.getTime() - week1.getTime()) / 86400000 -
-        3 +
-        ((week1.getDay() + 6) % 7)) /
-        7
-    );
-  return `${tempDate.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+export interface ListRequestsFilter {
+  status?: RequestStatus;
+  userId?: number;
+  cycle?: string;
+  search?: string;
+}
+
+export function formatRequestItem(it: any) {
+  const parseNum = (val: any) => {
+    const n = Number(val);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const qtyRequested = parseNum(it.quantityRequested ?? it.requestedQuantity);
+  const qtyApproved = parseNum(it.quantityApproved);
+  const qtyDispatched = parseNum(it.quantityDispatched ?? it.dispatchedQuantity);
+
+  return {
+    ...it,
+    quantityRequested: qtyRequested,
+    requestedQuantity: qtyRequested,
+    quantityApproved: qtyApproved,
+    quantityDispatched: qtyDispatched,
+    dispatchedQuantity: qtyDispatched,
+    product: it.product
+      ? {
+          ...it.product,
+          unitOfMeasure:
+            it.product.unitOfMeasure ||
+            it.product.baseUnit?.abbreviation ||
+            'UND',
+        }
+      : undefined,
+  };
 }
 
 export class RequestService {
-  static async listRequests(filter?: {
-    status?: RequestStatus;
-    userId?: number;
-    cycle?: string;
-  }) {
+  static async listRequests(filter?: ListRequestsFilter) {
     const list = await prisma.request.findMany({
       where: {
         ...(filter?.status ? { status: filter.status } : {}),
         ...(filter?.userId ? { userId: filter.userId } : {}),
         ...(filter?.cycle ? { weeklyTokenCycle: filter.cycle } : {}),
+        ...(filter?.search && filter.search.trim() !== ''
+          ? {
+              OR: [
+                {
+                  requestNumber: {
+                    contains: filter.search.trim(),
+                    mode: 'insensitive',
+                  },
+                },
+                {
+                  departmentSection: {
+                    contains: filter.search.trim(),
+                    mode: 'insensitive',
+                  },
+                },
+                {
+                  user: {
+                    OR: [
+                      {
+                        fullName: {
+                          contains: filter.search.trim(),
+                          mode: 'insensitive',
+                        },
+                      },
+                      {
+                        username: {
+                          contains: filter.search.trim(),
+                          mode: 'insensitive',
+                        },
+                      },
+                    ],
+                  },
+                },
+                {
+                  items: {
+                    some: {
+                      product: {
+                        OR: [
+                          {
+                            name: {
+                              contains: filter.search.trim(),
+                              mode: 'insensitive',
+                            },
+                          },
+                          {
+                            sku: {
+                              contains: filter.search.trim(),
+                              mode: 'insensitive',
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  },
+                },
+              ],
+            }
+          : {}),
       },
       include: {
         user: {
@@ -99,10 +174,10 @@ export class RequestService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Mapear user -> applicant para compatibilidad con el frontend
     return list.map((r) => ({
       ...r,
       applicant: r.user,
+      items: r.items.map(formatRequestItem),
     }));
   }
 
@@ -147,6 +222,7 @@ export class RequestService {
     return {
       ...req,
       applicant: req.user,
+      items: req.items.map(formatRequestItem),
     };
   }
 
@@ -156,16 +232,34 @@ export class RequestService {
     }
 
     const currentYear = new Date().getFullYear();
-    const count = await prisma.request.count();
-    const requestNumber = `SOL-${currentYear}-${String(count + 1).padStart(4, '0')}`;
-    const weeklyTokenCycle = getIsoWeeklyCycle();
+    const latest = await prisma.request.findFirst({
+      where: {
+        requestNumber: {
+          startsWith: `SOL-${currentYear}-`,
+        },
+      },
+      orderBy: { id: 'desc' },
+      select: { requestNumber: true },
+    });
 
-    return prisma.request.create({
+    let nextSeq = 1;
+    if (latest?.requestNumber) {
+      const parts = latest.requestNumber.split('-');
+      const lastPart = parts[parts.length - 1];
+      const parsed = lastPart ? parseInt(lastPart, 10) : NaN;
+      if (!isNaN(parsed)) {
+        nextSeq = parsed + 1;
+      }
+    }
+    const requestNumber = `SOL-${currentYear}-${String(nextSeq).padStart(4, '0')}`;
+    const weeklyTokenCycle = getCaracasTime().isoWeeklyCycle;
+
+    const created = await prisma.request.create({
       data: {
         requestNumber,
         userId: data.userId,
         status: RequestStatus.PENDIENTE,
-        priority: data.priority,
+        priority: data.priority ?? RequestPriority.RUTINA,
         departmentSection: data.departmentSection,
         justification: data.justification,
         weeklyTokenCycle,
@@ -175,6 +269,7 @@ export class RequestService {
             productId: it.productId,
             quantityRequested: it.quantityRequested,
             quantityApproved: 0,
+            quantityDispatched: 0,
           })),
         },
       },
@@ -186,8 +281,22 @@ export class RequestService {
             },
           },
         },
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            username: true,
+            department: true,
+          },
+        },
       },
     });
+
+    return {
+      ...created,
+      applicant: created.user,
+      items: created.items.map(formatRequestItem),
+    };
   }
 
   static async approveRequest(data: ApproveRequestDTO) {
@@ -215,7 +324,6 @@ export class RequestService {
           );
         }
 
-        // Si por alguna razón quantityApproved no vino definida, toma quantityRequested
         const approvedQty =
           itemApproval.quantityApproved !== undefined &&
           itemApproval.quantityApproved !== null &&
@@ -235,7 +343,7 @@ export class RequestService {
         });
       }
 
-      return tx.request.update({
+      const updated = await tx.request.update({
         where: { id: data.requestId },
         data: {
           status: RequestStatus.APROBADA,
@@ -244,12 +352,31 @@ export class RequestService {
         },
         include: {
           items: {
-            include: { product: true },
+            include: {
+              product: {
+                include: { baseUnit: true },
+              },
+            },
           },
-          user: true,
-          approvedBy: true,
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              username: true,
+              department: true,
+            },
+          },
+          approvedBy: {
+            select: { id: true, fullName: true, username: true },
+          },
         },
       });
+
+      return {
+        ...updated,
+        applicant: updated.user,
+        items: updated.items.map(formatRequestItem),
+      };
     });
   }
 
@@ -266,7 +393,7 @@ export class RequestService {
       );
     }
 
-    return prisma.request.update({
+    const updated = await prisma.request.update({
       where: { id },
       data: {
         status: RequestStatus.RECHAZADA,
@@ -277,9 +404,32 @@ export class RequestService {
           : request.notes,
       },
       include: {
-        items: true,
+        items: {
+          include: {
+            product: {
+              include: { baseUnit: true },
+            },
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            username: true,
+            department: true,
+          },
+        },
+        approvedBy: {
+          select: { id: true, fullName: true, username: true },
+        },
       },
     });
+
+    return {
+      ...updated,
+      applicant: updated.user,
+      items: updated.items.map(formatRequestItem),
+    };
   }
 
   static async dispatchRequest(data: DispatchRequestDTO) {
@@ -293,7 +443,11 @@ export class RequestService {
         where: { id: data.requestId },
         include: {
           items: {
-            include: { product: true },
+            include: {
+              product: {
+                include: { baseUnit: true },
+              },
+            },
           },
         },
       });
@@ -302,29 +456,33 @@ export class RequestService {
         throw new Error('Solicitud no encontrada');
       }
 
-      if (
-        request.status !== RequestStatus.APROBADA &&
-        request.status !== RequestStatus.DESPACHADA_PARCIAL &&
-        request.status !== RequestStatus.PENDIENTE
-      ) {
+      // VALIDACIÓN ESTRICTA: Solo APROBADA o DESPACHADA_PARCIAL. PENDIENTE está PROHIBIDA.
+      if (request.status === RequestStatus.PENDIENTE) {
         throw new Error(
-          'Solo se pueden despachar solicitudes PENDIENTES, APROBADAS o con despacho PARCIAL'
+          'La solicitud debe ser aprobada antes de proceder al despacho'
         );
       }
 
-      const approvedQuantityFor = (item: (typeof request.items)[number]) =>
-        request.status === RequestStatus.PENDIENTE
-          ? Number(item.quantityRequested)
-          : Number(item.quantityApproved);
+      if (
+        request.status !== RequestStatus.APROBADA &&
+        request.status !== RequestStatus.DESPACHADA_PARCIAL
+      ) {
+        throw new Error(
+          'Solo se pueden despachar solicitudes APROBADAS o con despacho PARCIAL'
+        );
+      }
 
-      if (request.status === RequestStatus.PENDIENTE) {
-        await Promise.all(
-          request.items.map((item) =>
-            tx.requestItem.update({
-              where: { id: item.id },
-              data: { quantityApproved: item.quantityRequested },
-            })
-          )
+      // Filtrar ítems que realmente tengan lotes y cantidad > 0 asignada
+      const validItemsToDispatch = data.items
+        .map((it) => ({
+          itemId: it.itemId,
+          allocations: it.allocations.filter((a) => a.quantity > 0),
+        }))
+        .filter((it) => it.allocations.length > 0);
+
+      if (validItemsToDispatch.length === 0) {
+        throw new Error(
+          'Indique al menos una cantidad mayor a 0 para despachar, o cierre el modal para mantener la solicitud en espera.'
         );
       }
 
@@ -344,8 +502,10 @@ export class RequestService {
         },
       });
 
+      const newlyDispatchedMap = new Map<bigint, number>();
+
       // 3. Procesar asignaciones por ítem
-      for (const itemDispatch of data.items) {
+      for (const itemDispatch of validItemsToDispatch) {
         const reqItem = request.items.find((i) => i.id === itemDispatch.itemId);
         if (!reqItem) {
           throw new Error(`Ítem de solicitud ${itemDispatch.itemId} no existe`);
@@ -356,26 +516,18 @@ export class RequestService {
           0
         );
 
-        if (totalToDispatch <= 0) {
-          throw new Error('La cantidad a despachar debe ser mayor que 0');
-        }
-
-        const approvedQuantity = approvedQuantityFor(reqItem);
+        const approvedQuantity = Number(reqItem.quantityApproved);
         const alreadyDispatched = Number(reqItem.quantityDispatched);
         const pendingQuantity = Math.max(
           0,
           approvedQuantity - alreadyDispatched
         );
+
         if (totalToDispatch > pendingQuantity) {
           throw new Error(
-            `La cantidad asignada (${totalToDispatch}) excede el saldo pendiente (${pendingQuantity})`
+            `La cantidad asignada (${totalToDispatch}) excede el saldo pendiente (${pendingQuantity}) para el producto ${reqItem.product.name}`
           );
         }
-
-        await tx.requestItem.update({
-          where: { id: reqItem.id },
-          data: { quantityDispatched: alreadyDispatched + totalToDispatch },
-        });
 
         for (const alloc of itemDispatch.allocations) {
           const batch = await tx.stockBatch.findUnique({
@@ -418,28 +570,26 @@ export class RequestService {
             },
           });
         }
+
+        const updatedDispatched = alreadyDispatched + totalToDispatch;
+        await tx.requestItem.update({
+          where: { id: reqItem.id },
+          data: { quantityDispatched: updatedDispatched },
+        });
+
+        newlyDispatchedMap.set(reqItem.id, totalToDispatch);
       }
 
+      // 4. Evaluar si todos los renglones han sido satisfechos al 100%
       const fullyDispatched = request.items.every((item) => {
-        const dispatched = data.items
-          .filter((entry) => entry.itemId === item.id)
-          .reduce(
-            (sum, entry) =>
-              sum +
-              entry.allocations.reduce(
-                (total, allocation) => total + allocation.quantity,
-                0
-              ),
-            0
-          );
-        return (
-          Number(item.quantityDispatched) + dispatched >=
-          approvedQuantityFor(item)
-        );
+        const newlyDispatched = newlyDispatchedMap.get(item.id) ?? 0;
+        const totalDispatched =
+          Number(item.quantityDispatched) + newlyDispatched;
+        return totalDispatched >= Number(item.quantityApproved);
       });
 
-      // 4. Actualizar estado de la solicitud y enlazar con el movimiento generado
-      return tx.request.update({
+      // Actualizar estado de la solicitud y enlazar con el movimiento generado
+      const updated = await tx.request.update({
         where: { id: request.id },
         data: {
           status: fullyDispatched
@@ -449,13 +599,34 @@ export class RequestService {
         },
         include: {
           items: {
-            include: { product: true },
+            include: {
+              product: {
+                include: { baseUnit: true },
+              },
+            },
           },
           dispatchedMovement: {
             include: { items: true },
           },
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              username: true,
+              department: true,
+            },
+          },
+          approvedBy: {
+            select: { id: true, fullName: true, username: true },
+          },
         },
       });
+
+      return {
+        ...updated,
+        applicant: updated.user,
+        items: updated.items.map(formatRequestItem),
+      };
     });
   }
 }

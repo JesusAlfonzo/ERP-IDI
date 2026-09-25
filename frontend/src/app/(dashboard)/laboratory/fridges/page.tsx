@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Building,
   AlertTriangle,
+  AlertCircle,
   CheckCircle2,
   X,
   Package,
@@ -56,6 +57,12 @@ const FRIDGE_STATUS_CONFIG: Record<
 
 export default function FridgesPage() {
   const router = useRouter();
+  const [currentUser] = useState(() => AuthService.getCurrentUser());
+  const userRoles = currentUser?.roles || [];
+  const isLabStaff =
+    userRoles.includes("ADMINISTRADOR") ||
+    userRoles.includes("ANALISTA_LABORATORIO");
+
   const [fridges, setFridges] = useState<LabFridge[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [availableReagents, setAvailableReagents] = useState<
@@ -154,7 +161,7 @@ export default function FridgesPage() {
 
   const handleCreateFridge = async (e: FormEvent) => {
     e.preventDefault();
-    if (!locationId || !code.trim() || !name.trim()) return;
+    if (!isLabStaff || !locationId || !code.trim() || !name.trim()) return;
 
     setSubmittingFridge(true);
     setFeedback(null);
@@ -190,7 +197,7 @@ export default function FridgesPage() {
 
   const handleAssignBatchToFridge = async (e: FormEvent) => {
     e.preventDefault();
-    if (!assignFridgeTarget || !selectedBatchId) return;
+    if (!isLabStaff || !assignFridgeTarget || !selectedBatchId) return;
 
     setAssigningBatch(true);
     setFeedback(null);
@@ -222,7 +229,7 @@ export default function FridgesPage() {
 
   const handleExecuteTransfer = async (e: FormEvent) => {
     e.preventDefault();
-    if (!transferUnit || !targetFridgeId) return;
+    if (!isLabStaff || !transferUnit || !targetFridgeId) return;
 
     setTransferring(true);
     try {
@@ -249,6 +256,7 @@ export default function FridgesPage() {
   };
 
   const handleOpenUnit = async (unitId: string | number) => {
+    if (!isLabStaff) return;
     try {
       await LabFridgeService.openUnit(unitId);
       if (selectedFridge) {
@@ -260,6 +268,7 @@ export default function FridgesPage() {
   };
 
   const handleDiscardUnit = async (unit: ReagentInFridge) => {
+    if (!isLabStaff) return;
     const prodName = unit.product?.name ?? "Insumo";
     const reason = prompt(
       `Indique el motivo del descarte de ${prodName} (${unit.unitCode}):`,
@@ -302,19 +311,30 @@ export default function FridgesPage() {
               className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
             />
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setIsCreateModalOpen(true);
-              setFeedback(null);
-            }}
-            className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Registrar Nevera / Cava
-          </button>
+          {isLabStaff && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsCreateModalOpen(true);
+                setFeedback(null);
+              }}
+              className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Registrar Nevera / Cava
+            </button>
+          )}
         </div>
       </div>
+
+      {!isLabStaff && (
+        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-2.5 text-xs text-slate-600">
+          <AlertCircle className="w-4 h-4 shrink-0 text-slate-400" />
+          <span>
+            Modo de consulta (solo lectura): El registro de neveras, ingreso de reactivos, apertura de frascos y traslados son competencia exclusiva del personal de <strong>Laboratorio Clínico</strong> o <strong>Administración</strong>.
+          </span>
+        </div>
+      )}
 
       {feedback && (
         <div
@@ -421,18 +441,24 @@ export default function FridgesPage() {
                   </div>
 
                   {/* Acciones principales de la Nevera */}
-                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAssignFridgeTarget(fridge);
-                        setSelectedBatchId("");
-                      }}
-                      className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 py-1.5 px-2 rounded-lg transition-colors cursor-pointer"
-                    >
-                      <PlusCircle className="w-3.5 h-3.5" />
-                      Ingresar Lote
-                    </button>
+                  <div
+                    className={`grid gap-2 pt-1 border-t border-slate-100 ${
+                      isLabStaff ? "grid-cols-2" : "grid-cols-1"
+                    }`}
+                  >
+                    {isLabStaff && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAssignFridgeTarget(fridge);
+                          setSelectedBatchId("");
+                        }}
+                        className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 py-1.5 px-2 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <PlusCircle className="w-3.5 h-3.5" />
+                        Ingresar Lote
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -453,7 +479,7 @@ export default function FridgesPage() {
       </div>
 
       {/* Modal Ingresar Lote de Reactivo a la Nevera */}
-      {assignFridgeTarget && (
+      {assignFridgeTarget && isLabStaff && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-2xs">
           <form
             onSubmit={handleAssignBatchToFridge}
@@ -658,35 +684,43 @@ export default function FridgesPage() {
                               </span>
 
                               <div className="flex items-center gap-2">
-                                {unit.status === "SELLADO" && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenUnit(unit.id)}
-                                    className="text-xs text-sky-600 hover:text-sky-800 font-semibold cursor-pointer"
-                                  >
-                                    Abrir frasco
-                                  </button>
+                                {isLabStaff ? (
+                                  <>
+                                    {unit.status === "SELLADO" && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenUnit(unit.id)}
+                                        className="text-xs text-sky-600 hover:text-sky-800 font-semibold cursor-pointer"
+                                      >
+                                        Abrir frasco
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setTransferUnit(unit);
+                                        setTargetFridgeId("");
+                                      }}
+                                      className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-blue-600 cursor-pointer"
+                                      title="Mover a otra nevera"
+                                    >
+                                      <ArrowRightLeft className="w-3 h-3" />
+                                      Mover
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDiscardUnit(unit)}
+                                      className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-600 cursor-pointer"
+                                      title="Descartar frasco"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 italic">
+                                    Solo lectura
+                                  </span>
                                 )}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setTransferUnit(unit);
-                                    setTargetFridgeId("");
-                                  }}
-                                  className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-blue-600 cursor-pointer"
-                                  title="Mover a otra nevera"
-                                >
-                                  <ArrowRightLeft className="w-3 h-3" />
-                                  Mover
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDiscardUnit(unit)}
-                                  className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-600 cursor-pointer"
-                                  title="Descartar frasco"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
                               </div>
                             </div>
                           </div>
@@ -712,7 +746,7 @@ export default function FridgesPage() {
       )}
 
       {/* Modal Transferir Frasco entre Neveras */}
-      {transferUnit && (
+      {transferUnit && isLabStaff && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-2xs">
           <form
             onSubmit={handleExecuteTransfer}
@@ -803,7 +837,7 @@ export default function FridgesPage() {
       )}
 
       {/* Modal Registrar Nueva Nevera */}
-      {isCreateModalOpen && (
+      {isCreateModalOpen && isLabStaff && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-2xs">
           <form
             onSubmit={handleCreateFridge}

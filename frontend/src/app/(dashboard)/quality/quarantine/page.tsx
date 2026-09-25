@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { useState, useEffect, useCallback, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { QualityClientService } from "@/services/quality.service";
 import { AuthService } from "@/services/auth.service";
+import type { AuthUser } from "@/types/auth";
 import type {
   QuarantineBatch,
   QualityVerdict,
@@ -32,6 +33,15 @@ const INCIDENT_LABELS: Record<IncidentType, string> = {
 
 export default function QualityQuarantinePage() {
   const router = useRouter();
+  const [currentUser] = useState<AuthUser | null>(() =>
+    AuthService.getCurrentUser(),
+  );
+  const [, startTransition] = useTransition();
+
+  const userRoles = currentUser?.roles || [];
+  const isAuthorized =
+    userRoles.includes("ADMINISTRADOR") || userRoles.includes("ALMACENISTA");
+
   const [batches, setBatches] = useState<QuarantineBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeStatus, setActiveStatus] = useState<
@@ -53,17 +63,17 @@ export default function QualityQuarantinePage() {
     message: string;
   } | null>(null);
 
-  const loadQuarantine = useCallback(async () => {
+  const loadQuarantine = useCallback(async (status: "EN_CUARENTENA" | "DEFECTUOSO") => {
     setLoading(true);
     try {
-      const data = await QualityClientService.getBatchesByStatus(activeStatus);
+      const data = await QualityClientService.getBatchesByStatus(status);
       setBatches(data);
     } catch {
       // Interceptor global gestiona el error
     } finally {
       setLoading(false);
     }
-  }, [activeStatus]);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -74,7 +84,7 @@ export default function QualityQuarantinePage() {
 
     const init = async () => {
       if (isMounted) {
-        await loadQuarantine();
+        await loadQuarantine(activeStatus);
       }
     };
     void init();
@@ -82,9 +92,16 @@ export default function QualityQuarantinePage() {
     return () => {
       isMounted = false;
     };
-  }, [router, loadQuarantine]);
+  }, [router, activeStatus, loadQuarantine]);
+
+  const handleTabChange = (status: "EN_CUARENTENA" | "DEFECTUOSO") => {
+    startTransition(() => {
+      setActiveStatus(status);
+    });
+  };
 
   const handleOpenInspection = (batch: QuarantineBatch) => {
+    if (!isAuthorized) return;
     setSelectedBatch(batch);
     setVerdict("LIBERAR");
     setIncidentType("FALLA_CONTROL_CALIDAD");
@@ -102,7 +119,7 @@ export default function QualityQuarantinePage() {
 
   const handleSubmitVerdict = async (e: FormEvent) => {
     e.preventDefault();
-    if (!selectedBatch) return;
+    if (!selectedBatch || !isAuthorized) return;
 
     if (technicalNotes.trim().length < 5) {
       setFeedback({
@@ -127,7 +144,7 @@ export default function QualityQuarantinePage() {
         message: res.message,
       });
 
-      await loadQuarantine();
+      await loadQuarantine(activeStatus);
       setTimeout(() => {
         handleCloseInspection();
       }, 1200);
@@ -161,7 +178,7 @@ export default function QualityQuarantinePage() {
 
         <button
           type="button"
-          onClick={() => void loadQuarantine()}
+          onClick={() => void loadQuarantine(activeStatus)}
           className="p-2 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-lg transition-colors shadow-2xs self-start sm:self-auto cursor-pointer"
           title="Actualizar lista"
         >
@@ -169,11 +186,21 @@ export default function QualityQuarantinePage() {
         </button>
       </div>
 
+      {/* Banner Informativo si no es personal autorizado */}
+      {!isAuthorized && (
+        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-2.5 text-xs text-slate-600">
+          <AlertCircle className="w-4 h-4 shrink-0 text-slate-400" />
+          <span>
+            Modo de consulta (solo lectura): La liberación de lotes, dictámenes técnicos y bajas a merma son competencia exclusiva del personal de <strong>Almacén</strong> o <strong>Administración</strong>.
+          </span>
+        </div>
+      )}
+
       {/* Selector de Pestaña */}
       <div className="flex gap-2 border-b border-slate-200">
         <button
           type="button"
-          onClick={() => setActiveStatus("EN_CUARENTENA")}
+          onClick={() => handleTabChange("EN_CUARENTENA")}
           className={`px-4 py-2 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
             isQuarantine
               ? "border-amber-500 text-amber-700"
@@ -184,7 +211,7 @@ export default function QualityQuarantinePage() {
         </button>
         <button
           type="button"
-          onClick={() => setActiveStatus("DEFECTUOSO")}
+          onClick={() => handleTabChange("DEFECTUOSO")}
           className={`px-4 py-2 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
             !isQuarantine
               ? "border-red-500 text-red-700"
@@ -263,14 +290,20 @@ export default function QualityQuarantinePage() {
                     </td>
                     <td className="py-3 px-4 text-center">
                       {isQuarantine ? (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenInspection(batch)}
-                          className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                        >
-                          <FileCheck className="w-3.5 h-3.5" />
-                          Inspeccionar
-                        </button>
+                        isAuthorized ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenInspection(batch)}
+                            className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                          >
+                            <FileCheck className="w-3.5 h-3.5" />
+                            Inspeccionar
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-slate-500 font-medium text-[11px] bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                            Solo Lectura
+                          </span>
+                        )
                       ) : (
                         <span className="inline-flex items-center gap-1 text-red-700 font-semibold text-[11px] bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
                           <XCircle className="w-3 h-3" /> Inutilizado
@@ -286,7 +319,7 @@ export default function QualityQuarantinePage() {
       </div>
 
       {/* Modal de Dictamen Técnico */}
-      {selectedBatch && (
+      {selectedBatch && isAuthorized && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">

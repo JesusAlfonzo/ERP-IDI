@@ -26,6 +26,7 @@ import {
   Search,
   Snowflake,
   Filter,
+  ShieldAlert,
 } from "lucide-react";
 
 const COMMON_PROTOCOLS = [
@@ -48,9 +49,15 @@ const SECTIONS = [
 
 export default function ReagentConsumptionPage() {
   const router = useRouter();
+  const [currentUser] = useState(() => AuthService.getCurrentUser());
+  const userRoles = currentUser?.roles || [];
+  const isLabStaff =
+    userRoles.includes("ADMINISTRADOR") ||
+    userRoles.includes("ANALISTA_LABORATORIO");
+
   const [units, setUnits] = useState<LabReagentUnitItem[]>([]);
   const [history, setHistory] = useState<ReagentConsumptionRecord[]>([]);
-  const [loadingData, setLoadingData] = useState(true);
+  const [loadingData, setLoadingData] = useState(() => isLabStaff);
   const [unitSearch, setUnitSearch] = useState("");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -110,6 +117,9 @@ export default function ReagentConsumptionPage() {
       router.replace("/login");
       return;
     }
+    if (!isLabStaff) {
+      return;
+    }
     const init = async () => {
       if (isMounted) await loadData();
     };
@@ -117,7 +127,7 @@ export default function ReagentConsumptionPage() {
     return () => {
       isMounted = false;
     };
-  }, [router, loadData]);
+  }, [router, isLabStaff, loadData]);
 
   // Cerrar dropdown al hacer click afuera
   useEffect(() => {
@@ -135,6 +145,7 @@ export default function ReagentConsumptionPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!isLabStaff) return;
     setFeedback(null);
 
     if (
@@ -212,22 +223,47 @@ export default function ReagentConsumptionPage() {
         </p>
       </div>
 
-      {feedback && (
-        <div
-          className={`p-4 rounded-xl text-xs flex items-center gap-2.5 border ${
-            feedback.status === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : "bg-red-50 border-red-200 text-red-800"
-          }`}
-        >
-          {feedback.status === "success" ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-          ) : (
-            <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-          )}
-          <span>{feedback.message}</span>
+      {!isLabStaff ? (
+        <div className="bg-white border border-amber-200 rounded-xl p-8 text-center space-y-4 shadow-xs">
+          <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-slate-800">
+              Acceso Restringido a Consumo de Reactivos
+            </h2>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              El registro de consumos volumétricos y la apertura de reactivos en sala analítica son competencia exclusiva del personal de <strong>Laboratorio Clínico</strong> o <strong>Administración</strong>.
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => router.push("/dashboard")}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition-colors cursor-pointer"
+            >
+              Volver al Dashboard
+            </button>
+          </div>
         </div>
-      )}
+      ) : (
+        <>
+          {feedback && (
+            <div
+              className={`p-4 rounded-xl text-xs flex items-center gap-2.5 border ${
+                feedback.status === "success"
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                  : "bg-red-50 border-red-200 text-red-800"
+              }`}
+            >
+              {feedback.status === "success" ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+              )}
+              <span>{feedback.message}</span>
+            </div>
+          )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Formulario de Registro */}
@@ -520,6 +556,8 @@ export default function ReagentConsumptionPage() {
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

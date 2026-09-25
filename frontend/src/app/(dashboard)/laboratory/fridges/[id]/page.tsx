@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { LabFridgeService } from "@/services/lab-fridge.service";
+import { AuthService } from "@/services/auth.service";
 import type {
   FridgeContentsResponse,
   ReagentInFridge,
@@ -15,6 +16,7 @@ import {
   Package,
   Layers,
   Trash2,
+  AlertCircle,
   Printer,
   Loader2,
 } from "lucide-react";
@@ -23,6 +25,12 @@ export default function FridgeDetailPage() {
   const params = useParams();
   const router = useRouter();
   const fridgeId = params?.id as string;
+
+  const [currentUser] = useState(() => AuthService.getCurrentUser());
+  const userRoles = currentUser?.roles || [];
+  const isLabStaff =
+    userRoles.includes("ADMINISTRADOR") ||
+    userRoles.includes("ANALISTA_LABORATORIO");
 
   const [fridge, setFridge] = useState<FridgeContentsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,6 +55,7 @@ export default function FridgeDetailPage() {
   }, [loadFridge]);
 
   const handleOpenUnit = async (unitId: string | number) => {
+    if (!isLabStaff) return;
     try {
       await LabFridgeService.openUnit(unitId);
       await loadFridge();
@@ -56,6 +65,7 @@ export default function FridgeDetailPage() {
   };
 
   const handleDiscardUnit = async (unit: ReagentInFridge) => {
+    if (!isLabStaff) return;
     const reason = prompt(
       `Motivo de descarte de ${unit.product?.name ?? "reactivo"} (${unit.unitCode}):`,
     );
@@ -138,6 +148,15 @@ export default function FridgeDetailPage() {
           <Printer className="w-3.5 h-3.5" /> Imprimir Inventario Físico
         </button>
       </div>
+
+      {!isLabStaff && (
+        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-2.5 text-xs text-slate-600">
+          <AlertCircle className="w-4 h-4 shrink-0 text-slate-400" />
+          <span>
+            Modo de consulta (solo lectura): La apertura o descarte de frascos analíticos requiere privilegios de <strong>Laboratorio Clínico</strong> o <strong>Administración</strong>.
+          </span>
+        </div>
+      )}
 
       {/* Resumen de Capacidad y Estado */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -265,23 +284,31 @@ export default function FridgeDetailPage() {
                         : "N/D"}
                     </td>
                     <td className="py-3 px-4 text-center space-x-2">
-                      {unit.status === "SELLADO" && (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenUnit(unit.id)}
-                          className="text-xs text-sky-600 hover:text-sky-800 font-semibold cursor-pointer"
-                        >
-                          Abrir
-                        </button>
+                      {isLabStaff ? (
+                        <>
+                          {unit.status === "SELLADO" && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenUnit(unit.id)}
+                              className="text-xs text-sky-600 hover:text-sky-800 font-semibold cursor-pointer"
+                            >
+                              Abrir
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDiscardUnit(unit)}
+                            className="text-slate-400 hover:text-red-600 cursor-pointer"
+                            title="Descartar frasco"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 inline" />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic">
+                          Solo lectura
+                        </span>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => handleDiscardUnit(unit)}
-                        className="text-slate-400 hover:text-red-600 cursor-pointer"
-                        title="Descartar frasco"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 inline" />
-                      </button>
                     </td>
                   </tr>
                 ))

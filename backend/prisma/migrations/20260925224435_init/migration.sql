@@ -8,6 +8,9 @@ CREATE TYPE "FridgeStatus" AS ENUM ('OPERATIVO', 'MANTENIMIENTO', 'DEFECTUOSO', 
 CREATE TYPE "OrderStatus" AS ENUM ('BORRADOR', 'ENVIADA', 'PARCIAL', 'COMPLETADA', 'CANCELADA');
 
 -- CreateEnum
+CREATE TYPE "PurchaseRequisitionStatus" AS ENUM ('BORRADOR', 'EN_COTIZACION', 'ADJUDICADA', 'CANCELADA');
+
+-- CreateEnum
 CREATE TYPE "PaymentStatus" AS ENUM ('PENDIENTE', 'PAGADO_PARCIAL', 'PAGADO', 'EXONERADO');
 
 -- CreateEnum
@@ -129,6 +132,7 @@ CREATE TABLE "currency_exchanges" (
 -- CreateTable
 CREATE TABLE "categories" (
     "id" SERIAL NOT NULL,
+    "code" TEXT,
     "name" TEXT NOT NULL,
     "description" TEXT,
 
@@ -226,6 +230,12 @@ CREATE TABLE "orders" (
     "subtotal" DECIMAL(18,2) NOT NULL,
     "tax_total" DECIMAL(18,2) NOT NULL,
     "total" DECIMAL(18,2) NOT NULL,
+    "taxable_amount_usd" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    "exempt_amount_usd" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    "tax_amount_usd" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    "total_amount_usd" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    "total_amount_bs" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    "requisition_id" BIGINT,
     "notes" TEXT,
     "created_by_id" INTEGER NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -247,6 +257,7 @@ CREATE TABLE "order_items" (
     "base_quantity" DECIMAL(12,2) NOT NULL,
     "unit_price" DECIMAL(18,4) NOT NULL,
     "tax_rate" DECIMAL(5,2) NOT NULL DEFAULT 16.00,
+    "is_exempt" BOOLEAN NOT NULL DEFAULT false,
     "total_line" DECIMAL(18,2) NOT NULL,
 
     CONSTRAINT "order_items_pkey" PRIMARY KEY ("id")
@@ -283,6 +294,33 @@ CREATE TABLE "order_invoices" (
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "order_invoices_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "purchase_requisitions" (
+    "id" BIGSERIAL NOT NULL,
+    "requisition_number" TEXT NOT NULL,
+    "department_section" TEXT NOT NULL,
+    "justification" TEXT NOT NULL,
+    "status" "PurchaseRequisitionStatus" NOT NULL DEFAULT 'BORRADOR',
+    "notes" TEXT,
+    "created_by_id" INTEGER NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "purchase_requisitions_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "purchase_requisition_items" (
+    "id" BIGSERIAL NOT NULL,
+    "requisition_id" BIGINT NOT NULL,
+    "product_id" BIGINT NOT NULL,
+    "unit_id" INTEGER NOT NULL,
+    "quantity_requested" DECIMAL(12,2) NOT NULL,
+    "estimated_price" DECIMAL(18,4),
+
+    CONSTRAINT "purchase_requisition_items_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -412,6 +450,24 @@ CREATE TABLE "batch_incidents" (
     CONSTRAINT "batch_incidents_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "request_window_configs" (
+    "id" SERIAL NOT NULL,
+    "start_day" INTEGER NOT NULL DEFAULT 1,
+    "start_hour" INTEGER NOT NULL DEFAULT 5,
+    "start_minute" INTEGER NOT NULL DEFAULT 0,
+    "end_day" INTEGER NOT NULL DEFAULT 3,
+    "end_hour" INTEGER NOT NULL DEFAULT 16,
+    "end_minute" INTEGER NOT NULL DEFAULT 0,
+    "is_suspended" BOOLEAN NOT NULL DEFAULT false,
+    "max_weekly_requests_per_user" INTEGER NOT NULL DEFAULT 1,
+    "timezone" TEXT NOT NULL DEFAULT 'America/Caracas',
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "request_window_configs_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "users_username_key" ON "users"("username");
 
@@ -429,6 +485,9 @@ CREATE UNIQUE INDEX "refresh_tokens_token_key" ON "refresh_tokens"("token");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "currencies_code_key" ON "currencies"("code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "categories_code_key" ON "categories"("code");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "categories_name_key" ON "categories"("name");
@@ -453,6 +512,9 @@ CREATE UNIQUE INDEX "fridges_code_key" ON "fridges"("code");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "orders_order_number_key" ON "orders"("order_number");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "purchase_requisitions_requisition_number_key" ON "purchase_requisitions"("requisition_number");
 
 -- CreateIndex
 CREATE INDEX "stock_batches_product_id_lot_number_location_id_idx" ON "stock_batches"("product_id", "lot_number", "location_id");
@@ -512,6 +574,9 @@ ALTER TABLE "orders" ADD CONSTRAINT "orders_currency_id_fkey" FOREIGN KEY ("curr
 ALTER TABLE "orders" ADD CONSTRAINT "orders_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "orders" ADD CONSTRAINT "orders_requisition_id_fkey" FOREIGN KEY ("requisition_id") REFERENCES "purchase_requisitions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "order_items" ADD CONSTRAINT "order_items_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -531,6 +596,18 @@ ALTER TABLE "order_payments" ADD CONSTRAINT "order_payments_registered_by_id_fke
 
 -- AddForeignKey
 ALTER TABLE "order_invoices" ADD CONSTRAINT "order_invoices_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "purchase_requisitions" ADD CONSTRAINT "purchase_requisitions_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "purchase_requisition_items" ADD CONSTRAINT "purchase_requisition_items_requisition_id_fkey" FOREIGN KEY ("requisition_id") REFERENCES "purchase_requisitions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "purchase_requisition_items" ADD CONSTRAINT "purchase_requisition_items_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "purchase_requisition_items" ADD CONSTRAINT "purchase_requisition_items_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "stock_batches" ADD CONSTRAINT "stock_batches_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

@@ -33,6 +33,13 @@ enum OrderStatus {
   CANCELADA
 }
 
+enum PurchaseRequisitionStatus {
+  BORRADOR
+  EN_COTIZACION
+  ADJUDICADA
+  CANCELADA
+}
+
 enum PaymentStatus {
   PENDIENTE
   PAGADO_PARCIAL
@@ -141,6 +148,7 @@ model User {
   registeredPayments      OrderPayment[]
   reportedIncidents       BatchIncident[]    @relation("ReportedIncidents")
   resolvedIncidents       BatchIncident[]    @relation("ResolvedIncidents")
+  purchaseRequisitions    PurchaseRequisition[] @relation("UserPurchaseRequisitions")
 
   @@map("users")
 }
@@ -263,6 +271,7 @@ model Unit {
   baseProducts Product[] @relation("BaseUnitRelation")
   purchProducts Product[] @relation("PurchaseUnitRelation")
   orderItems   OrderItem[]
+  purchaseRequisitionItems PurchaseRequisitionItem[]
 
   @@map("units")
 }
@@ -309,6 +318,7 @@ model Product {
   stockBatches    StockBatch[]
   labReagentUnits LabReagentUnit[]
   requestItems    RequestItem[]
+  purchaseRequisitionItems PurchaseRequisitionItem[]
 
   @@map("products")
 }
@@ -364,14 +374,21 @@ model Order {
   subtotal        Decimal         @db.Decimal(18, 2)
   taxTotal        Decimal         @map("tax_total") @db.Decimal(18, 2)
   total           Decimal         @db.Decimal(18, 2)
+  taxableAmountUsd Decimal         @default(0.00) @map("taxable_amount_usd") @db.Decimal(18, 2)
+  exemptAmountUsd  Decimal         @default(0.00) @map("exempt_amount_usd") @db.Decimal(18, 2)
+  taxAmountUsd     Decimal         @default(0.00) @map("tax_amount_usd") @db.Decimal(18, 2)
+  totalAmountUsd   Decimal         @default(0.00) @map("total_amount_usd") @db.Decimal(18, 2)
+  totalAmountBs    Decimal         @default(0.00) @map("total_amount_bs") @db.Decimal(18, 2)
+  requisitionId    BigInt?         @map("requisition_id")
   notes           String?         @db.Text
   createdById     Int             @map("created_by_id")
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @updatedAt @map("updated_at")
 
-  supplier       Supplier?       @relation(fields: [supplierId], references: [id])
-  currency       Currency        @relation(fields: [currencyId], references: [id])
-  createdBy      User            @relation(fields: [createdById], references: [id])
+  supplier       Supplier?            @relation(fields: [supplierId], references: [id])
+  currency       Currency             @relation(fields: [currencyId], references: [id])
+  createdBy      User                 @relation(fields: [createdById], references: [id])
+  requisition    PurchaseRequisition? @relation(fields: [requisitionId], references: [id])
   items          OrderItem[]
   payments       OrderPayment[]
   invoices       OrderInvoice[]
@@ -392,6 +409,7 @@ model OrderItem {
   baseQuantity     Decimal  @map("base_quantity") @db.Decimal(12, 2)
   unitPrice        Decimal  @map("unit_price") @db.Decimal(18, 4)
   taxRate          Decimal  @default(16.00) @map("tax_rate") @db.Decimal(5, 2)
+  isExempt         Boolean  @default(false) @map("is_exempt")
   totalLine        Decimal  @map("total_line") @db.Decimal(18, 2)
 
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -437,6 +455,39 @@ model OrderInvoice {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@map("order_invoices")
+}
+
+model PurchaseRequisition {
+  id                BigInt                    @id @default(autoincrement())
+  requisitionNumber String                    @unique @map("requisition_number")
+  departmentSection String                    @map("department_section")
+  justification     String                    @db.Text
+  status            PurchaseRequisitionStatus @default(BORRADOR)
+  notes             String?                   @db.Text
+  createdById       Int                       @map("created_by_id")
+  createdAt         DateTime                  @default(now()) @map("created_at")
+  updatedAt         DateTime                  @updatedAt @map("updated_at")
+
+  createdBy User                      @relation("UserPurchaseRequisitions", fields: [createdById], references: [id])
+  items     PurchaseRequisitionItem[]
+  orders    Order[]
+
+  @@map("purchase_requisitions")
+}
+
+model PurchaseRequisitionItem {
+  id                BigInt  @id @default(autoincrement())
+  requisitionId     BigInt  @map("requisition_id")
+  productId         BigInt  @map("product_id")
+  unitId            Int     @map("unit_id")
+  quantityRequested Decimal @map("quantity_requested") @db.Decimal(12, 2)
+  estimatedPrice    Decimal? @map("estimated_price") @db.Decimal(18, 4)
+
+  requisition PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  product     Product             @relation(fields: [productId], references: [id])
+  unit        Unit                @relation(fields: [unitId], references: [id])
+
+  @@map("purchase_requisition_items")
 }
 
 // ==========================================
@@ -614,3 +665,24 @@ model BatchIncident {
 
   @@map("batch_incidents")
 }
+
+// ==========================================
+// 11. CONFIGURACIÓN DE VENTANA OPERATIVA (REQUESTS)
+// ==========================================
+
+model RequestWindowConfig {
+  id                        Int      @id @default(autoincrement())
+  startDay                  Int      @default(1) @map("start_day") // 1 = Lunes
+  startHour                 Int      @default(5) @map("start_hour") // 05:00 AM
+  startMinute               Int      @default(0) @map("start_minute")
+  endDay                    Int      @default(3) @map("end_day") // 3 = Miércoles
+  endHour                   Int      @default(16) @map("end_hour") // 16:00 (04:00 PM)
+  endMinute                 Int      @default(0) @map("end_minute")
+  isSuspended               Boolean  @default(false) @map("is_suspended")
+  maxWeeklyRequestsPerUser  Int      @default(1) @map("max_weekly_requests_per_user")
+  timezone                  String   @default("America/Caracas")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  @@map("request_window_configs")
+}

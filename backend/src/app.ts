@@ -76,7 +76,7 @@ app.use('/api/lab', labRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/exports', exportRoutes);
 
-// Manejador centralizado de errores (Debe ser el último middleware montado)
+// Manejador centralizado de errores
 app.use(errorHandler);
 
 export default app;

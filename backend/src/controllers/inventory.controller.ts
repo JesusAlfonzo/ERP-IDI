@@ -171,9 +171,27 @@ export const createAdjustment = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    if (!req.user?.id) {
+      res
+        .status(401)
+        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') || userRoles.includes('ALMACENISTA');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Almacén o Administración.',
+      });
+      return;
+    }
+
     const { notes, items } = req.body;
-    const executedById =
-      (req as unknown as { user?: { id: number } }).user?.id || 1;
+    const executedById = req.user.id;
 
     const result = await InventoryService.createAdjustment({
       notes,
@@ -197,9 +215,27 @@ export const registerDirectWaste = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    if (!req.user?.id) {
+      res
+        .status(401)
+        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') || userRoles.includes('ALMACENISTA');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Almacén o Administración.',
+      });
+      return;
+    }
+
     const { wastes } = req.body;
-    const executedById =
-      (req as unknown as { user?: { id: number } }).user?.id || 1;
+    const executedById = req.user.id;
 
     const result = await InventoryService.registerDirectWaste({
       wastes,
@@ -222,6 +258,25 @@ export const updateBatchStatus = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    if (!req.user?.id) {
+      res
+        .status(401)
+        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const userRoles = req.user?.roles ?? [];
+    const isAuthorized =
+      userRoles.includes('ADMINISTRADOR') || userRoles.includes('ALMACENISTA');
+    if (!isAuthorized) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message:
+          'Acceso denegado: Se requieren privilegios de Almacén o Administración.',
+      });
+      return;
+    }
+
     const rawId = req.params.id;
     const idStr = Array.isArray(rawId) ? rawId[0] : rawId;
 
@@ -246,7 +301,7 @@ export const updateBatchStatus = async (
       return;
     }
 
-    const userId = (req as unknown as { user?: { id: number } }).user?.id || 1;
+    const userId = req.user.id;
 
     const updatedBatch = await InventoryService.updateBatchStatus({
       batchId: BigInt(idStr),

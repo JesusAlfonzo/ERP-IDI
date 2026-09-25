@@ -96,6 +96,13 @@ export const InventoryClientService = {
     return response.data.data;
   },
 
+  async deleteBrand(id: number): Promise<{ message?: string }> {
+    const response = await apiClient.delete<ApiResponse<unknown>>(
+      `/catalog/brands/${id}`,
+    );
+    return response.data;
+  },
+
   async getUnits() {
     const response = await apiClient.get<ApiResponse<Unit[]>>("/catalog/units");
     return response.data.data || [];
@@ -124,6 +131,13 @@ export const InventoryClientService = {
         response.data.message || "No se pudo actualizar la unidad",
       );
     return response.data.data;
+  },
+
+  async deleteUnit(id: number): Promise<{ message?: string }> {
+    const response = await apiClient.delete<ApiResponse<unknown>>(
+      `/catalog/units/${id}`,
+    );
+    return response.data;
   },
 
   async getLocations() {
@@ -161,6 +175,13 @@ export const InventoryClientService = {
     return response.data.data;
   },
 
+  async deleteLocation(id: number): Promise<{ message?: string }> {
+    const response = await apiClient.delete<ApiResponse<unknown>>(
+      `/catalog/locations/${id}`,
+    );
+    return response.data;
+  },
+
   /**
    * Obtiene categorías individuales desde /catalog
    */
@@ -169,6 +190,44 @@ export const InventoryClientService = {
       "/catalog/categories",
     );
     return response.data.data || [];
+  },
+
+  async createCategory(payload: {
+    name: string;
+    description?: string;
+    code?: string;
+  }): Promise<Category> {
+    const response = await apiClient.post<ApiResponse<Category>>(
+      "/catalog/categories",
+      payload,
+    );
+    if (!response.data.data) {
+      throw new Error(response.data.message || "No se pudo crear la categoría");
+    }
+    return response.data.data;
+  },
+
+  async updateCategory(
+    id: number,
+    payload: { name?: string; description?: string; code?: string },
+  ): Promise<Category> {
+    const response = await apiClient.patch<ApiResponse<Category>>(
+      `/catalog/categories/${id}`,
+      payload,
+    );
+    if (!response.data.data) {
+      throw new Error(
+        response.data.message || "No se pudo actualizar la categoría",
+      );
+    }
+    return response.data.data;
+  },
+
+  async deleteCategory(id: number): Promise<{ message?: string }> {
+    const response = await apiClient.delete<ApiResponse<unknown>>(
+      `/catalog/categories/${id}`,
+    );
+    return response.data;
   },
 
   /**

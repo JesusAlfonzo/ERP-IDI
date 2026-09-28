@@ -99,6 +99,10 @@ export interface ReagentBatchOption {
     sku: string;
     name: string;
     unitOfMeasure: string;
+    barcode?: string | null;
+    description?: string | null;
+    categoryId?: number;
+    category?: { id: number; name: string };
   };
   fridge?: {
     id: number;

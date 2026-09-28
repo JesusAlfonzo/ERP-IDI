@@ -78,14 +78,30 @@ export const getProducts = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { search, categoryId, isReagent } = req.query;
+    const { search, q, categoryId, isReagent } = req.query;
 
     const filter: ProductFilterDTO = {};
-    if (typeof search === 'string' && search.trim() !== '') {
-      filter.search = search.trim();
+    const rawSearch =
+      typeof search === 'string'
+        ? search
+        : typeof q === 'string'
+          ? q
+          : '';
+
+    if (rawSearch.trim() !== '') {
+      filter.search = rawSearch.trim();
     }
-    if (categoryId) {
-      filter.categoryId = Number(categoryId);
+    if (
+      categoryId !== undefined &&
+      categoryId !== '' &&
+      categoryId !== 'all' &&
+      categoryId !== 'todas' &&
+      categoryId !== '0'
+    ) {
+      const parsedCatId = Number(categoryId);
+      if (!isNaN(parsedCatId) && parsedCatId > 0) {
+        filter.categoryId = parsedCatId;
+      }
     }
     if (isReagent !== undefined) {
       filter.isReagent = isReagent === 'true';

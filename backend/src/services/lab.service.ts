@@ -75,6 +75,16 @@ export class LabService {
                     sku: { contains: search, mode: 'insensitive' },
                   },
                 },
+                {
+                  product: {
+                    barcode: { contains: search, mode: 'insensitive' },
+                  },
+                },
+                {
+                  product: {
+                    description: { contains: search, mode: 'insensitive' },
+                  },
+                },
               ],
             }
           : {}),
@@ -88,6 +98,10 @@ export class LabService {
             id: true,
             name: true,
             sku: true,
+            barcode: true,
+            description: true,
+            categoryId: true,
+            category: { select: { id: true, name: true } },
             isReagent: true,
             minStockAlert: true,
             baseUnit: { select: { abbreviation: true } },

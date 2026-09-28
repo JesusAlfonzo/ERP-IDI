@@ -20,7 +20,7 @@ import type {
   Supplier,
   Currency,
 } from "@/types/purchasing";
-import type { Product } from "@/types/inventory";
+import type { Product, Category } from "@/types/inventory";
 import { ProductPackagingSelector } from "@/components/purchasing/ProductPackagingSelector";
 import {
   FileText,
@@ -96,6 +96,7 @@ export default function PurchaseRequisitionsPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [searchFilter, setSearchFilter] = useState<string>("");
@@ -109,6 +110,7 @@ export default function PurchaseRequisitionsPage() {
   // Modal: Nueva Preorden
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | "">("");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("");
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [departmentSection, setDepartmentSection] = useState("");
   const [justification, setJustification] = useState("");
@@ -139,7 +141,7 @@ export default function PurchaseRequisitionsPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [reqs, supps, currs, prods, deps, currentRates] = await Promise.all([
+      const [reqs, supps, currs, prods, cats, deps, currentRates] = await Promise.all([
         PurchasingClientService.getRequisitions({
           status: statusFilter || undefined,
           search: searchFilter || undefined,
@@ -147,6 +149,7 @@ export default function PurchaseRequisitionsPage() {
         PurchasingClientService.getSuppliers().catch(() => []),
         PurchasingClientService.getCurrencies().catch(() => []),
         InventoryClientService.getProducts().catch(() => []),
+        InventoryClientService.getCategories().catch(() => []),
         InventoryMasterService.getDepartments(true).catch(() => []),
         CurrencyService.getCurrentRates().catch(() => null),
       ]);
@@ -154,6 +157,7 @@ export default function PurchaseRequisitionsPage() {
       setSuppliers(supps);
       setCurrencies(currs);
       setCatalogProducts(prods);
+      setCategories(cats);
       setDepartments(deps);
 
       if (currentRates) {
@@ -732,14 +736,39 @@ export default function PurchaseRequisitionsPage() {
                 </div>
 
                 <div className="space-y-3 pt-2 border-t border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                      Insumos / Reactivos Requeridos ({formItems.length})
-                    </span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        Insumos ({formItems.length})
+                      </span>
+                      <span className="text-slate-300 hidden sm:inline">|</span>
+                      <div className="flex items-center gap-1.5">
+                        <label
+                          htmlFor="req-category-filter"
+                          className="text-xs font-medium text-slate-600 whitespace-nowrap"
+                        >
+                          Filtrar productos por categoría:
+                        </label>
+                        <select
+                          id="req-category-filter"
+                          value={selectedCategoryFilter}
+                          onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                          className="bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors cursor-pointer"
+                        >
+                          <option value="">Todas las categorías</option>
+                          {categories.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
                     <button
                       type="button"
                       onClick={handleAddItem}
-                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/70 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer border border-blue-200"
+                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/70 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer border border-blue-200 shrink-0"
                     >
                       <Plus className="w-3.5 h-3.5" /> Agregar renglón
                     </button>
@@ -759,6 +788,7 @@ export default function PurchaseRequisitionsPage() {
                         <div className="flex-1 min-w-0">
                           <ProductPackagingSelector
                             products={catalogProducts}
+                            selectedCategoryId={selectedCategoryFilter}
                             selectedProductId={item.productId}
                             selectedUnitId={item.unitId}
                             onChange={(pId, uId) => handleProductSelect(idx, pId, uId)}
@@ -1151,7 +1181,7 @@ export default function PurchaseRequisitionsPage() {
                                       return updated;
                                     });
                                   }}
-                                  className="w-full bg-slate-50 border border-slate-300 rounded px-2 py-1 text-right font-mono font-bold text-xs"
+                                  className="w-full bg-slate-50 border border-slate-300 rounded px-2 py-1 text-right font-mono font-bold text-xs text-slate-600"
                                   required
                                 />
                               </td>

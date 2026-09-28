@@ -66,6 +66,7 @@ export class ProductService {
                   { name: { contains: filter.search, mode: 'insensitive' } },
                   { sku: { contains: filter.search, mode: 'insensitive' } },
                   { barcode: { contains: filter.search, mode: 'insensitive' } },
+                  { description: { contains: filter.search, mode: 'insensitive' } },
                 ],
               }
             : {}),

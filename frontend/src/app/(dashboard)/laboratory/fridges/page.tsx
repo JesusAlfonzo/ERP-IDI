@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { useState, useEffect, useCallback, useMemo, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { LabFridgeService } from "@/services/lab-fridge.service";
 import { LaboratoryClientService } from "@/services/laboratory.service";
 import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
+import {
+  SearchableSelect,
+  type SearchableOption,
+} from "@/components/common/SearchableSelect";
 import type {
   LabFridge,
   FridgeContentsResponse,
@@ -13,7 +17,7 @@ import type {
   ReagentInFridge,
   ReagentBatchOption,
 } from "@/types/laboratory";
-import type { Location } from "@/types/inventory";
+import type { Location, Category } from "@/types/inventory";
 import {
   Thermometer,
   Snowflake,
@@ -84,6 +88,9 @@ export default function FridgesPage() {
   const [assignFridgeTarget, setAssignFridgeTarget] =
     useState<LabFridge | null>(null);
   const [selectedBatchId, setSelectedBatchId] = useState<string>("");
+  const [reagentCategoryFilter, setReagentCategoryFilter] =
+    useState<string>("");
+  const [categories, setCategories] = useState<Category[]>([]);
   const [assigningBatch, setAssigningBatch] = useState(false);
 
   // Inspección rápida de Contenido (Drawer)
@@ -107,14 +114,16 @@ export default function FridgesPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [fData, lData, rData] = await Promise.all([
+      const [fData, lData, rData, cData] = await Promise.all([
         LabFridgeService.getFridges(),
         InventoryClientService.getLocations().catch(() => []),
         LaboratoryClientService.getAvailableReagents().catch(() => []),
+        InventoryClientService.getCategories().catch(() => []),
       ]);
       setFridges(fData);
       setLocations(lData);
       setAvailableReagents(rData);
+      setCategories(cData);
       if (lData.length > 0 && locationId === "") {
         setLocationId(Number(lData[0].id));
       }
@@ -124,6 +133,60 @@ export default function FridgesPage() {
       setLoading(false);
     }
   }, [locationId]);
+
+  // Categorías presentes en los reactivos disponibles
+  const availableReagentCategories = useMemo(() => {
+    const catMap = new Map<string, { id: string | number; name: string }>();
+
+    for (const r of availableReagents) {
+      const cid = r.product?.categoryId ?? r.product?.category?.id;
+      const cname = r.product?.category?.name;
+      if (cid !== undefined && cid !== null) {
+        const key = String(cid);
+        if (!catMap.has(key)) {
+          const matchingCat = categories.find((c) => String(c.id) === key);
+          catMap.set(key, {
+            id: cid,
+            name: matchingCat?.name || cname || `Categoría #${cid}`,
+          });
+        }
+      }
+    }
+
+    return Array.from(catMap.values());
+  }, [availableReagents, categories]);
+
+  // Opciones formateadas para el combobox de reactivos con estándar de dos líneas
+  const reagentOptions = useMemo<SearchableOption<ReagentBatchOption>[]>(() => {
+    return availableReagents.map((r) => {
+      const unit = r.product?.unitOfMeasure || "UND";
+      const exp = r.expirationDate
+        ? new Date(r.expirationDate).toLocaleDateString()
+        : null;
+      const subParts: string[] = [];
+      if (r.lotNumber) subParts.push(`Lote #${r.lotNumber}`);
+      if (r.product?.sku) subParts.push(r.product.sku);
+      subParts.push(`Disp: ${r.currentQuantity} ${unit}`);
+      if (exp) subParts.push(`Vence: ${exp}`);
+
+      const categoryVal = r.product?.categoryId ?? r.product?.category?.id;
+
+      return {
+        value: String(r.id),
+        label: r.product?.name || "Reactivo",
+        sublabel: subParts.join(" · "),
+        searchTerms: [
+          r.product?.name || "",
+          r.product?.sku || "",
+          r.lotNumber || "",
+          r.product?.barcode || "",
+          r.product?.description || "",
+        ].filter(Boolean),
+        category: categoryVal !== undefined ? String(categoryVal) : undefined,
+        data: r,
+      };
+    });
+  }, [availableReagents]);
 
   useEffect(() => {
     let isMounted = true;
@@ -213,6 +276,7 @@ export default function FridgesPage() {
       });
       setAssignFridgeTarget(null);
       setSelectedBatchId("");
+      setReagentCategoryFilter("");
       await loadData();
     } catch (err: unknown) {
       setFeedback({
@@ -452,6 +516,7 @@ export default function FridgesPage() {
                         onClick={() => {
                           setAssignFridgeTarget(fridge);
                           setSelectedBatchId("");
+                          setReagentCategoryFilter("");
                         }}
                         className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 py-1.5 px-2 rounded-lg transition-colors cursor-pointer"
                       >
@@ -483,7 +548,7 @@ export default function FridgesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-2xs">
           <form
             onSubmit={handleAssignBatchToFridge}
-            className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4"
+            className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150"
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
@@ -494,7 +559,11 @@ export default function FridgesPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setAssignFridgeTarget(null)}
+                onClick={() => {
+                  setAssignFridgeTarget(null);
+                  setSelectedBatchId("");
+                  setReagentCategoryFilter("");
+                }}
                 className="text-slate-400 hover:text-slate-600"
               >
                 ✕
@@ -511,30 +580,50 @@ export default function FridgesPage() {
               ).
             </p>
 
+            {/* Filtro por Categoría (discreto, fuera del buscador) */}
+            {availableReagentCategories.length > 0 && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Filtrar por Categoría
+                </label>
+                <select
+                  value={reagentCategoryFilter}
+                  onChange={(e) => setReagentCategoryFilter(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="">Todas las categorías</option>
+                  {availableReagentCategories.map((cat) => (
+                    <option key={cat.id} value={String(cat.id)}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Reactivo / Lote Disponible *
               </label>
-              <select
+              <SearchableSelect
+                options={reagentOptions}
                 value={selectedBatchId}
-                onChange={(e) => setSelectedBatchId(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-purple-500"
-                required
-              >
-                <option value="">-- Seleccione un lote disponible --</option>
-                {availableReagents.map((reagent) => (
-                  <option key={reagent.id} value={reagent.id}>
-                    {reagent.product.name} (Lote #{reagent.lotNumber}) - Disp:{" "}
-                    {reagent.currentQuantity} {reagent.product.unitOfMeasure}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setSelectedBatchId(String(val))}
+                categoryFilter={reagentCategoryFilter}
+                placeholder="Buscar reactivo por nombre, SKU o lote..."
+                emptyMessage="No hay lotes disponibles para el filtro actual."
+                itemTypeLabel="lote(s)"
+              />
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setAssignFridgeTarget(null)}
+                onClick={() => {
+                  setAssignFridgeTarget(null);
+                  setSelectedBatchId("");
+                  setReagentCategoryFilter("");
+                }}
                 className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
               >
                 Cancelar

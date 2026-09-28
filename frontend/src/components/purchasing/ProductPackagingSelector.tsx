@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import type { Product } from "@/types/inventory";
-import { Search, X, Package, ChevronDown, Check } from "lucide-react";
+import {
+  SearchableSelect,
+  type SearchableOption,
+} from "@/components/common/SearchableSelect";
 
 interface ProductPackagingSelectorProps {
   products: Product[];
@@ -10,6 +13,8 @@ interface ProductPackagingSelectorProps {
   selectedUnitId: number;
   onChange: (productId: number, unitId: number) => void;
   disabled?: boolean;
+  /** Categoría seleccionada en la cabecera del formulario */
+  selectedCategoryId?: string | number;
 }
 
 export function ProductPackagingSelector({
@@ -18,55 +23,70 @@ export function ProductPackagingSelector({
   selectedUnitId,
   onChange,
   disabled = false,
+  selectedCategoryId,
 }: ProductPackagingSelectorProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
+  // Producto seleccionado resuelto sobre el catálogo completo
   const selectedProduct = useMemo(
     () => products.find((p) => p.id === selectedProductId),
     [products, selectedProductId]
   );
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false);
+  // Mapeo unificado de productos a opciones de búsqueda estructuradas
+  const options = useMemo<SearchableOption<Product>[]>(() => {
+    return products.map((p) => {
+      const baseUnitAbbr = p.baseUnit?.abbreviation || p.unitOfMeasure || "UND";
+      const hasPackage =
+        p.purchaseUnit &&
+        p.purchaseUnitId &&
+        p.purchaseUnitId !== p.baseUnitId;
+      const factor = Number(p.conversionFactor) || 1;
+
+      const subParts: string[] = [];
+      if (p.sku) subParts.push(p.sku);
+      subParts.push(baseUnitAbbr);
+      if (hasPackage) {
+        subParts.push(
+          `${p.purchaseUnit?.name || p.purchaseUnit?.abbreviation} (x${factor})`
+        );
       }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
-  const filteredProducts = useMemo(() => {
-    const term = searchTerm.toLowerCase().trim();
-    if (!term) return products.slice(0, 50); // Muestra primeros 50 si no busca
-    return products.filter((p) => {
-      const nameMatch = p.name.toLowerCase().includes(term);
-      const skuMatch = p.sku ? p.sku.toLowerCase().includes(term) : false;
-      return nameMatch || skuMatch;
+      return {
+        value: p.id,
+        label: p.name,
+        sublabel: subParts.join(" · "),
+        searchTerms: [
+          p.name,
+          p.sku || "",
+          p.barcode || "",
+          p.description || "",
+        ],
+        category: p.categoryId,
+        badgeText: p.isTaxExempt ? "Exento IVA" : undefined,
+        badgeColor: "text-emerald-600 font-medium",
+        data: p,
+      };
     });
-  }, [products, searchTerm]);
+  }, [products]);
 
-  const handleSelectProduct = (product: Product) => {
-    // Si tiene purchaseUnitId, podemos dejarlo o poner baseUnitId por defecto
-    const defaultUnitId = product.baseUnitId || product.baseUnit?.id || 0;
-    onChange(product.id, defaultUnitId);
-    setIsOpen(false);
-    setSearchTerm("");
+  const handleSelectOption = (
+    val: string | number,
+    opt?: SearchableOption<Product>
+  ) => {
+    if (!val || val === 0 || val === "0") {
+      onChange(0, 0);
+      return;
+    }
+    const prod =
+      opt?.data || products.find((p) => String(p.id) === String(val));
+    if (!prod) {
+      onChange(0, 0);
+      return;
+    }
+    const defaultUnitId = prod.baseUnitId || prod.baseUnit?.id || 0;
+    onChange(prod.id, defaultUnitId);
   };
 
-  const handleClear = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onChange(0, 0);
-    setSearchTerm("");
-  };
-
-  // Unidades disponibles para el producto seleccionado
+  // Unidades disponibles para el producto seleccionado (Unidad Base vs Empaque)
   const availableUnits = useMemo(() => {
     if (!selectedProduct) return [];
     const units: Array<{
@@ -81,7 +101,10 @@ export function ProductPackagingSelector({
     if (selectedProduct.baseUnit || selectedProduct.baseUnitId) {
       units.push({
         id: selectedProduct.baseUnitId || selectedProduct.baseUnit?.id || 0,
-        name: selectedProduct.baseUnit?.name || selectedProduct.unitOfMeasure || "Unidad Base",
+        name:
+          selectedProduct.baseUnit?.name ||
+          selectedProduct.unitOfMeasure ||
+          "Unidad Base",
         abbreviation:
           selectedProduct.baseUnit?.abbreviation ||
           selectedProduct.unitOfMeasure ||
@@ -110,139 +133,20 @@ export function ProductPackagingSelector({
   }, [selectedProduct]);
 
   return (
-    <div ref={containerRef} className="space-y-1.5 w-full">
-      {/* Selector / Buscador */}
-      <div className="relative">
-        <div
-          onClick={() => !disabled && setIsOpen(true)}
-          className={`w-full flex items-center justify-between bg-white border rounded-lg px-3 py-2 text-xs transition-colors cursor-pointer ${
-            isOpen
-              ? "border-blue-500 ring-2 ring-blue-100"
-              : "border-slate-300 hover:border-slate-400"
-          } ${disabled ? "opacity-50 cursor-not-allowed bg-slate-50" : ""}`}
-        >
-          <div className="flex items-center gap-2 min-w-0 mr-2">
-            <Package className="w-4 h-4 text-slate-400 shrink-0" />
-            {selectedProduct ? (
-              <div className="truncate">
-                <span className="font-semibold text-slate-900 mr-2">
-                  {selectedProduct.name}
-                </span>
-                {selectedProduct.sku && (
-                  <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 mr-1.5">
-                    {selectedProduct.sku}
-                  </span>
-                )}
-                {selectedProduct.isTaxExempt && (
-                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                    Exento
-                  </span>
-                )}
-              </div>
-            ) : (
-              <span className="text-slate-400">
-                Buscar insumo por nombre o SKU...
-              </span>
-            )}
-          </div>
+    <div className="space-y-1.5 w-full">
+      {/* Combobox con búsqueda escrita reutilizable */}
+      <SearchableSelect<Product>
+        options={options}
+        value={selectedProductId || ""}
+        onChange={handleSelectOption}
+        disabled={disabled}
+        categoryFilter={selectedCategoryId}
+        placeholder="Buscar insumo por nombre o código..."
+        emptyMessage="No se encontraron insumos que coincidan con la búsqueda."
+        itemTypeLabel="insumo(s)"
+      />
 
-          <div className="flex items-center gap-1 shrink-0">
-            {selectedProduct && !disabled && (
-              <button
-                type="button"
-                onClick={handleClear}
-                className="p-0.5 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
-                title="Limpiar insumo"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-            <ChevronDown className="w-4 h-4 text-slate-400" />
-          </div>
-        </div>
-
-        {/* Dropdown de Resultados */}
-        {isOpen && (
-          <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden text-xs max-h-72 flex flex-col">
-            <div className="p-2 border-b border-slate-100 bg-slate-50/80">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
-                <input
-                  ref={inputRef}
-                  type="text"
-                  autoFocus
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Escriba para filtrar por nombre o SKU..."
-                  className="w-full bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                />
-              </div>
-            </div>
-
-            <div className="overflow-y-auto divide-y divide-slate-100 flex-1 max-h-56">
-              {filteredProducts.length === 0 ? (
-                <div className="p-4 text-center text-slate-400">
-                  No se encontraron insumos o reactivos.
-                </div>
-              ) : (
-                filteredProducts.map((p) => {
-                  const isSelected = p.id === selectedProductId;
-                  const baseUnitAbbr =
-                    p.baseUnit?.abbreviation || p.unitOfMeasure || "UND";
-                  const hasPackage =
-                    p.purchaseUnit &&
-                    p.purchaseUnitId &&
-                    p.purchaseUnitId !== p.baseUnitId;
-                  const factor = Number(p.conversionFactor) || 1;
-
-                  return (
-                    <div
-                      key={p.id}
-                      onClick={() => handleSelectProduct(p)}
-                      className={`p-2.5 flex items-center justify-between hover:bg-blue-50/60 cursor-pointer transition-colors ${
-                        isSelected ? "bg-blue-50 text-blue-900" : "text-slate-800"
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0 mr-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-slate-900 truncate">
-                            {p.name}
-                          </span>
-                          {p.sku && (
-                            <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
-                              {p.sku}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500">
-                          <span>Unidad: {baseUnitAbbr}</span>
-                          {hasPackage && (
-                            <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 font-medium text-[10px] border border-amber-200">
-                              Empaque: {p.purchaseUnit?.name || p.purchaseUnit?.abbreviation} (x{factor})
-                            </span>
-                          )}
-                          {p.isTaxExempt && (
-                            <span className="text-emerald-600 font-semibold">
-                              • Exento IVA
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {isSelected && (
-                        <Check className="w-4 h-4 text-blue-600 shrink-0" />
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Selector de Empaque (Unidad Base vs Empaque) */}
+      {/* Selector de Empaque (Unidad Base vs Empaque si aplica) */}
       {selectedProduct && availableUnits.length > 1 && (
         <div className="flex items-center gap-2 pt-0.5">
           <span className="text-[11px] font-semibold text-slate-500 shrink-0">

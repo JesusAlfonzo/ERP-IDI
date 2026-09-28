@@ -10,6 +10,7 @@ import userRoutes from './routes/user.routes.js';
 import catalogRoutes from './routes/catalog.routes.js';
 import productRoutes from './routes/product.routes.js';
 import currencyRoutes from './routes/currency.routes.js';
+import exchangeRateRoutes from './routes/exchange-rate.routes.js';
 import supplierRoutes from './routes/supplier.routes.js';
 import orderRoutes from './routes/order.routes.js';
 import purchaseFinanceRoutes from './routes/purchase-finance.routes.js';
@@ -22,6 +23,8 @@ import labRoutes from './routes/lab.routes.js';
 import reportRoutes from './routes/report.routes.js';
 import exportRoutes from './routes/export.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
+import bankAccountRoutes from './routes/bank-account.routes.js';
+import directPaymentRoutes from './routes/direct-payment.routes.js';
 
 const app: express.Application = express();
 
@@ -56,12 +59,15 @@ app.use('/api/users', userRoutes);
 app.use('/api/catalog', catalogRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/currencies', currencyRoutes);
+app.use('/api/exchange-rates', exchangeRateRoutes);
 app.use('/api/suppliers', supplierRoutes);
 
 // Compras y Finanzas
 app.use('/api/orders', orderRoutes);
 app.use('/api/orders', purchaseFinanceRoutes);
 app.use('/api/purchase-requisitions', purchaseRequisitionRoutes);
+app.use('/api/financial/bank-accounts', bankAccountRoutes);
+app.use('/api/financial/direct-payments', directPaymentRoutes);
 
 // Inventario, Ajustes y Maestros
 app.use('/api/inventory', stockAdjustmentRoutes);

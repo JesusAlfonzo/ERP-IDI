@@ -19,7 +19,12 @@ import {
   ChevronRight,
   FileText,
   Eye,
+  Boxes,
+  Layers,
+  Wallet,
 } from "lucide-react";
+
+type KardexCategoryTab = "ALL" | "PHYSICAL" | "FINANCIAL";
 
 const MOVEMENT_LABELS: Record<MovementType, { label: string; color: string }> =
   {
@@ -28,11 +33,14 @@ const MOVEMENT_LABELS: Record<MovementType, { label: string; color: string }> =
     DESPACHO_SOLICITUD: { label: "Salida a Sala", color: "purple" },
     AJUSTE_INVENTARIO: { label: "Ajuste de Inventario", color: "blue" },
     DESCARTE_MERMA: { label: "Merma", color: "red" },
+    PAGO_ORDEN: { label: "Pago de Orden (Tesorería)", color: "amber" },
+    EGRESO_DIRECTO: { label: "Egreso Directo (Tesorería)", color: "rose" },
   };
 
 export default function KardexPage() {
   const router = useRouter();
   const [items, setItems] = useState<KardexItem[]>([]);
+  const [categoryTab, setCategoryTab] = useState<KardexCategoryTab>("ALL");
   const [meta, setMeta] = useState<PaginationMeta>({
     currentPage: 1,
     itemsPerPage: 15,
@@ -102,13 +110,13 @@ export default function KardexPage() {
         items.map((row) => [
           new Date(row.createdAt).toLocaleString("es-VE"),
           MOVEMENT_LABELS[row.type]?.label || row.type,
-          row.batch.product.name,
-          row.batch.product.sku,
-          row.batch.lotNumber,
+          row.batch?.product?.name || (row.type === "PAGO_ORDEN" ? "Abono / Pago de Orden" : "Egreso Directo"),
+          row.batch?.product?.sku || (row.referenceDoc ?? "FINANCIERO"),
+          row.batch?.lotNumber || "N/A",
           row.quantity,
-          row.batch.product.unitOfMeasure,
+          row.batch?.product?.unitOfMeasure || "-",
           row.performedBy?.fullName || row.performedBy?.username || "Sistema",
-          row.reason,
+          row.reason || "-",
         ]),
       );
     } finally {
@@ -122,6 +130,16 @@ export default function KardexPage() {
     loadKardex();
   };
 
+  const displayedItems = items.filter((row) => {
+    if (categoryTab === "PHYSICAL") {
+      return row.type !== "PAGO_ORDEN" && row.type !== "EGRESO_DIRECTO";
+    }
+    if (categoryTab === "FINANCIAL") {
+      return row.type === "PAGO_ORDEN" || row.type === "EGRESO_DIRECTO";
+    }
+    return true;
+  });
+
   return (
     <div className="space-y-6">
       {/* Encabezado de la vista */}
@@ -132,7 +150,7 @@ export default function KardexPage() {
             Kardex de Movimientos
           </h1>
           <p className="text-xs text-slate-500">
-            Auditoría cronológica y trazabilidad de entradas, salidas y mermas
+            Auditoría cronológica y trazabilidad de entradas, salidas, mermas y pagos
           </p>
         </div>
 
@@ -144,6 +162,54 @@ export default function KardexPage() {
         >
           <FileSpreadsheet className="w-4 h-4" />
           {downloading ? "Generando..." : "Exportar CSV"}
+        </button>
+      </div>
+
+      {/* Selector de Pestañas: Todos | Físicos | Financieros */}
+      <div className="flex border-b border-slate-200 gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setCategoryTab("ALL");
+          }}
+          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-semibold text-xs transition-colors cursor-pointer ${
+            categoryTab === "ALL"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <Boxes className="w-4 h-4" />
+          <span>Todos los Asientos ({items.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setCategoryTab("PHYSICAL");
+          }}
+          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-semibold text-xs transition-colors cursor-pointer ${
+            categoryTab === "PHYSICAL"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          <span>Físicos (Consumos / Recepciones)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setCategoryTab("FINANCIAL");
+          }}
+          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-semibold text-xs transition-colors cursor-pointer ${
+            categoryTab === "FINANCIAL"
+              ? "border-amber-600 text-amber-600 font-bold"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <Wallet className="w-4 h-4" />
+          <span>Financieros (Pagos / Egresos)</span>
         </button>
       </div>
 
@@ -240,19 +306,27 @@ export default function KardexPage() {
                     Cargando movimientos...
                   </td>
                 </tr>
-              ) : items.length === 0 ? (
+              ) : displayedItems.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-slate-400">
-                    No se registraron movimientos con los filtros aplicados.
+                    No se registraron movimientos{" "}
+                    {categoryTab === "PHYSICAL"
+                      ? "físicos "
+                      : categoryTab === "FINANCIAL"
+                        ? "financieros "
+                        : ""}
+                    con los filtros aplicados.
                   </td>
                 </tr>
               ) : (
-                items.map((row) => {
+                displayedItems.map((row, index) => {
                   const movement = MOVEMENT_LABELS[row.type];
+                  const isFinancial =
+                    row.type === "PAGO_ORDEN" || row.type === "EGRESO_DIRECTO";
                   const isPositive = row.quantity >= 0;
                   return (
                     <tr
-                      key={row.id}
+                      key={`${row.id ?? 'mov'}-${row.batchId ?? ''}-${index}`}
                       className="hover:bg-slate-50/60 transition-colors"
                     >
                       <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
@@ -270,10 +344,16 @@ export default function KardexPage() {
                                 ? "bg-purple-50 text-purple-700 border border-purple-200"
                                 : movement?.color === "red"
                                   ? "bg-red-50 text-red-700 border border-red-200"
-                                  : "bg-blue-50 text-blue-700 border border-blue-200"
+                                  : movement?.color === "amber"
+                                    ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                    : movement?.color === "rose"
+                                      ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                      : "bg-blue-50 text-blue-700 border border-blue-200"
                           }`}
                         >
-                          {isPositive ? (
+                          {isFinancial ? (
+                            <Wallet className="w-3 h-3" />
+                          ) : isPositive ? (
                             <ArrowDownLeft className="w-3 h-3" />
                           ) : (
                             <ArrowUpRight className="w-3 h-3" />
@@ -282,35 +362,68 @@ export default function KardexPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        <div className="font-semibold text-slate-800">
-                          {row.batch.product.name}
-                        </div>
-                        <div className="font-mono text-[10px] text-slate-400">
-                          {row.batch.product.sku}
-                        </div>
+                        {row.batch ? (
+                          <>
+                            <div className="font-semibold text-slate-800">
+                              {row.batch.product.name}
+                            </div>
+                            <div className="font-mono text-[10px] text-slate-400">
+                              {row.batch.product.sku}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="font-semibold text-slate-900">
+                              {row.type === "PAGO_ORDEN"
+                                ? "Abono / Pago de Orden"
+                                : "Egreso Directo Institucional"}
+                            </div>
+                            <div className="font-mono text-[10px] text-amber-600 font-semibold">
+                              {row.referenceDoc || "ASIENTO-FINANCIERO"}
+                            </div>
+                          </>
+                        )}
                       </td>
                       <td className="py-3 px-4 font-mono text-slate-600">
-                        #{row.batch.lotNumber}
+                        {row.batch ? (
+                          `#${row.batch.lotNumber}`
+                        ) : (
+                          <span className="text-slate-400 italic text-[11px]">
+                            N/A (Financiero)
+                          </span>
+                        )}
                       </td>
                       <td
                         className={`py-3 px-4 text-right font-bold ${
-                          isPositive ? "text-emerald-600" : "text-red-600"
+                          isFinancial
+                            ? "text-slate-700"
+                            : isPositive
+                              ? "text-emerald-600"
+                              : "text-red-600"
                         }`}
                       >
-                        {row.quantity > 0 ? `+${row.quantity}` : row.quantity}
-                        <span className="text-[10px] font-normal text-slate-500 ml-1">
-                          {row.batch.product.unitOfMeasure}
-                        </span>
+                        {isFinancial ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                            Asiento Financiero
+                          </span>
+                        ) : (
+                          <>
+                            {row.quantity > 0 ? `+${row.quantity}` : row.quantity}
+                            <span className="text-[10px] font-normal text-slate-500 ml-1">
+                              {row.batch?.product.unitOfMeasure}
+                            </span>
+                          </>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-right font-semibold text-slate-700">
-                        {row.balanceAfter ?? "-"}
+                        {row.balanceAfter !== null ? row.balanceAfter : "-"}
                       </td>
                       <td className="py-3 px-4 text-slate-600">
                         {row.performedBy?.fullName ||
                           row.performedBy?.username ||
                           "Sistema"}
                       </td>
-                      <td className="py-3 px-4 text-slate-500 max-w-xs truncate">
+                      <td className="py-3 px-4 text-slate-600 max-w-xs truncate" title={row.reason || ""}>
                         {row.reason || "-"}
                       </td>
                       <td className="py-3 px-4 text-center">

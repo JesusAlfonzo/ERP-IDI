@@ -96,8 +96,10 @@ export default function ProductDetailPage() {
       case "DISPONIBLE":
         return "bg-emerald-50 text-emerald-700 border-emerald-200";
       case "EN_CUARENTENA":
+      case "CUARENTENA":
         return "bg-amber-50 text-amber-700 border-amber-200";
       case "DEFECTUOSO":
+      case "RECHAZADO":
       case "VENCIDO":
         return "bg-rose-50 text-rose-700 border-rose-200";
       case "AGOTADO":
@@ -298,14 +300,14 @@ export default function ProductDetailPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {product.stockBatches.map((batch) => {
+                  {product.stockBatches.map((batch, index) => {
                     const costUsd = Number(batch.unitCostUsd);
                     const costVes =
                       vesRate > 0 ? (costUsd * vesRate).toFixed(2) : null;
 
                     return (
                       <tr
-                        key={batch.id}
+                        key={`${batch.id}-${index}`}
                         className="hover:bg-slate-50/80 transition-colors"
                       >
                         <td className="py-3 font-mono font-bold text-slate-900">

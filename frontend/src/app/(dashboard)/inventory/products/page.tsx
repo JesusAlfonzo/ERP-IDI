@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, useEffect, useCallback, type FormEvent } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useTransition,
+  type FormEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
-import type { Product, Category, Brand, Unit } from "@/types/inventory";
+import type { Product, Category, Brand, Unit, StockBatch } from "@/types/inventory";
 import {
   Package,
   Plus,
@@ -14,16 +20,20 @@ import {
   FlaskConical,
   Barcode,
   Layers,
-  Building,
   X,
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Eye,
+  Boxes,
+  Calendar,
+  MapPin,
+  ExternalLink,
 } from "lucide-react";
 
 export default function ProductsPage() {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -36,6 +46,11 @@ export default function ProductsPage() {
   const [reagentFilter, setReagentFilter] = useState<
     "ALL" | "REAGENT" | "NON_REAGENT"
   >("ALL");
+
+  // Nivel 2: Ficha Detallada / Lotes (Drawer / Modal)
+  const [selectedProductForDetail, setSelectedProductForDetail] =
+    useState<Product | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   // Modal de Creación
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -66,7 +81,7 @@ export default function ProductsPage() {
           brands: [],
           units: [],
         })),
-        InventoryClientService.getProducts({
+        InventoryClientService.getCatalog({
           search: search || undefined,
           categoryId: categoryFilter ? Number(categoryFilter) : undefined,
           isReagent:
@@ -74,12 +89,17 @@ export default function ProductsPage() {
         }).catch(() => []),
       ]);
 
-      setCategories(catalogsData.categories);
-      setBrands(catalogsData.brands);
-      setUnits(catalogsData.units);
-      setProducts(productsData);
-    } finally {
-      setLoading(false);
+      startTransition(() => {
+        setCategories(catalogsData.categories);
+        setBrands(catalogsData.brands);
+        setUnits(catalogsData.units);
+        setProducts(productsData);
+        setLoading(false);
+      });
+    } catch {
+      startTransition(() => {
+        setLoading(false);
+      });
     }
   }, [search, categoryFilter, reagentFilter]);
 
@@ -92,7 +112,7 @@ export default function ProductsPage() {
     const init = async () => {
       if (isMounted) await loadData();
     };
-    init();
+    void init();
     return () => {
       isMounted = false;
     };
@@ -159,9 +179,89 @@ export default function ProductsPage() {
     }
   };
 
+  const getStockBadge = (totalStock: number = 0, minStockAlert: number = 0) => {
+    if (totalStock <= 0) {
+      return {
+        label: "Agotado",
+        className: "bg-rose-50 text-rose-700 border-rose-200",
+        dotColor: "bg-rose-500",
+      };
+    }
+    if (totalStock <= minStockAlert) {
+      return {
+        label: "Bajo Stock",
+        className: "bg-amber-50 text-amber-700 border-amber-200",
+        dotColor: "bg-amber-500",
+      };
+    }
+    return {
+      label: "Disponible",
+      className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      dotColor: "bg-emerald-500",
+    };
+  };
+
+  const getBatchStatusBadge = (status: string) => {
+    switch (status) {
+      case "DISPONIBLE":
+        return {
+          label: "DISPONIBLE",
+          className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+        };
+      case "EN_CUARENTENA":
+      case "CUARENTENA":
+        return {
+          label: "CUARENTENA",
+          className: "bg-amber-50 text-amber-700 border-amber-200",
+        };
+      case "DEFECTUOSO":
+      case "RECHAZADO":
+        return {
+          label: "RECHAZADO",
+          className: "bg-rose-50 text-rose-700 border-rose-200",
+        };
+      case "VENCIDO":
+        return {
+          label: "VENCIDO",
+          className: "bg-red-50 text-red-700 border-red-200",
+        };
+      case "AGOTADO":
+        return {
+          label: "AGOTADO",
+          className: "bg-slate-100 text-slate-600 border-slate-200",
+        };
+      default:
+        return {
+          label: status,
+          className: "bg-slate-50 text-slate-600 border-slate-200",
+        };
+    }
+  };
+
+  const formatExpirationDate = (dateStr: string | null) => {
+    if (!dateStr) return "Sin caducidad asignada";
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString("es-VE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const handleOpenDetail = (product: Product) => {
+    startTransition(() => {
+      setSelectedProductForDetail(product);
+      setIsDetailOpen(true);
+    });
+  };
+
   return (
     <div className="space-y-6">
-      {/* Encabezado */}
+      {/* Encabezado Principal */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -169,17 +269,17 @@ export default function ProductsPage() {
             Catálogo Institucional de Insumos y Reactivos
           </h1>
           <p className="text-xs text-slate-500">
-            Registro maestro de ítems, reactivos de bioanálisis, factores de
-            conversión y umbrales mínimos
+            Registro maestro de productos agrupados, stock físico total disponible y trazabilidad de lotes
           </p>
         </div>
 
         <button
+          type="button"
           onClick={() => {
             setIsModalOpen(true);
             setFeedback(null);
           }}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto"
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           Registrar Insumo
@@ -193,17 +293,17 @@ export default function ProductsPage() {
             <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
             <input
               type="text"
-              placeholder="Buscar por nombre o código..."
+              placeholder="Buscar por SKU o descripción..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
             />
           </div>
 
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-blue-500"
+            className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-blue-500 cursor-pointer"
           >
             <option value="">Todas las categorías</option>
             {categories.map((c) => (
@@ -220,7 +320,7 @@ export default function ProductsPage() {
                 e.target.value as "ALL" | "REAGENT" | "NON_REAGENT",
               )
             }
-            className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-blue-500"
+            className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-blue-500 cursor-pointer"
           >
             <option value="ALL">Todos los tipos</option>
             <option value="REAGENT">Solo Reactivos</option>
@@ -229,118 +329,441 @@ export default function ProductsPage() {
         </div>
 
         <button
+          type="button"
           onClick={() => loadData()}
-          className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs"
+          disabled={loading || isPending}
+          className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs cursor-pointer"
           title="Actualizar catálogo"
         >
           <RefreshCw
-            className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
+            className={`w-3.5 h-3.5 ${loading || isPending ? "animate-spin" : ""}`}
           />
         </button>
       </div>
 
-      {/* Tabla de Productos */}
+      {/* NIVEL 1: Tabla Principal (Una fila por producto único) */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">
             <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
               <tr>
-                <th className="py-3 px-4">Código / SKU</th>
-                <th className="py-3 px-4">Descripción del Insumo</th>
-                <th className="py-3 px-4">Categoría</th>
-                <th className="py-3 px-4">Marca</th>
-                <th className="py-3 px-4 text-center">Unidad Base</th>
-                <th className="py-3 px-4 text-center">Tipo</th>
-                <th className="py-3 px-4 text-right">Stock Disponible</th>
-                <th className="py-3 px-4 text-right">Alerta Mínima</th>
-                <th className="py-3 px-4 text-center">Acciones</th>
+                <th className="py-3 px-4 font-semibold">SKU</th>
+                <th className="py-3 px-4 font-semibold">Nombre / Descripción</th>
+                <th className="py-3 px-4 font-semibold">Categoría</th>
+                <th className="py-3 px-4 text-center font-semibold">Unidad Base</th>
+                <th className="py-3 px-4 text-right font-semibold">Stock Físico Total</th>
+                <th className="py-3 px-4 text-center font-semibold">Estado</th>
+                <th className="py-3 px-4 text-center font-semibold">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2" />
-                    Cargando catálogo de productos...
+                    Cargando catálogo maestro de insumos...
                   </td>
                 </tr>
               ) : products.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
                     No se encontraron insumos registrados en el catálogo.
                   </td>
                 </tr>
               ) : (
-                products.map((p) => (
-                  <tr
-                    key={p.id}
-                    className="hover:bg-slate-50/60 transition-colors"
-                  >
-                    <td className="py-3 px-4 font-mono font-bold text-slate-800">
-                      {p.sku || `#${p.id}`}
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="font-semibold text-slate-800">
-                        {p.name}
-                      </div>
-                      {p.description && (
-                        <div className="text-[10px] text-slate-400 truncate max-w-xs">
-                          {p.description}
+                products.map((p, index) => {
+                  const totalStock = Number(p.totalStock ?? 0);
+                  const minAlert = Number(p.minStockAlert ?? 0);
+                  const badge = getStockBadge(totalStock, minAlert);
+                  const unitAbbr = p.baseUnit?.abbreviation || p.baseUnit?.name || "UND";
+                  const batchesCount = p.batches?.length ?? 0;
+
+                  return (
+                    <tr
+                      key={`${p.id}-${index}`}
+                      className="hover:bg-slate-50/70 transition-colors"
+                    >
+                      {/* SKU */}
+                      <td className="py-3 px-4 font-mono font-bold text-slate-800 whitespace-nowrap">
+                        {p.sku || `#${p.id}`}
+                      </td>
+
+                      {/* Nombre y Detalles */}
+                      <td className="py-3 px-4 max-w-xs sm:max-w-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-800">
+                            {p.name}
+                          </span>
+                          {p.isReagent && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 shrink-0">
+                              <FlaskConical className="w-2.5 h-2.5" />
+                              Reactivo
+                            </span>
+                          )}
                         </div>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-slate-600">
-                      <span className="inline-flex items-center gap-1">
-                        <Layers className="w-3 h-3 text-slate-400" />
-                        {p.category?.name || "-"}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-slate-600">
-                      <span className="inline-flex items-center gap-1">
-                        <Building className="w-3 h-3 text-slate-400" />
-                        {p.brand?.name || "-"}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-center font-semibold text-slate-700">
-                      {p.baseUnit?.abbreviation || p.baseUnit?.name || "-"}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {p.isReagent ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-                          <FlaskConical className="w-3 h-3" /> Reactivo
+                        {p.description && (
+                          <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                            {p.description}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Categoría */}
+                      <td className="py-3 px-4 text-slate-600">
+                        <span className="inline-flex items-center gap-1">
+                          <Layers className="w-3 h-3 text-slate-400 shrink-0" />
+                          {p.category?.name || "Sin categoría"}
                         </span>
-                      ) : (
-                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                          Insumo General
+                      </td>
+
+                      {/* Unidad Base */}
+                      <td className="py-3 px-4 text-center font-semibold text-slate-700">
+                        {unitAbbr}
+                      </td>
+
+                      {/* Stock Físico Total */}
+                      <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
+                        {totalStock}{" "}
+                        <span className="text-[10px] font-normal text-slate-500 font-sans">
+                          {unitAbbr}
                         </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-semibold text-emerald-700">
-                      {p.totalStock ?? 0} {p.baseUnit?.abbreviation}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-semibold text-slate-700">
-                      {p.minStockAlert}{" "}
-                      <span className="text-[10px] text-slate-400">
-                        {p.baseUnit?.abbreviation}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <Link
-                        href={`/inventory/products/${p.id}`}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 text-slate-600 hover:text-blue-700 text-xs font-semibold transition-all shadow-2xs"
-                        title="Ver detalle del insumo"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>Ver Ficha</span>
-                      </Link>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+
+                      {/* Badge de Estado: Agotado, Bajo Stock, Disponible */}
+                      <td className="py-3 px-4 text-center">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${badge.className}`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${badge.dotColor}`}
+                          />
+                          {badge.label}
+                        </span>
+                      </td>
+
+                      {/* Acciones */}
+                      <td className="py-3 px-4 text-center whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDetail(p)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-semibold transition-all shadow-2xs cursor-pointer"
+                            title="Ver Ficha y Lotes del Insumo"
+                          >
+                            <Boxes className="w-3.5 h-3.5" />
+                            <span>Ver Ficha ({batchesCount})</span>
+                          </button>
+
+                          <Link
+                            href={`/inventory/products/${p.id}`}
+                            className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors"
+                            title="Ir a página técnica del insumo"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* NIVEL 2: Ficha Detallada / Lotes (Drawer Slide-over) */}
+      {isDetailOpen && selectedProductForDetail && (
+        <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex justify-end">
+          <div className="w-full max-w-3xl bg-white h-full shadow-2xl flex flex-col overflow-y-auto animate-in slide-in-from-right duration-200">
+            {/* Header del Drawer */}
+            <div className="p-5 border-b border-slate-200 bg-slate-50/70 flex items-start justify-between gap-4 sticky top-0 z-10 backdrop-blur-xs">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                    {selectedProductForDetail.sku || `#${selectedProductForDetail.id}`}
+                  </span>
+                  {selectedProductForDetail.isReagent ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                      <FlaskConical className="w-3 h-3" /> Reactivo Clínico
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                      Insumo General
+                    </span>
+                  )}
+                </div>
+                <h2 className="text-lg font-bold text-slate-900 leading-tight">
+                  {selectedProductForDetail.name}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Ficha maestra del insumo y auditoría de existencias físicas por lote
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <Link
+                  href={`/inventory/products/${selectedProductForDetail.id}`}
+                  className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-semibold px-2.5 py-1.5 rounded-lg border border-blue-200 hover:bg-blue-50 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Página Completa</span>
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={() => setIsDetailOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                  title="Cerrar ficha"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Contenido del Drawer */}
+            <div className="p-6 space-y-6 flex-1">
+              {/* Tarjetas de Métricas Rápidas */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[11px] text-slate-500 font-medium block">
+                    Stock Físico Total
+                  </span>
+                  <span className="text-xl font-bold font-mono text-slate-900">
+                    {Number(selectedProductForDetail.totalStock ?? 0)}{" "}
+                    <span className="text-xs font-sans text-slate-500 font-normal">
+                      {selectedProductForDetail.baseUnit?.abbreviation}
+                    </span>
+                  </span>
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[11px] text-slate-500 font-medium block">
+                    Estado Actual
+                  </span>
+                  <div className="mt-1">
+                    {(() => {
+                      const total = Number(selectedProductForDetail.totalStock ?? 0);
+                      const minAlert = Number(selectedProductForDetail.minStockAlert ?? 0);
+                      const b = getStockBadge(total, minAlert);
+                      return (
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${b.className}`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${b.dotColor}`} />
+                          {b.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[11px] text-slate-500 font-medium block">
+                    Alerta Stock Mínimo
+                  </span>
+                  <span className="text-xl font-bold font-mono text-slate-900">
+                    {selectedProductForDetail.minStockAlert}{" "}
+                    <span className="text-xs font-sans text-slate-500 font-normal">
+                      {selectedProductForDetail.baseUnit?.abbreviation}
+                    </span>
+                  </span>
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[11px] text-slate-500 font-medium block">
+                    Lotes Físicos
+                  </span>
+                  <span className="text-xl font-bold font-mono text-blue-600">
+                    {selectedProductForDetail.batches?.length ?? 0}
+                  </span>
+                </div>
+              </div>
+
+              {/* Ficha Maestra: Parámetros Técnicos */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-blue-600" />
+                  Parámetros Maestros del Insumo
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Categoría:</span>
+                    <span className="font-semibold text-slate-800">
+                      {selectedProductForDetail.category?.name || "Sin categoría"}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Marca Comercial:</span>
+                    <span className="font-semibold text-slate-800">
+                      {selectedProductForDetail.brand?.name || "Genérico"}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Unidad de Consumo (Base):</span>
+                    <span className="font-semibold text-slate-800">
+                      {selectedProductForDetail.baseUnit?.name} (
+                      {selectedProductForDetail.baseUnit?.abbreviation})
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Unidad de Compra:</span>
+                    <span className="font-semibold text-slate-800">
+                      {selectedProductForDetail.purchaseUnit?.name ||
+                        selectedProductForDetail.baseUnit?.name ||
+                        "Misma que base"}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Factor de Conversión:</span>
+                    <span className="font-mono font-semibold text-blue-600">
+                      1 = {Number(selectedProductForDetail.conversionFactor || 1)}{" "}
+                      {selectedProductForDetail.baseUnit?.abbreviation}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Código de Barras / Ref:</span>
+                    <span className="font-mono text-slate-800">
+                      {selectedProductForDetail.barcode || "No asignado"}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between py-1 border-b border-slate-100 sm:col-span-2">
+                    <span className="text-slate-500">Régimen Fiscal:</span>
+                    <span className="font-semibold text-slate-800">
+                      {selectedProductForDetail.isTaxExempt
+                        ? "Exento de IVA"
+                        : "Gravable con IVA"}
+                    </span>
+                  </div>
+
+                  {selectedProductForDetail.description && (
+                    <div className="sm:col-span-2 pt-2">
+                      <span className="text-slate-500 block mb-1">Descripción:</span>
+                      <p className="p-2.5 bg-slate-50 rounded-lg text-slate-700 leading-relaxed border border-slate-100">
+                        {selectedProductForDetail.description}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sub-tabla: Lotes Físicos */}
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs space-y-0">
+                <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Boxes className="w-4 h-4 text-blue-600" />
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Lotes Físicos en Existencia
+                    </h3>
+                  </div>
+                  <span className="text-[11px] font-mono text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                    {selectedProductForDetail.batches?.length ?? 0} lote(s)
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  {!selectedProductForDetail.batches ||
+                  selectedProductForDetail.batches.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 space-y-2">
+                      <Boxes className="w-8 h-8 mx-auto stroke-[1.5] text-slate-300" />
+                      <p className="text-xs font-medium">
+                        No hay lotes físicos registrados para este insumo.
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        Los lotes se crean automáticamente al recibir órdenes de compra o registrar ingresos.
+                      </p>
+                    </div>
+                  ) : (
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-50/70 text-slate-600 border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5 px-3 font-semibold">N° de Lote</th>
+                          <th className="py-2.5 px-3 font-semibold">Vencimiento</th>
+                          <th className="py-2.5 px-3 font-semibold">Ubicación Física</th>
+                          <th className="py-2.5 px-3 text-center font-semibold">Estado</th>
+                          <th className="py-2.5 px-3 text-right font-semibold">Cantidad</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {selectedProductForDetail.batches.map((batch: StockBatch, index: number) => {
+                          const statusBadge = getBatchStatusBadge(batch.status);
+                          return (
+                            <tr
+                              key={`${batch.id ?? 'batch'}-${index}`}
+                              className="hover:bg-slate-50/60 transition-colors"
+                            >
+                              {/* N° Lote */}
+                              <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
+                                {batch.lotNumber}
+                              </td>
+
+                              {/* Vencimiento */}
+                              <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
+                                <span className="inline-flex items-center gap-1">
+                                  <Calendar className="w-3 h-3 text-slate-400" />
+                                  {formatExpirationDate(batch.expirationDate)}
+                                </span>
+                              </td>
+
+                              {/* Ubicación Física */}
+                              <td className="py-2.5 px-3 text-slate-700">
+                                <span className="inline-flex items-center gap-1">
+                                  <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                                  <span>{batch.location?.name || "Sin asignar"}</span>
+                                  {batch.location?.type && (
+                                    <span className="text-[10px] text-slate-400">
+                                      ({batch.location.type})
+                                    </span>
+                                  )}
+                                </span>
+                              </td>
+
+                              {/* Estado */}
+                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                <span
+                                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${statusBadge.className}`}
+                                >
+                                  {statusBadge.label}
+                                </span>
+                              </td>
+
+                              {/* Cantidad */}
+                              <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
+                                {Number(batch.currentQuantity)}{" "}
+                                <span className="text-[10px] font-normal text-slate-500 font-sans">
+                                  {selectedProductForDetail.baseUnit?.abbreviation}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer del Drawer */}
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsDetailOpen(false)}
+                className="px-4 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition-colors cursor-pointer"
+              >
+                Cerrar Ficha
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Registrar Producto */}
       {isModalOpen && (
@@ -354,8 +777,9 @@ export default function ProductsPage() {
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -401,7 +825,7 @@ export default function ProductsPage() {
                   <select
                     value={categoryId}
                     onChange={(e) => setCategoryId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 cursor-pointer"
                     required
                   >
                     <option value="">-- Seleccionar categoría --</option>
@@ -420,7 +844,7 @@ export default function ProductsPage() {
                   <select
                     value={brandId}
                     onChange={(e) => setBrandId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
                     <option value="">-- Sin marca / Genérico --</option>
                     {brands.map((b) => (
@@ -440,7 +864,7 @@ export default function ProductsPage() {
                   <select
                     value={baseUnitId}
                     onChange={(e) => setBaseUnitId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 cursor-pointer"
                     required
                   >
                     <option value="">-- Unidad base --</option>
@@ -459,7 +883,7 @@ export default function ProductsPage() {
                   <select
                     value={purchaseUnitId}
                     onChange={(e) => setPurchaseUnitId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
                     <option value="">-- Misma que la base --</option>
                     {units.map((u) => (
@@ -540,7 +964,7 @@ export default function ProductsPage() {
                   type="checkbox"
                   checked={isReagent}
                   onChange={(e) => setIsReagent(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 rounded-sm border-slate-300 focus:ring-blue-500"
+                  className="w-4 h-4 text-blue-600 rounded-sm border-slate-300 focus:ring-blue-500 cursor-pointer"
                 />
               </div>
 
@@ -561,14 +985,14 @@ export default function ProductsPage() {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
+                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50"
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   {submitting ? "Guardando..." : "Guardar Insumo"}

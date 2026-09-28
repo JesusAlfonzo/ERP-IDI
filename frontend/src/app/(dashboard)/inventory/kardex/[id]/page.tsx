@@ -249,10 +249,25 @@ export default function KardexDetailPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {movement.items?.map((item) => {
-                const isPositive = Number(item.quantity) > 0;
-                return (
-                  <tr key={item.id} className="hover:bg-slate-50/80">
+              {!movement.items || movement.items.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-slate-500 bg-slate-50/50">
+                    <span className="font-semibold text-slate-700 block text-xs">
+                      Asiento Financiero de Tesorería ({movement.type})
+                    </span>
+                    <span className="text-[11px] text-slate-400 block mt-0.5">
+                      Este movimiento corresponde a una transacción monetaria (pago o egreso) y no involucra afectación física de existencias en almacén.
+                    </span>
+                  </td>
+                </tr>
+              ) : (
+                movement.items.map((item, index) => {
+                  const isPositive = Number(item.quantity) > 0;
+                  return (
+                    <tr
+                      key={`${item.id ?? 'item'}-${index}`}
+                      className="hover:bg-slate-50/80"
+                    >
                     <td className="py-3 px-4 font-mono font-bold text-slate-800">
                       {item.batch?.product?.sku || "---"}
                     </td>
@@ -289,7 +304,7 @@ export default function KardexDetailPage() {
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

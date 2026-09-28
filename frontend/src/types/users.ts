@@ -3,7 +3,8 @@ export type UserRole =
   | "ALMACENISTA"
   | "ANALISTA_LABORATORIO"
   | "COMPRAS"
-  | "SOLICITANTE";
+  | "SOLICITANTE"
+  | "ADMINISTRACION";
 
 export interface SystemUser {
   id: number;

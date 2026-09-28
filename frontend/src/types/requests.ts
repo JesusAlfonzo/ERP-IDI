@@ -37,6 +37,12 @@ export interface InternalRequest {
   requestNumber: string;
   status: RequestStatus;
   priority: RequestPriority;
+  departmentId?: number;
+  department?: {
+    id: number;
+    code: string;
+    name: string;
+  };
   departmentSection: string;
   justification: string;
   weeklyTokenCycle?: string;
@@ -57,7 +63,8 @@ export interface InternalRequest {
 
 export interface CreateInternalRequestPayload {
   priority?: RequestPriority;
-  departmentSection: string;
+  departmentId?: number;
+  departmentSection?: string;
   justification: string;
   notes?: string;
   items: {

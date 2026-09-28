@@ -3,10 +3,13 @@ export type MovementType =
   | "TRASLADO_A_LABORATORIO"
   | "DESPACHO_SOLICITUD"
   | "AJUSTE_INVENTARIO"
-  | "DESCARTE_MERMA";
+  | "DESCARTE_MERMA"
+  | "PAGO_ORDEN"
+  | "EGRESO_DIRECTO";
 
 export interface KardexItem {
   id: number;
+  batchId?: number;
   createdAt: string;
   type: MovementType;
   quantity: number;
@@ -18,7 +21,7 @@ export interface KardexItem {
     fullName: string;
     username: string;
   } | null;
-  batch: {
+  batch?: {
     lotNumber: string;
     expirationDate: string | null;
     product: {
@@ -26,7 +29,7 @@ export interface KardexItem {
       name: string;
       unitOfMeasure: string;
     };
-  };
+  } | null;
 }
 
 export interface KardexFilters {

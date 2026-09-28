@@ -34,8 +34,10 @@ export interface StockBatch {
   currentQuantity: number;
   costPrice: number;
   expirationDate: string | null;
-  status: "DISPONIBLE" | "EN_CUARENTENA" | "DEFECTUOSO" | "AGOTADO";
+  status: "DISPONIBLE" | "EN_CUARENTENA" | "DEFECTUOSO" | "AGOTADO" | "RECHAZADO" | "VENCIDO" | string;
   createdAt: string;
+  locationId?: number;
+  location?: Location;
 }
 
 export interface Product {

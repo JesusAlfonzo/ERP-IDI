@@ -9,7 +9,7 @@ export type PurchaseOrderStatus =
   | "RECIBIDO"
   | "CANCELADO";
 
-export type PaymentStatus = "PENDIENTE" | "PARCIAL" | "PAGADO";
+export type PaymentStatus = "PENDIENTE" | "PARCIAL" | "PAGADO_PARCIAL" | "PAGADO";
 export type ReceptionStatus = "PENDIENTE" | "PARCIAL" | "COMPLETO";
 
 export interface Currency {
@@ -21,20 +21,75 @@ export interface Currency {
 }
 
 export interface SupplierPayment {
-  id: number;
-  amountUsd?: number;
-  amount?: number;
-  paymentMethod:
+  id: number | string;
+  amountUsd?: number | string;
+  amount?: number | string;
+  amountPaid?: number | string;
+  amortizedAmountUsd?: number | string;
+  paymentMethod?:
     | "TRANSFERENCIA_USD"
     | "TRANSFERENCIA_BS"
     | "EFECTIVO_USD"
     | "EFECTIVO_BS"
     | "PAGO_MOVIL"
     | string;
-  referenceNumber?: string;
+  method?: string;
+  sourceAccountId?: number | null;
+  sourceAccount?: {
+    id: number;
+    bankName: string;
+    accountNumber?: string | null;
+    type?: string;
+    currency?: string;
+  } | null;
+  destinationAccount?: string | null;
+  bankName?: string | null;
+  referenceNumber?: string | null;
   reference?: string | null;
+  transactionCurrency?: string;
+  exchangeRate?: number | string;
   paymentDate?: string;
+  receiptImageUrl?: string | null;
   notes?: string | null;
+  reviewedBy?: string | null;
+  authorizedBy?: string | null;
+  approvedBy?: string | null;
+  createdAt?: string;
+}
+
+export interface DirectPayment {
+  id: string | number;
+  concept: string;
+  beneficiary: string;
+  method: string;
+  sourceAccountId?: number | null;
+  sourceAccount?: {
+    id: number;
+    bankName: string;
+    accountNumber?: string | null;
+    type: string;
+    currency: string;
+    holderName?: string | null;
+    holderId?: string | null;
+  } | null;
+  destinationAccount?: string | null;
+  referenceNumber?: string | null;
+  paymentDate: string;
+  amountPaid: number | string;
+  transactionCurrency: string;
+  exchangeRate: number | string;
+  equivalentAmountUsd: number | string;
+  notes?: string | null;
+  receiptImageUrl?: string | null;
+  reviewedBy?: string | null;
+  authorizedBy?: string | null;
+  approvedBy?: string | null;
+  registeredById?: number;
+  registeredBy?: {
+    id: number;
+    fullName: string;
+    email: string;
+  };
   createdAt?: string;
 }
 
@@ -173,7 +228,13 @@ export interface PurchaseRequisitionItem {
 export interface PurchaseRequisition {
   id: number;
   requisitionNumber: string;
-  departmentSection: string;
+  departmentId?: number;
+  department?: {
+    id: number;
+    code: string;
+    name: string;
+  };
+  departmentSection?: string;
   justification: string;
   status: PurchaseRequisitionStatus;
   notes?: string | null;
@@ -203,7 +264,8 @@ export interface CreatePurchaseRequisitionItemPayload {
 }
 
 export interface CreatePurchaseRequisitionPayload {
-  departmentSection: string;
+  departmentId?: number;
+  departmentSection?: string;
   justification: string;
   notes?: string | null;
   items: CreatePurchaseRequisitionItemPayload[];
@@ -211,7 +273,8 @@ export interface CreatePurchaseRequisitionPayload {
 
 export interface ConvertRequisitionToOrderPayload {
   supplierId: number;
-  currencyId: number;
+  currencyId?: number;
+  currency?: string;
   exchangeRate?: number;
   notes?: string | null;
   items: Array<{
@@ -231,13 +294,17 @@ export interface PurchaseOrder {
   paymentStatus?: PaymentStatus;
   receptionStatus?: ReceptionStatus;
   supplierId?: number | null;
-  currencyId: number;
+  currencyId?: number;
+  currency?: string | Currency;
+  currencyRel?: Currency;
   exchangeRate?: number;
   supplier?: Supplier | null;
-  currency?: Currency;
   subtotal?: number;
   taxTotal?: number;
   total?: number;
+  taxableAmount?: number;
+  exemptAmount?: number;
+  taxAmount?: number;
   totalAmount?: number;
   totalAmountUsd?: number;
   taxableAmountUsd?: number;
@@ -274,7 +341,8 @@ export interface CreateOrderItemPayload {
 
 export interface CreatePurchaseOrderPayload {
   supplierId?: number | null;
-  currencyId: number;
+  currencyId?: number;
+  currency?: string;
   exchangeRate?: number;
   requisitionId?: number | null;
   notes?: string | null;
@@ -288,6 +356,7 @@ export interface ReceiveOrderItemPayload {
   lotNumber: string;
   expirationDate: string;
   locationId?: number;
+  requiresQuarantine?: boolean;
 }
 
 export interface ReceiveOrderPayload {

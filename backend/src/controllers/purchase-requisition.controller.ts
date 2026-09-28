@@ -4,7 +4,11 @@ import { PurchaseRequisitionStatus } from '@prisma/client';
 import { serializeBigInt } from '../utils/serializer.js';
 
 const isPurchasingOrAdmin = (roles: string[] = []): boolean => {
-  return roles.includes('ADMINISTRADOR') || roles.includes('COMPRAS');
+  return (
+    roles.includes('ADMINISTRADOR') ||
+    roles.includes('COMPRAS') ||
+    roles.includes('ADMINISTRACION')
+  );
 };
 
 export const getRequisitions = async (
@@ -92,9 +96,9 @@ export const createRequisition = async (
       return;
     }
 
-    const { departmentSection, justification, notes, items } = req.body;
+    const { departmentId, departmentSection, justification, notes, items } = req.body;
 
-    if (!departmentSection || !justification) {
+    if ((!departmentId && (!departmentSection || String(departmentSection).trim().length === 0)) || !justification) {
       res.status(400).json({
         status: 'BAD_REQUEST',
         message: 'El departamento y la justificación son campos obligatorios.',
@@ -121,7 +125,8 @@ export const createRequisition = async (
     }));
 
     const requisition = await PurchaseRequisitionService.createRequisition({
-      departmentSection: String(departmentSection),
+      departmentId: departmentId ? Number(departmentId) : undefined,
+      departmentSection: departmentSection ? String(departmentSection) : undefined,
       justification: String(justification),
       notes: notes ? String(notes) : null,
       createdById: req.user.id,
@@ -227,9 +232,9 @@ export const convertRequisitionToOrder = async (
       return;
     }
 
-    const { supplierId, currencyId, exchangeRate, notes, items } = req.body;
+    const { supplierId, currencyId, currency, exchangeRate, notes, items } = req.body;
 
-    if (!supplierId || !currencyId || !Array.isArray(items) || items.length === 0) {
+    if (!supplierId || (!currencyId && !currency) || !Array.isArray(items) || items.length === 0) {
       res.status(400).json({
         status: 'BAD_REQUEST',
         message:
@@ -249,7 +254,8 @@ export const convertRequisitionToOrder = async (
 
     const order = await PurchaseRequisitionService.convertToOrder(BigInt(id), {
       supplierId: Number(supplierId),
-      currencyId: Number(currencyId),
+      currencyId: currencyId ? Number(currencyId) : undefined,
+      currency: currency ? String(currency) : undefined,
       exchangeRate: exchangeRate ? Number(exchangeRate) : undefined,
       notes: notes ? String(notes) : null,
       createdById: req.user.id,

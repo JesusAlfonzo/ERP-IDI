@@ -4,7 +4,11 @@ import { serializeBigInt } from '../utils/serializer.js';
 import { PaymentMethod } from '@prisma/client';
 
 const isPurchasingOrAdmin = (roles: string[] = []): boolean => {
-  return roles.includes('ADMINISTRADOR') || roles.includes('COMPRAS');
+  return (
+    roles.includes('ADMINISTRADOR') ||
+    roles.includes('COMPRAS') ||
+    roles.includes('ADMINISTRACION')
+  );
 };
 
 export const registerInvoice = async (
@@ -100,7 +104,7 @@ export const registerPayment = async (
       return;
     }
 
-    const rawId = req.params.orderId;
+    const rawId = req.params.orderId ?? req.params.id;
     const orderId = Array.isArray(rawId) ? rawId[0] : rawId;
 
     if (!orderId) {
@@ -111,42 +115,57 @@ export const registerPayment = async (
     }
 
     const {
+      method,
       paymentMethod,
+      sourceAccountId,
+      destinationAccount,
       currencyId,
+      transactionCurrency,
       amount,
+      amountPaid,
       exchangeRate,
       bankName,
       referenceNumber,
       paymentDate,
       receiptImageUrl,
+      reviewedBy,
+      authorizedBy,
+      approvedBy,
     } = req.body;
 
-    if (!paymentMethod || !currencyId || !amount) {
+    const finalAmount =
+      amountPaid !== undefined && amountPaid !== null
+        ? Number(amountPaid)
+        : Number(amount);
+
+    if (!finalAmount || isNaN(finalAmount) || finalAmount <= 0) {
       res.status(400).json({
         status: 'BAD_REQUEST',
-        message: 'paymentMethod, currencyId y amount son obligatorios',
+        message: 'Debe especificar un monto a pagar (amount o amountPaid) mayor a 0',
       });
       return;
     }
 
-    if (!Object.values(PaymentMethod).includes(paymentMethod)) {
-      res.status(400).json({
-        status: 'BAD_REQUEST',
-        message: `Método de pago inválido. Valores aceptados: ${Object.values(PaymentMethod).join(', ')}`,
-      });
-      return;
-    }
+    const finalMethod = (method || paymentMethod || 'TRANSFERENCIA').toString().toUpperCase();
 
     const result = await PurchaseFinanceService.registerPayment({
       orderId: BigInt(orderId),
-      paymentMethod: paymentMethod as PaymentMethod,
-      currencyId: Number(currencyId),
-      amount: Number(amount),
+      method: finalMethod,
+      paymentMethod: paymentMethod as PaymentMethod | undefined,
+      sourceAccountId: sourceAccountId ? Number(sourceAccountId) : null,
+      destinationAccount: destinationAccount ? String(destinationAccount) : null,
+      currencyId: currencyId ? Number(currencyId) : undefined,
+      amount: finalAmount,
+      amountPaid: finalAmount,
+      transactionCurrency: transactionCurrency ? String(transactionCurrency) : undefined,
       exchangeRate: exchangeRate ? Number(exchangeRate) : null,
       bankName: bankName ? String(bankName) : null,
       referenceNumber: referenceNumber ? String(referenceNumber) : null,
       paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
       receiptImageUrl: receiptImageUrl ? String(receiptImageUrl) : null,
+      reviewedBy: reviewedBy ? String(reviewedBy) : null,
+      authorizedBy: authorizedBy ? String(authorizedBy) : null,
+      approvedBy: approvedBy ? String(approvedBy) : null,
       registeredById: req.user.id,
     });
 

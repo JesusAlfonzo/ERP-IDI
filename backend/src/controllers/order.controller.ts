@@ -119,13 +119,14 @@ export const createOrder = async (
     const {
       supplierId,
       currencyId,
+      currency,
       exchangeRate,
       requisitionId,
       notes,
       items,
     } = req.body;
 
-    if (!currencyId || !Array.isArray(items) || items.length === 0) {
+    if ((!currencyId && !currency) || !Array.isArray(items) || items.length === 0) {
       res.status(400).json({
         status: 'BAD_REQUEST',
         message: 'Moneda e ítems son campos obligatorios',
@@ -143,7 +144,8 @@ export const createOrder = async (
 
     const order = await OrderService.createOrder({
       supplierId: supplierId ? Number(supplierId) : null,
-      currencyId: Number(currencyId),
+      currencyId: currencyId ? Number(currencyId) : undefined,
+      currency: currency ? String(currency) : undefined,
       exchangeRate: exchangeRate ? Number(exchangeRate) : undefined,
       requisitionId: requisitionId ? BigInt(requisitionId) : null,
       notes: notes ? String(notes) : null,
@@ -224,6 +226,10 @@ export const receiveOrder = async (
         lotNumber: String(item.lotNumber),
         expirationDate: new Date(item.expirationDate),
         locationId: item.locationId ? Number(item.locationId) : 1,
+        requiresQuarantine:
+          item.requiresQuarantine !== undefined
+            ? Boolean(item.requiresQuarantine)
+            : undefined,
       };
     });
 

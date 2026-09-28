@@ -137,7 +137,7 @@ export const createRequest = async (
       roles: userRoles,
     });
 
-    const { departmentSection, justification, items, notes } = req.body;
+    const { departmentId, departmentSection, justification, items, notes } = req.body;
 
     // Prioridad opcional en UI: por defecto RUTINA
     const rawPriority = req.body.priority;
@@ -147,11 +147,11 @@ export const createRequest = async (
         ? (rawPriority as RequestPriority)
         : RequestPriority.RUTINA;
 
-    if (!departmentSection || String(departmentSection).trim().length < 2) {
+    if (!departmentId && (!departmentSection || String(departmentSection).trim().length < 2)) {
       res.status(400).json({
         status: 'BAD_REQUEST',
         message:
-          'departmentSection es obligatorio y debe tener al menos 2 caracteres',
+          'departmentId o departmentSection es obligatorio',
       });
       return;
     }
@@ -188,7 +188,8 @@ export const createRequest = async (
     const newRequest = await RequestService.createRequest({
       userId: req.user.id,
       priority,
-      departmentSection: String(departmentSection).trim(),
+      departmentId: departmentId ? Number(departmentId) : undefined,
+      departmentSection: departmentSection ? String(departmentSection).trim() : '',
       justification: String(justification).trim(),
       notes: notes ? String(notes) : null,
       items: formattedItems,

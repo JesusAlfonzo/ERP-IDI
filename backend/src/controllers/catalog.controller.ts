@@ -474,3 +474,60 @@ export const getDepartments = async (
     next(error);
   }
 };
+
+// --- PRODUCTOS DEL CATÁLOGO ---
+export const getCatalogProducts = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { search, categoryId, isReagent } = req.query;
+    const filter: {
+      search?: string;
+      categoryId?: number;
+      isReagent?: boolean;
+    } = {};
+
+    if (typeof search === 'string' && search.trim() !== '') {
+      filter.search = search.trim();
+    }
+    if (categoryId) filter.categoryId = Number(categoryId);
+    if (isReagent !== undefined) filter.isReagent = isReagent === 'true';
+
+    const products = await CatalogService.getCatalog(filter);
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      data: serializeBigInt(products),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getCatalogProductById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const id = BigInt(String(req.params.id));
+    const product = await CatalogService.getCatalogProductById(id);
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      data: serializeBigInt(product),
+    });
+  } catch (error: any) {
+    if (error.statusCode === 404 || error.message?.includes('no encontrado')) {
+      res.status(404).json({
+        status: 'NOT_FOUND',
+        message: error.message || 'Producto no encontrado en el catálogo',
+      });
+      return;
+    }
+    next(error);
+  }
+};
+

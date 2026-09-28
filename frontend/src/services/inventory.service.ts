@@ -56,6 +56,35 @@ export const InventoryClientService = {
   },
 
   /**
+   * Obtiene el catálogo de productos con sus lotes físicos calculados
+   * Endpoint backend: GET /api/inventory/catalog
+   */
+  async getCatalog(filters?: ProductFilters): Promise<Product[]> {
+    const params = new URLSearchParams();
+    if (filters?.search) params.append("search", filters.search);
+    if (filters?.categoryId)
+      params.append("categoryId", String(filters.categoryId));
+    if (filters?.isReagent !== undefined)
+      params.append("isReagent", String(filters.isReagent));
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.limit) params.append("limit", String(filters.limit));
+
+    try {
+      const response = await apiClient.get<ApiResponse<Product[]>>(
+        `/inventory/catalog?${params.toString()}`
+      );
+      const rawData = response.data?.data;
+      if (Array.isArray(rawData)) {
+        return rawData;
+      }
+    } catch {
+      // Fallback a getProducts si fuera necesario
+      return this.getProducts(filters);
+    }
+    return this.getProducts(filters);
+  },
+
+  /**
    * Obtiene los catálogos combinados (categorías, marcas, unidades)
    * Endpoint backend: GET /api/products/catalogs
    */
@@ -293,29 +322,60 @@ export const InventoryClientService = {
     const rawList = response.data?.data || [];
 
     for (const movement of rawList) {
-      for (const item of movement.items) {
+      if (movement.items && movement.items.length > 0) {
+        for (const item of movement.items) {
+          rows.push({
+            id: Number(movement.id), // ID del movimiento para poder auditar
+            batchId: item.batch?.id ? Number(item.batch.id) : undefined,
+            createdAt: movement.createdAt,
+            type: movement.type as KardexItem["type"],
+            quantity: Number(item.quantity),
+            // Saldo actual registrado en el lote para este renglón
+            balanceAfter:
+              item.batch?.currentQuantity !== undefined &&
+              item.batch?.currentQuantity !== null
+                ? Number(item.batch.currentQuantity)
+                : null,
+            unitCost:
+              item.unitCost !== null && item.unitCost !== undefined
+                ? Number(item.unitCost)
+                : null,
+            performedBy: movement.createdBy,
+            reason: movement.notes,
+            referenceDoc:
+              "referenceNumber" in movement
+                ? String(movement.referenceNumber)
+                : null,
+            batch: item.batch
+              ? {
+                  lotNumber: item.batch.lotNumber,
+                  expirationDate: item.batch.expirationDate,
+                  product: {
+                    name: item.batch.product.name,
+                    sku: item.batch.product.sku,
+                    unitOfMeasure: item.batch.product.baseUnit.abbreviation,
+                  },
+                }
+              : null,
+          });
+        }
+      } else {
+        // Asiento financiero de tesorería (PAGO_ORDEN, EGRESO_DIRECTO)
         rows.push({
-          id: Number(movement.id), // ID del movimiento para poder auditar
+          id: Number(movement.id),
+          batchId: undefined,
           createdAt: movement.createdAt,
           type: movement.type as KardexItem["type"],
-          quantity: Number(item.quantity),
-          // Saldo actual registrado en el lote para este renglón
-          balanceAfter: Number(item.batch.currentQuantity),
-          unitCost:
-            item.unitCost !== null && item.unitCost !== undefined
-              ? Number(item.unitCost)
-              : null,
+          quantity: 0,
+          balanceAfter: null,
+          unitCost: null,
           performedBy: movement.createdBy,
           reason: movement.notes,
-          batch: {
-            lotNumber: item.batch.lotNumber,
-            expirationDate: item.batch.expirationDate,
-            product: {
-              name: item.batch.product.name,
-              sku: item.batch.product.sku,
-              unitOfMeasure: item.batch.product.baseUnit.abbreviation,
-            },
-          },
+          referenceDoc:
+            "referenceNumber" in movement
+              ? String(movement.referenceNumber)
+              : null,
+          batch: null,
         });
       }
     }

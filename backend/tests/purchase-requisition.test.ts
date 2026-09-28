@@ -316,4 +316,80 @@ describe('Integración: Preórdenes de Compra y Soporte Fiscal SENIAT', () => {
     expect(batch).toBeDefined();
     expect(Number(batch!.currentQuantity)).toBe(100);
   });
+
+  it('6. Debe retornar las tasas BCV vigentes en GET /api/exchange-rates/current', async () => {
+    const res = await request(app).get('/api/exchange-rates/current');
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toContain('no-store');
+    expect(res.body.status).toBe('SUCCESS');
+    expect(res.body.data.USD).toBeDefined();
+    expect(res.body.data.EUR).toBeDefined();
+    expect(res.body.data.VED).toBe(1.0);
+  });
+
+  it('6.1 Debe actualizar la tasa vía POST /api/currencies/rate y retornar HTTP 200 OK', async () => {
+    const ves = await prisma.currency.findFirst({ where: { code: 'VES' } });
+    expect(ves).toBeDefined();
+
+    const res = await request(app)
+      .post('/api/currencies/rate')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        currencyId: ves!.id,
+        rate: 76.5,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('SUCCESS');
+  });
+
+  it('6.2 Debe actualizar la tasa vía PUT /api/exchange-rates con payload multi-tasa y retornar HTTP 200 OK', async () => {
+    const res = await request(app)
+      .put('/api/exchange-rates')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        usdRate: 77.2,
+        eurRate: 83.4,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('SUCCESS');
+    expect(res.body.data.USD).toBe(77.2);
+    expect(res.body.data.EUR).toBe(83.4);
+
+    // Verificar en GET /current
+    const currentRes = await request(app).get('/api/exchange-rates/current');
+    expect(currentRes.status).toBe(200);
+    expect(currentRes.body.data.USD).toBe(77.2);
+    expect(currentRes.body.data.EUR).toBe(83.4);
+  });
+
+  it('7. Debe crear una Orden de Compra en EUR y persistir moneda y montos base', async () => {
+    const orderRes = await request(app)
+      .post('/api/orders')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        supplierId: testSupplier.id,
+        currency: 'EUR',
+        exchangeRate: 80.0,
+        notes: 'Compra en Euros',
+        items: [
+          {
+            productId: Number(taxableProduct.id),
+            unitId: testBaseUnit.id,
+            quantityOrdered: 5,
+            unitPrice: 10.0,
+            isExempt: false,
+          },
+        ],
+      });
+
+    expect(orderRes.status).toBe(201);
+    const orderData = orderRes.body.data;
+    expect(orderData.currency).toBe('EUR');
+    expect(Number(orderData.taxableAmount)).toBe(50.0);
+    expect(Number(orderData.taxAmount)).toBe(8.0);
+    expect(Number(orderData.totalAmount)).toBe(58.0);
+    expect(Number(orderData.totalAmountBs)).toBe(58.0 * 80.0); // 4640.0 Bs.
+  });
 });

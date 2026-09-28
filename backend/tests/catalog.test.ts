@@ -174,12 +174,29 @@ describe('Integración: Catálogos, Maestros y Autenticación', () => {
     });
 
     it('Debe rechazar con 400 Bad Request la eliminación de una categoría con productos asignados', async () => {
+      const category = await InventoryMasterService.createCategory({
+        name: 'Categoría Con Productos Bloqueada Test ' + Date.now(),
+      });
+      const unit = await prisma.unit.findFirst();
+      const product = await prisma.product.create({
+        data: {
+          name: 'Insumo Test Categoria Bloqueada',
+          sku: 'SKU-TEST-CAT-' + Date.now(),
+          categoryId: category.id,
+          baseUnitId: unit!.id,
+        },
+      });
+
       const res = await request(app)
-        .delete('/api/inventory/masters/categories/1')
+        .delete(`/api/inventory/masters/categories/${category.id}`)
         .set('Authorization', `Bearer ${authToken}`);
 
       expect(res.status).toBe(400);
       expect(res.body.message).toMatch(/No se puede eliminar/i);
+
+      // Limpieza
+      await prisma.product.delete({ where: { id: product.id } });
+      await prisma.category.delete({ where: { id: category.id } });
     });
 
     it('Debe permitir CRUD completo de Marca comercial a ADMINISTRADOR', async () => {
@@ -272,12 +289,81 @@ describe('Integración: Catálogos, Maestros y Autenticación', () => {
     });
 
     it('Debe rechazar con 400 Bad Request la eliminación de una unidad con productos asignados', async () => {
+      const unit = await prisma.unit.findFirst();
+      const category = await prisma.category.findFirst();
+      const product = await prisma.product.create({
+        data: {
+          name: 'Insumo Test Unidad Bloqueada',
+          sku: 'SKU-TEST-UNIT-' + Date.now(),
+          categoryId: category!.id,
+          baseUnitId: unit!.id,
+        },
+      });
+
       const res = await request(app)
-        .delete('/api/inventory/masters/units/1')
+        .delete(`/api/inventory/masters/units/${unit!.id}`)
         .set('Authorization', `Bearer ${authToken}`);
 
       expect(res.status).toBe(400);
       expect(res.body.message).toMatch(/No se puede eliminar/i);
+
+      // Limpieza
+      await prisma.product.delete({ where: { id: product.id } });
+    });
+
+    it('Debe permitir CRUD completo de Departamento / Área a ADMINISTRADOR', async () => {
+      // 1. Crear departamento
+      const createRes = await request(app)
+        .post('/api/inventory/masters/departments')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({
+          code: 'DEP-VITEST',
+          name: 'Departamento Vitest Test',
+          description: 'Área de prueba automatizada',
+          isActive: true,
+        });
+
+      expect(createRes.status).toBe(201);
+      const dep = createRes.body.data ?? createRes.body;
+      const depId = dep.id;
+      expect(dep.code).toBe('DEP-VITEST');
+
+      // 2. Listar departamentos
+      const listRes = await request(app)
+        .get('/api/inventory/masters/departments')
+        .set('Authorization', `Bearer ${authToken}`);
+      expect(listRes.status).toBe(200);
+      const list = listRes.body.data ?? listRes.body;
+      expect(Array.isArray(list)).toBe(true);
+
+      // 3. Actualizar departamento
+      const updateRes = await request(app)
+        .patch(`/api/inventory/masters/departments/${depId}`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({
+          name: 'Departamento Vitest Test Modificado',
+          isActive: false,
+        });
+      expect(updateRes.status).toBe(200);
+      expect((updateRes.body.data ?? updateRes.body).isActive).toBe(false);
+
+      // 4. Eliminar departamento
+      const deleteRes = await request(app)
+        .delete(`/api/inventory/masters/departments/${depId}`)
+        .set('Authorization', `Bearer ${authToken}`);
+      expect(deleteRes.status).toBe(200);
+    });
+
+    it('Debe rechazar con 403 Forbidden a ALMACENISTA al intentar crear un departamento', async () => {
+      const almacenistaToken = getAuthTokenForRoles(['ALMACENISTA']);
+      const res = await request(app)
+        .post('/api/inventory/masters/departments')
+        .set('Authorization', `Bearer ${almacenistaToken}`)
+        .send({
+          code: 'DEP-FAIL',
+          name: 'Departamento Bloqueado',
+        });
+      expect(res.status).toBe(403);
     });
 
     it('Debe permitir CRUD completo de Ubicación física a ADMINISTRADOR', async () => {
@@ -312,12 +398,99 @@ describe('Integración: Catálogos, Maestros y Autenticación', () => {
     });
 
     it('Debe rechazar con 400 Bad Request la eliminación de una ubicación con stock o neveras asignadas', async () => {
+      const loc = await InventoryMasterService.createLocation({
+        name: 'Ubicacion Bloqueada Test ' + Date.now(),
+        type: 'LABORATORIO',
+      });
+      const fridge = await prisma.fridge.create({
+        data: {
+          code: 'FRIDGE-LOCK-' + Date.now(),
+          name: 'Nevera Bloqueada Test',
+          locationId: loc.id,
+          targetTempCelsius: 4,
+        },
+      });
+
       const res = await request(app)
-        .delete('/api/inventory/masters/locations/1')
+        .delete(`/api/inventory/masters/locations/${loc.id}`)
         .set('Authorization', `Bearer ${authToken}`);
 
       expect(res.status).toBe(400);
       expect(res.body.message).toMatch(/No se puede eliminar/i);
+
+      // Limpieza
+      await prisma.fridge.delete({ where: { id: fridge.id } });
+      await prisma.location.delete({ where: { id: loc.id } });
+    });
+  });
+
+  // --- Catálogo de Inventario (/api/inventory/catalog) ---
+  describe('Catálogo de Inventario (/api/inventory/catalog)', () => {
+    it('Debe devolver un listado de Product con category, brand, baseUnit, batches y totalStock calculado', async () => {
+      // 1. Crear producto con lotes en distintos estados
+      const category = await prisma.category.findFirst();
+      const brand = await prisma.brand.findFirst();
+      const unit = await prisma.unit.findFirst();
+      const location = await prisma.location.findFirst();
+
+      const product = await prisma.product.create({
+        data: {
+          name: 'Insumo Prueba Catálogo Integración',
+          sku: 'SKU-CAT-TEST-' + Date.now(),
+          categoryId: category!.id,
+          brandId: brand!.id,
+          baseUnitId: unit!.id,
+          minStockAlert: 5,
+        },
+      });
+
+      // Lote 1: DISPONIBLE (10 unidades)
+      const batch1 = await prisma.stockBatch.create({
+        data: {
+          productId: product.id,
+          locationId: location!.id,
+          lotNumber: 'LOT-DISP-' + Date.now(),
+          currentQuantity: 10,
+          costPrice: 5.5,
+          status: 'DISPONIBLE',
+        },
+      });
+
+      // Lote 2: EN_CUARENTENA (5 unidades - NO debe sumarse al totalStock disponible)
+      const batch2 = await prisma.stockBatch.create({
+        data: {
+          productId: product.id,
+          locationId: location!.id,
+          lotNumber: 'LOT-CUAR-' + Date.now(),
+          currentQuantity: 5,
+          costPrice: 5.5,
+          status: 'EN_CUARENTENA',
+        },
+      });
+
+      // 2. Consultar GET /api/inventory/catalog
+      const res = await request(app)
+        .get('/api/inventory/catalog')
+        .set('Authorization', `Bearer ${authToken}`);
+
+      expect(res.status).toBe(200);
+      const data = res.body.data ?? res.body;
+      expect(Array.isArray(data)).toBe(true);
+
+      const found = data.find((p: any) => p.sku === product.sku);
+      expect(found).toBeDefined();
+      expect(found.name).toBe(product.name);
+      expect(found.category).toBeDefined();
+      expect(found.brand).toBeDefined();
+      expect(found.baseUnit).toBeDefined();
+      expect(Array.isArray(found.batches)).toBe(true);
+      expect(found.batches.length).toBe(2);
+      // El totalStock debe ser exactamente 10 (solo DISPONIBLE)
+      expect(Number(found.totalStock)).toBe(10);
+
+      // Limpieza
+      await prisma.stockBatch.deleteMany({ where: { productId: product.id } });
+      await prisma.product.delete({ where: { id: product.id } });
     });
   });
 

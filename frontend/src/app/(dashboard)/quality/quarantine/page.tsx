@@ -168,11 +168,10 @@ export default function QualityQuarantinePage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <ShieldAlert className="w-6 h-6 text-amber-600" />
-            Control de Calidad & Cuarentena
+            Bandeja de Incidencias / Cuarentena
           </h1>
           <p className="text-xs text-slate-500">
-            Inspección analítica, liberación y registro de no conformidades
-            hospitalarias
+            Bandeja de excepciones para lotes retenidos por ingreso no conforme, revisión técnica analítica o incidencias de calidad
           </p>
         </div>
 
@@ -207,7 +206,7 @@ export default function QualityQuarantinePage() {
               : "border-transparent text-slate-500 hover:text-slate-700"
           }`}
         >
-          Retenidos en Cuarentena
+          Lotes Retenidos (Incidencias)
         </button>
         <button
           type="button"
@@ -250,7 +249,7 @@ export default function QualityQuarantinePage() {
                   <td colSpan={7} className="py-12 text-center text-slate-400">
                     <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
                     {isQuarantine
-                      ? "No hay lotes retenidos en cuarentena. El stock disponible está al día."
+                      ? "No hay lotes retenidos en esta bandeja de excepciones. Todos los insumos ingresados están conformes en inventario disponible."
                       : "No existen lotes declarados como defectuosos."}
                   </td>
                 </tr>

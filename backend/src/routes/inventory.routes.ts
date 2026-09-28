@@ -9,6 +9,10 @@ import {
   registerDirectWaste,
   updateBatchStatus,
 } from '../controllers/inventory.controller.js';
+import {
+  getCatalogProducts,
+  getCatalogProductById,
+} from '../controllers/catalog.controller.js';
 import { InventoryMasterController } from '../controllers/inventory-master.controller.js';
 import { authenticateJWT } from '../middlewares/auth.middleware.js';
 import { requireRoles } from '../middlewares/role.middleware.js';
@@ -17,6 +21,8 @@ const router: Router = Router();
 
 router.use(authenticateJWT);
 
+router.get('/catalog', getCatalogProducts);
+router.get('/catalog/:id', getCatalogProductById);
 router.get('/', getInventorySummary);
 router.get('/batches', getBatches);
 router.get('/alerts', getAlerts);

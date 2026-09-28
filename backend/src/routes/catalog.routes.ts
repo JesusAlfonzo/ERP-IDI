@@ -17,6 +17,8 @@ import {
   updateLocation,
   deleteLocation,
   getDepartments,
+  getCatalogProducts,
+  getCatalogProductById,
 } from '../controllers/catalog.controller.js';
 import { authenticateJWT } from '../middlewares/auth.middleware.js';
 import { requireRoles } from '../middlewares/role.middleware.js';
@@ -26,6 +28,9 @@ const router: Router = Router();
 router.use(authenticateJWT);
 
 // Lectura general de catálogo (abierta a usuarios autenticados)
+router.get('/', getCatalogProducts);
+router.get('/products', getCatalogProducts);
+router.get('/products/:id', getCatalogProductById);
 router.get('/categories', getCategories);
 router.get('/brands', getBrands);
 router.get('/units', getUnits);

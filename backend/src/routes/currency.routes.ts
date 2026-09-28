@@ -20,4 +20,10 @@ router.post(
   registerExchangeRate
 );
 
+router.put(
+  '/rate',
+  requireRoles(['ADMINISTRADOR', 'COMPRAS']),
+  registerExchangeRate
+);
+
 export default router;

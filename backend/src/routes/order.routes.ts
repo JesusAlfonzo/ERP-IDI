@@ -15,12 +15,12 @@ router.use(authenticateJWT);
 // Lectura de órdenes: Personal involucrado en el flujo de compras y recepción física
 router.get(
   '/',
-  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ALMACENISTA']),
+  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ALMACENISTA', 'ADMINISTRACION']),
   getOrders
 );
 router.get(
   '/:id',
-  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ALMACENISTA']),
+  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ALMACENISTA', 'ADMINISTRACION']),
   getOrderById
 );
 

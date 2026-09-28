@@ -14,20 +14,20 @@ router.use(authenticateJWT);
 // Resumen financiero de la orden
 router.get(
   '/:orderId/finance',
-  requireRoles(['ADMINISTRADOR', 'COMPRAS']),
+  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ADMINISTRACION']),
   getOrderFinancialSummary
 );
 
 // Registro de facturas y amortización de pagos
 router.post(
   '/:orderId/invoices',
-  requireRoles(['ADMINISTRADOR', 'COMPRAS']),
+  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ADMINISTRACION']),
   registerInvoice
 );
 
 router.post(
   '/:orderId/payments',
-  requireRoles(['ADMINISTRADOR', 'COMPRAS']),
+  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ADMINISTRACION']),
   registerPayment
 );
 

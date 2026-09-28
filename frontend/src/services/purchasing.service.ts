@@ -135,7 +135,9 @@ export const PurchasingClientService = {
       | CreatePurchaseOrderPayload
       | {
           supplierId?: number | null;
-          currencyId: number;
+          currencyId?: number;
+          currency?: string;
+          exchangeRate?: number;
           notes?: string | null;
           items: {
             productId: string | number;
@@ -164,6 +166,7 @@ export const PurchasingClientService = {
         lotNumber: string;
         expirationDate: string;
         locationId?: number;
+        requiresQuarantine?: boolean;
       }[];
     },
   ): Promise<PurchaseOrder> => {
@@ -259,7 +262,13 @@ export const PurchasingClientService = {
 
   // --- Monedas ---
   getCurrencies: async (): Promise<Currency[]> => {
-    const res = await apiClient.get<ApiResponse<Currency[]>>("/currencies");
+    const res = await apiClient.get<ApiResponse<Currency[]>>("/currencies", {
+      params: { _t: Date.now() },
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        Pragma: "no-cache",
+      },
+    });
     return res.data.data || [];
   },
 

@@ -36,7 +36,54 @@ export interface LocationItem {
   _count?: { stockBatches: number; fridges: number };
 }
 
+export interface DepartmentItem {
+  id: number;
+  code: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  _count?: { requests: number; purchaseRequisitions: number };
+}
+
 export const InventoryMasterService = {
+  // ==================== ÁREAS / DEPARTAMENTOS ====================
+  getDepartments: async (activeOnly?: boolean): Promise<DepartmentItem[]> => {
+    const res = await apiClient.get("/inventory/masters/departments", {
+      params: activeOnly ? { activeOnly: "true" } : undefined,
+    });
+    return res.data;
+  },
+  createDepartment: async (data: {
+    code: string;
+    name: string;
+    description?: string;
+    isActive?: boolean;
+  }): Promise<DepartmentItem> => {
+    const res = await apiClient.post("/inventory/masters/departments", data);
+    return res.data;
+  },
+  updateDepartment: async (
+    id: number,
+    data: {
+      code?: string;
+      name?: string;
+      description?: string;
+      isActive?: boolean;
+    },
+  ): Promise<DepartmentItem> => {
+    const res = await apiClient.patch(
+      `/inventory/masters/departments/${id}`,
+      data,
+    );
+    return res.data;
+  },
+  deleteDepartment: async (
+    id: number,
+  ): Promise<{ status: string; message: string }> => {
+    const res = await apiClient.delete(`/inventory/masters/departments/${id}`);
+    return res.data;
+  },
+
   // ==================== CATEGORÍAS ====================
   getCategories: async (): Promise<CategoryItem[]> => {
     const res = await apiClient.get("/inventory/masters/categories");

@@ -1,5 +1,5 @@
 import { prisma } from '../config/prisma.js';
-import { LocationType } from '@prisma/client';
+import { LocationType, BatchStatus } from '@prisma/client';
 
 export class CatalogService {
   // ================= CATEGORÍAS =================
@@ -296,4 +296,98 @@ export class CatalogService {
     });
     return users.map((u) => u.department);
   }
+
+  // ================= CATÁLOGO DE PRODUCTOS / INSUMOS =================
+  /**
+   * Endpoint principal de catálogo de inventario.
+   * Devuelve listado de Product (no de Batch).
+   * Cada Product incluye su relación category, brand, baseUnit y la relación batches (lotes físicos).
+   * totalStock se calcula sumando las cantidades de los lotes en estado DISPONIBLE.
+   */
+  static async getCatalog(filter?: {
+    search?: string;
+    categoryId?: number;
+    isReagent?: boolean;
+  }) {
+    const products = await prisma.product.findMany({
+      where: {
+        isActive: true,
+        ...(filter?.categoryId !== undefined
+          ? { categoryId: filter.categoryId }
+          : {}),
+        ...(filter?.isReagent !== undefined
+          ? { isReagent: filter.isReagent }
+          : {}),
+        ...(filter?.search
+          ? {
+              OR: [
+                { name: { contains: filter.search, mode: 'insensitive' } },
+                { sku: { contains: filter.search, mode: 'insensitive' } },
+                { barcode: { contains: filter.search, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
+      include: {
+        category: true,
+        brand: true,
+        baseUnit: true,
+        purchaseUnit: true,
+        stockBatches: {
+          include: {
+            location: true,
+          },
+          orderBy: [{ expirationDate: 'asc' }, { createdAt: 'desc' }],
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return products.map((prod) => {
+      const totalStock = prod.stockBatches
+        .filter((b) => b.status === BatchStatus.DISPONIBLE)
+        .reduce((sum, b) => sum + Number(b.currentQuantity), 0);
+
+      return {
+        ...prod,
+        totalStock,
+        batches: prod.stockBatches,
+      };
+    });
+  }
+
+  static async getCatalogProductById(id: bigint) {
+    const prod = await prisma.product.findUnique({
+      where: { id },
+      include: {
+        category: true,
+        brand: true,
+        baseUnit: true,
+        purchaseUnit: true,
+        stockBatches: {
+          include: {
+            location: true,
+          },
+          orderBy: [{ expirationDate: 'asc' }, { createdAt: 'desc' }],
+        },
+      },
+    });
+
+    if (!prod) {
+      const error: any = new Error('Producto no encontrado en el catálogo');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const totalStock = prod.stockBatches
+      .filter((b) => b.status === BatchStatus.DISPONIBLE)
+      .reduce((sum, b) => sum + Number(b.currentQuantity), 0);
+
+    return {
+      ...prod,
+      totalStock,
+      batches: prod.stockBatches,
+    };
+  }
 }
+

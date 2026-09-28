@@ -19,7 +19,7 @@ export class CurrencyService {
     const currencies = await prisma.currency.findMany({
       include: {
         exchanges: {
-          orderBy: { effectiveDate: 'desc' },
+          orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }],
           take: 1,
         },
       },

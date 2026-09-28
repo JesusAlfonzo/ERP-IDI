@@ -10,7 +10,8 @@ export interface CreatePurchaseRequisitionItemDTO {
 }
 
 export interface CreatePurchaseRequisitionDTO {
-  departmentSection: string;
+  departmentId?: number;
+  departmentSection?: string;
   justification: string;
   notes?: string | null;
   createdById: number;
@@ -28,7 +29,8 @@ export interface ConvertRequisitionItemDTO {
 
 export interface ConvertRequisitionToOrderDTO {
   supplierId: number;
-  currencyId: number;
+  currencyId?: number;
+  currency?: string;
   exchangeRate?: number;
   notes?: string | null;
   createdById: number;
@@ -74,6 +76,7 @@ export class PurchaseRequisitionService {
     return prisma.purchaseRequisition.findMany({
       where: whereClause,
       include: {
+        department: true,
         createdBy: {
           select: {
             id: true,
@@ -110,6 +113,7 @@ export class PurchaseRequisitionService {
     const requisition = await prisma.purchaseRequisition.findUnique({
       where: { id },
       include: {
+        department: true,
         createdBy: {
           select: {
             id: true,
@@ -169,10 +173,62 @@ export class PurchaseRequisitionService {
 
       const requisitionNumber = `PRE-${currentYear}-${String(nextSeq).padStart(4, '0')}`;
 
+      let departmentId = data.departmentId;
+      let departmentSection = data.departmentSection?.trim() || '';
+
+      if (departmentId) {
+        const dep = await tx.department.findUnique({
+          where: { id: departmentId },
+        });
+        if (!dep) {
+          throw new Error(`Departamento con ID ${departmentId} no existe`);
+        }
+        if (!departmentSection) {
+          departmentSection = dep.name;
+        }
+      } else {
+        if (departmentSection) {
+          const found = await tx.department.findFirst({
+            where: {
+              OR: [
+                { name: { equals: departmentSection, mode: 'insensitive' } },
+                { code: { equals: departmentSection, mode: 'insensitive' } },
+              ],
+            },
+          });
+          if (found) {
+            departmentId = found.id;
+            departmentSection = found.name;
+          } else {
+            const defaultDep = await tx.department.findFirst({
+              where: { isActive: true },
+              orderBy: { id: 'asc' },
+            });
+            if (defaultDep) {
+              departmentId = defaultDep.id;
+            }
+          }
+        } else {
+          const defaultDep = await tx.department.findFirst({
+            where: { isActive: true },
+            orderBy: { id: 'asc' },
+          });
+          if (defaultDep) {
+            departmentId = defaultDep.id;
+            departmentSection = defaultDep.name;
+          }
+        }
+      }
+
+      if (!departmentId) {
+        throw new Error('Debe especificar un departamento válido');
+      }
+
       return tx.purchaseRequisition.create({
         data: {
           requisitionNumber,
-          departmentSection: data.departmentSection.trim(),
+          departmentId,
+          departmentSection,
           justification: data.justification.trim(),
           notes: data.notes ? data.notes.trim() : null,
           status: PurchaseRequisitionStatus.BORRADOR,
@@ -190,6 +246,7 @@ export class PurchaseRequisitionService {
           },
         },
         include: {
+          department: true,
           createdBy: {
             select: {
               id: true,
@@ -257,6 +314,7 @@ export class PurchaseRequisitionService {
     const order = await OrderService.createOrder({
       supplierId: data.supplierId,
       currencyId: data.currencyId,
+      currency: data.currency,
       exchangeRate: data.exchangeRate,
       requisitionId: requisition.id,
       notes: data.notes ?? `Generada a partir de preorden ${requisition.requisitionNumber}`,

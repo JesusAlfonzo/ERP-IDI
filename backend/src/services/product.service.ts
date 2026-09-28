@@ -76,23 +76,29 @@ export class ProductService {
           baseUnit: true,
           purchaseUnit: true,
           stockBatches: {
-            where: {
-              status: BatchStatus.DISPONIBLE,
-              currentQuantity: { gt: 0 },
+            include: {
+              location: true,
             },
-            select: { currentQuantity: true },
+            orderBy: [{ expirationDate: 'asc' }, { createdAt: 'desc' }],
           },
         },
         orderBy: { name: 'asc' },
       })
       .then((products) =>
-        products.map(({ stockBatches, ...product }) => ({
-          ...product,
-          totalStock: stockBatches.reduce(
-            (total, batch) => total + Number(batch.currentQuantity),
-            0
-          ),
-        }))
+        products.map((product) => {
+          const totalStock = product.stockBatches
+            .filter((batch) => batch.status === BatchStatus.DISPONIBLE)
+            .reduce(
+              (total, batch) => total + Number(batch.currentQuantity),
+              0
+            );
+
+          return {
+            ...product,
+            totalStock,
+            batches: product.stockBatches,
+          };
+        })
       );
   }
 
@@ -124,6 +130,7 @@ export class ProductService {
     return {
       ...product,
       totalStock,
+      batches: product.stockBatches,
     };
   }
 

@@ -14,6 +14,7 @@ export interface ReceiveOrderItemDTO {
   lotNumber: string;
   expirationDate: Date;
   locationId?: number;
+  requiresQuarantine?: boolean;
 }
 
 export interface ReceiveOrderDTO {
@@ -33,7 +34,8 @@ export interface CreateOrderItemDTO {
 
 export interface CreateOrderDTO {
   supplierId?: number | null;
-  currencyId: number;
+  currencyId?: number;
+  currency?: string;
   exchangeRate?: number;
   requisitionId?: bigint | null;
   notes?: string | null;
@@ -71,7 +73,7 @@ export class OrderService {
       where: whereClause,
       include: {
         supplier: true,
-        currency: true,
+        currencyRel: true,
         requisition: {
           select: {
             id: true,
@@ -106,7 +108,7 @@ export class OrderService {
       where: { id },
       include: {
         supplier: true,
-        currency: true,
+        currencyRel: true,
         requisition: {
           select: {
             id: true,
@@ -129,7 +131,12 @@ export class OrderService {
             unit: true,
           },
         },
-        payments: true,
+        payments: {
+          include: {
+            sourceAccount: true,
+          },
+          orderBy: { paymentDate: 'desc' },
+        },
         invoices: true,
       },
     });
@@ -146,28 +153,61 @@ export class OrderService {
       throw new Error('La orden debe incluir al menos un ítem');
     }
 
-    const currency = await prisma.currency.findUnique({
-      where: { id: data.currencyId },
-      include: {
-        exchanges: {
-          orderBy: { effectiveDate: 'desc' },
-          take: 1,
-        },
-      },
-    });
+    let currencyCode = (data.currency || '').trim().toUpperCase();
+    if (currencyCode === 'VES') currencyCode = 'VED';
 
-    if (!currency) {
-      throw new Error('Moneda no encontrada');
+    let currency = null;
+    if (data.currencyId) {
+      currency = await prisma.currency.findUnique({
+        where: { id: data.currencyId },
+        include: {
+          exchanges: {
+            orderBy: { effectiveDate: 'desc' },
+            take: 1,
+          },
+        },
+      });
+      if (currency && !currencyCode) {
+        currencyCode = currency.code === 'VES' ? 'VED' : currency.code;
+      }
     }
 
-    const exchangeRate =
-      data.exchangeRate && Number(data.exchangeRate) > 0
-        ? Number(data.exchangeRate)
-        : currency.isDefault
-          ? 1.0
-          : currency.exchanges[0]?.rate
-            ? Number(currency.exchanges[0].rate)
-            : 1.0;
+    if (!currency && currencyCode) {
+      currency = await prisma.currency.findFirst({
+        where: {
+          OR: [
+            { code: currencyCode },
+            ...(currencyCode === 'VED' ? [{ code: 'VES' }] : []),
+          ],
+        },
+        include: {
+          exchanges: {
+            orderBy: { effectiveDate: 'desc' },
+            take: 1,
+          },
+        },
+      });
+    }
+
+    if (!currencyCode) {
+      currencyCode = 'USD';
+    }
+
+    const resolvedCurrencyId = currency?.id ?? 1;
+
+    let exchangeRate = Number(data.exchangeRate || 0);
+    if (!exchangeRate || exchangeRate <= 0) {
+      if (currencyCode === 'VED' || currencyCode === 'VES') {
+        exchangeRate = 1.0;
+      } else if (currency && currency.exchanges[0]?.rate) {
+        exchangeRate = Number(currency.exchanges[0].rate);
+      } else {
+        exchangeRate = currencyCode === 'EUR' ? 81.5 : 75.0;
+      }
+    }
+    if (currencyCode === 'VED' || currencyCode === 'VES') {
+      exchangeRate = 1.0;
+    }
 
     const currentYear = new Date().getFullYear();
     const latestOrder = await prisma.order.findFirst({
@@ -184,8 +224,8 @@ export class OrderService {
     }
     const orderNumber = `ORD-${currentYear}-${String(nextSeq).padStart(4, '0')}`;
 
-    let taxableAmountUsd = 0;
-    let exemptAmountUsd = 0;
+    let taxableAmount = 0;
+    let exemptAmount = 0;
 
     const processedItems: {
       productId: bigint;
@@ -227,9 +267,9 @@ export class OrderService {
       const totalLine = Math.round((lineSubtotal + lineTax) * 100) / 100;
 
       if (isExempt) {
-        exemptAmountUsd += lineSubtotal;
+        exemptAmount += lineSubtotal;
       } else {
-        taxableAmountUsd += lineSubtotal;
+        taxableAmount += lineSubtotal;
       }
 
       processedItems.push({
@@ -245,26 +285,56 @@ export class OrderService {
       });
     }
 
-    taxableAmountUsd = Math.round(taxableAmountUsd * 100) / 100;
-    exemptAmountUsd = Math.round(exemptAmountUsd * 100) / 100;
-    const taxAmountUsd = Math.round(taxableAmountUsd * 0.16 * 100) / 100;
-    const totalAmountUsd =
-      Math.round((taxableAmountUsd + exemptAmountUsd + taxAmountUsd) * 100) /
-      100;
-    const totalAmountBs =
-      Math.round(totalAmountUsd * exchangeRate * 100) / 100;
+    taxableAmount = Math.round(taxableAmount * 100) / 100;
+    exemptAmount = Math.round(exemptAmount * 100) / 100;
+    const taxAmount = Math.round(taxableAmount * 0.16 * 100) / 100;
+    const totalAmount =
+      Math.round((taxableAmount + exemptAmount + taxAmount) * 100) / 100;
 
-    const subtotal =
-      Math.round((taxableAmountUsd + exemptAmountUsd) * 100) / 100;
-    const taxTotal = taxAmountUsd;
-    const total = totalAmountUsd;
+    const totalAmountBs =
+      currencyCode === 'VED' || currencyCode === 'VES'
+        ? totalAmount
+        : Math.round(totalAmount * exchangeRate * 100) / 100;
+
+    const totalAmountUsd =
+      currencyCode === 'USD'
+        ? totalAmount
+        : exchangeRate > 0
+          ? Math.round((totalAmountBs / (currencyCode === 'EUR' ? 81.5 : exchangeRate)) * 100) / 100
+          : totalAmount;
+
+    const taxableAmountUsd =
+      currencyCode === 'USD'
+        ? taxableAmount
+        : totalAmount > 0
+          ? Math.round((taxableAmount * (totalAmountUsd / totalAmount)) * 100) / 100
+          : taxableAmount;
+
+    const exemptAmountUsd =
+      currencyCode === 'USD'
+        ? exemptAmount
+        : totalAmount > 0
+          ? Math.round((exemptAmount * (totalAmountUsd / totalAmount)) * 100) / 100
+          : exemptAmount;
+
+    const taxAmountUsd =
+      currencyCode === 'USD'
+        ? taxAmount
+        : totalAmount > 0
+          ? Math.round((taxAmount * (totalAmountUsd / totalAmount)) * 100) / 100
+          : taxAmount;
+
+    const subtotal = Math.round((taxableAmount + exemptAmount) * 100) / 100;
+    const taxTotal = taxAmount;
+    const total = totalAmount;
 
     return prisma.$transaction(async (tx) => {
       const createdOrder = await tx.order.create({
         data: {
           orderNumber,
           supplierId: data.supplierId ?? null,
-          currencyId: data.currencyId,
+          currency: currencyCode,
+          currencyId: resolvedCurrencyId,
           exchangeRate,
           status: OrderStatus.BORRADOR,
           paymentStatus: PaymentStatus.PENDIENTE,
@@ -272,6 +342,10 @@ export class OrderService {
           subtotal,
           taxTotal,
           total,
+          taxableAmount,
+          exemptAmount,
+          taxAmount,
+          totalAmount,
           taxableAmountUsd,
           exemptAmountUsd,
           taxAmountUsd,
@@ -304,7 +378,7 @@ export class OrderService {
             },
           },
           supplier: true,
-          currency: true,
+          currencyRel: true,
           requisition: {
             select: {
               id: true,
@@ -393,11 +467,13 @@ export class OrderService {
           receivedItem.locationId ?? destinationLocationId;
         const costPerBaseUnit = Number(orderItem.unitPrice) / multiplier;
 
-        // Si es un reactivo clínico, entra a cuarentena para verificación analítica.
-        // Si es material general, queda disponible directamente para uso.
-        const initialStatus = orderItem.product.isReagent
-          ? BatchStatus.EN_CUARENTENA
-          : BatchStatus.DISPONIBLE;
+        // Modelo Híbrido Vía Verde / Ámbar:
+        // Si requiresQuarantine es true (Vía Ámbar), entra a EN_CUARENTENA para inspección técnica.
+        // Si requiresQuarantine es false o no viene (Vía Verde por defecto), entra directo a DISPONIBLE.
+        const initialStatus =
+          receivedItem.requiresQuarantine === true
+            ? BatchStatus.EN_CUARENTENA
+            : BatchStatus.DISPONIBLE;
 
         const stockBatch = await tx.stockBatch.create({
           data: {
@@ -458,7 +534,7 @@ export class OrderService {
             },
           },
           supplier: true,
-          currency: true,
+          currencyRel: true,
         },
       });
     });

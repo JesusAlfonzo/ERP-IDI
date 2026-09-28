@@ -391,7 +391,6 @@ export class DashboardService {
           where: { status: { not: OrderStatus.CANCELADA } },
           include: {
             supplier: true,
-            currency: true,
             payments: true,
           },
           orderBy: { createdAt: 'desc' },
@@ -447,7 +446,7 @@ export class DashboardService {
             id: Number(o.id),
             orderNumber: o.orderNumber,
             supplierName: o.supplier?.name || 'Proveedor General',
-            currency: o.currency.code,
+            currency: o.currency || 'USD',
             totalAmount: Number(o.total),
             balancePending: Math.max(0, Number(o.total) - totalPaid),
             status: o.status,

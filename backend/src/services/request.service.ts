@@ -32,7 +32,8 @@ export interface CreateRequestItemDTO {
 export interface CreateRequestDTO {
   userId: number;
   priority?: RequestPriority;
-  departmentSection: string;
+  departmentId?: number;
+  departmentSection?: string;
   justification: string;
   notes?: string | null;
   items: CreateRequestItemDTO[];
@@ -152,6 +153,7 @@ export class RequestService {
           : {}),
       },
       include: {
+        department: true,
         user: {
           select: {
             id: true,
@@ -185,6 +187,7 @@ export class RequestService {
     const req = await prisma.request.findUnique({
       where: { id },
       include: {
+        department: true,
         user: {
           select: {
             id: true,
@@ -254,13 +257,65 @@ export class RequestService {
     const requestNumber = `SOL-${currentYear}-${String(nextSeq).padStart(4, '0')}`;
     const weeklyTokenCycle = getCaracasTime().isoWeeklyCycle;
 
+    let departmentId = data.departmentId;
+    let departmentSection = data.departmentSection?.trim() || '';
+
+    if (departmentId) {
+      const dep = await prisma.department.findUnique({
+        where: { id: departmentId },
+      });
+      if (!dep) {
+        throw new Error(`Departamento con ID ${departmentId} no existe`);
+      }
+      if (!departmentSection) {
+        departmentSection = dep.name;
+      }
+    } else {
+      if (departmentSection) {
+        const found = await prisma.department.findFirst({
+          where: {
+            OR: [
+              { name: { equals: departmentSection, mode: 'insensitive' } },
+              { code: { equals: departmentSection, mode: 'insensitive' } },
+            ],
+          },
+        });
+        if (found) {
+          departmentId = found.id;
+          departmentSection = found.name;
+        } else {
+          const defaultDep = await prisma.department.findFirst({
+            where: { isActive: true },
+            orderBy: { id: 'asc' },
+          });
+          if (defaultDep) {
+            departmentId = defaultDep.id;
+          }
+        }
+      } else {
+        const defaultDep = await prisma.department.findFirst({
+          where: { isActive: true },
+          orderBy: { id: 'asc' },
+        });
+        if (defaultDep) {
+          departmentId = defaultDep.id;
+          departmentSection = defaultDep.name;
+        }
+      }
+    }
+
+    if (!departmentId) {
+      throw new Error('Debe especificar un departamento válido');
+    }
+
     const created = await prisma.request.create({
       data: {
         requestNumber,
         userId: data.userId,
         status: RequestStatus.PENDIENTE,
         priority: data.priority ?? RequestPriority.RUTINA,
-        departmentSection: data.departmentSection,
+        departmentId,
+        departmentSection,
         justification: data.justification,
         weeklyTokenCycle,
         notes: data.notes ?? null,
@@ -274,6 +329,7 @@ export class RequestService {
         },
       },
       include: {
+        department: true,
         items: {
           include: {
             product: {

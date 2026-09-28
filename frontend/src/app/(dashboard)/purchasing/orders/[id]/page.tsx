@@ -13,16 +13,21 @@ import { getCurrencySymbol, normalizeCurrencyCode } from "@/utils/currency";
 import { toast } from "@/utils/toast";
 import type { PurchaseOrder, SupplierPayment } from "@/types/purchasing";
 import {
+  PrintableDocument,
+  DocumentHeader,
+  DocumentMetadataGrid,
+  DocumentSignatures,
+  DocumentFooter,
+  PrintActionButton,
+} from "@/components/common/PrintableDocument";
+import {
   FileText,
   ArrowLeft,
   Building2,
-  Package,
   Boxes,
   Truck,
   Receipt,
-  Printer,
   Loader2,
-  Calculator,
   ExternalLink,
   Coins,
   CreditCard,
@@ -628,9 +633,9 @@ export default function OrderDetailPage() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl mx-auto">
-      {/* Encabezado */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-200">
+    <div className="p-4 sm:p-6 space-y-6 max-w-6xl mx-auto print:p-0 print:m-0 print:max-w-none">
+      {/* Encabezado de Acciones (Oculto en Impresión) */}
+      <div className="no-print print:hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-200">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -666,7 +671,7 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {canPay && (
             <button
               type="button"
@@ -689,18 +694,12 @@ export default function OrderDetailPage() {
               Recibir Mercancía
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-xs transition-colors cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5" /> Imprimir
-          </button>
+          <PrintActionButton label="Imprimir / Exportar Orden PDF" />
         </div>
       </div>
 
-      {/* Resumen Superior */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {/* Resumen Superior en Pantalla */}
+      <div className="no-print print:hidden grid grid-cols-1 md:grid-cols-4 gap-4">
         {/* Proveedor */}
         <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs space-y-2">
           <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
@@ -796,8 +795,8 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
-      {/* Panel de Resumen Financiero y Estado de Pagos */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+      {/* Panel de Resumen Financiero y Estado de Pagos en Pantalla */}
+      <div className="no-print print:hidden bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
@@ -896,202 +895,332 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
-      {/* Renglones */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-        <div className="p-4 border-b border-slate-100 bg-slate-50/70 flex justify-between items-center">
-          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <Package className="w-4 h-4 text-blue-600" />
-            Renglones de la Orden de Compra
-          </h3>
-          <span className="text-xs text-slate-500">
-            {order.items?.length ?? 0} ítems registrados
-          </span>
-        </div>
+      {/* COMPROBANTE OFICIAL DE ORDEN DE COMPRA SENIAT (IMPRIMIBLE) */}
+      <PrintableDocument>
+        <DocumentHeader
+          title="ORDEN DE COMPRA INSTITUCIONAL"
+          subtitle="Proforma Fiscal SENIAT · Instituto de Inmunología Clínica IDI"
+          documentNumber={order.orderNumber || `#${order.id}`}
+          badge="PROFORMA SENIAT"
+          status={{
+            label: order.status,
+            className: "bg-slate-100 text-slate-800 border-slate-300",
+          }}
+          date={
+            order.createdAt
+              ? new Date(order.createdAt).toLocaleDateString("es-VE")
+              : undefined
+          }
+        />
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200 text-xs">
-            <thead className="bg-slate-50 text-slate-600">
-              <tr>
-                <th className="py-3 px-4 text-left">SKU</th>
-                <th className="py-3 px-4 text-left">Insumo</th>
-                <th className="py-3 px-4 text-center">Unidad</th>
-                <th className="py-3 px-4 text-center">Factor</th>
-                <th className="py-3 px-4 text-right">Cant. Ordenada</th>
-                <th className="py-3 px-4 text-right">Cant. Recibida</th>
-                <th className="py-3 px-4 text-right">Precio Unit. ({symbol})</th>
-                <th className="py-3 px-4 text-center">Régimen Fiscal</th>
-                <th className="py-3 px-4 text-right">Total Renglón ({symbol})</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {order.items?.map((item) => {
-                const lineTotal =
-                  Number(item.quantityOrdered) * Number(item.unitPrice);
-                return (
-                  <tr key={String(item.id)} className="hover:bg-slate-50/80">
-                    <td className="py-3 px-4 font-mono font-bold text-slate-800">
-                      {item.product?.sku ?? "---"}
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="font-semibold text-slate-900">
-                        {item.product?.name}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-center text-slate-700">
-                      {item.unit?.abbreviation ||
-                        item.product?.baseUnit?.abbreviation ||
-                        item.product?.unitOfMeasure ||
-                        "und"}
-                    </td>
-                    <td className="py-3 px-4 text-center font-mono text-slate-600">
-                      {Number(item.multiplier || 1) > 1
-                        ? `x${item.multiplier}`
-                        : "1:1"}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">
-                      {Number(item.quantityOrdered)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-emerald-700 font-semibold">
-                      {Number(item.quantityReceived || 0)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-slate-700">
-                      {symbol} {Number(item.unitPrice).toFixed(2)}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {item.isExempt ? (
-                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          Exento
-                        </span>
-                      ) : (
-                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                          Gravable 16%
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
-                      {symbol} {lineTotal.toFixed(2)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Proforma Fiscal SENIAT */}
-      <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-xs">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-          <div className="flex items-center gap-2">
-            <Calculator className="w-5 h-5 text-indigo-600" />
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">
-                Liquidación y Fiscalidad SENIAT (Venezuela)
-              </h3>
-              <p className="text-xs text-slate-500">
-                Resumen tributario conforme a la normativa fiscal del IVA (16%) y tasa oficial BCV
-              </p>
-            </div>
-          </div>
-          {currCode !== "VED" && rate > 0 && (
-            <span className="text-xs font-mono font-medium px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
-              Tasa Oficial BCV: {rate.toFixed(2)} Bs./{currCode === "EUR" ? "€" : "$"}
+        {/* Datos de Emisión vs Datos del Proveedor Adjudicado */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 break-inside-avoid">
+          {/* Emisor (Comprador Institucional) */}
+          <div className="p-3.5 rounded-lg border border-slate-300 print:border-black bg-slate-50/50 print:bg-white space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 print:text-black block border-b border-slate-200 print:border-black pb-1">
+              Datos de Emisión (Comprador Institucional)
             </span>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-          {/* Desglose en Moneda de la Orden */}
-          <div className="space-y-2 bg-white p-4 rounded-lg border border-slate-200">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide border-b border-slate-100 pb-1.5">
-              Valores en Moneda de la Orden ({currCode})
-            </h4>
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-slate-600">Base Imponible Gravable (16%):</span>
-              <span className="font-mono font-semibold text-slate-800">
-                {symbol} {taxableAmount.toFixed(2)}
-              </span>
+            <div className="text-xs font-bold text-slate-900 print:text-black">
+              INMUNOLOGIA ASOCIACION CIVIL
             </div>
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-slate-600">Subtotal Exento de IVA:</span>
-              <span className="font-mono font-semibold text-emerald-700">
-                {symbol} {exemptAmount.toFixed(2)}
-              </span>
+            <div className="font-mono text-xs font-bold text-slate-700 print:text-black">
+              RIF: J-30710739-1
             </div>
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-slate-600">Impuesto al Valor Agregado (IVA 16%):</span>
-              <span className="font-mono font-semibold text-slate-800">
-                {symbol} {taxAmount.toFixed(2)}
-              </span>
+            <div className="text-[11px] text-slate-600 print:text-slate-700">
+              Dirección: Instituto de Inmunología Clínica, Caracas, Venezuela
             </div>
-            <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-sm">
-              <span className="font-bold text-slate-900">Total Factura ({currCode}):</span>
-              <span className="font-mono font-bold text-blue-700 text-base">
-                {symbol} {totalAmount.toFixed(2)}
-              </span>
+            <div className="text-[11px] text-slate-600 print:text-slate-700">
+              Contacto: compras@idi.org.ve · administracion@idi.org.ve
             </div>
+            {order.requisition?.departmentSection && (
+              <div className="text-[11px] text-slate-600 print:text-slate-700">
+                Área Solicitante:{" "}
+                <span className="font-semibold">
+                  {order.requisition.departmentSection}
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* Conversión y Liquidación en Bolívares */}
-          <div className="space-y-2 bg-white p-4 rounded-lg border border-slate-200">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide border-b border-slate-100 pb-1.5">
-              Conversión a Moneda Nacional (Bs.)
-            </h4>
-            {currCode === "VED" ? (
-              <div className="h-full flex flex-col justify-center text-xs text-slate-500 space-y-1">
-                <p className="font-semibold text-slate-800">Orden emitida directamente en Bolívares (VED / Bs.).</p>
-                <p>No requiere conversión cambiaria de divisas.</p>
-              </div>
-            ) : rate > 0 ? (
-              <>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-600">Tasa de Cambio Aplicada:</span>
-                  <span className="font-mono font-semibold text-slate-800">
-                    {rate.toFixed(2)} Bs./{currCode === "EUR" ? "€" : "$"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-600">Base Gravable en Bs.:</span>
-                  <span className="font-mono font-semibold text-slate-800">
-                    Bs. {(taxableAmount * rate).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-600">IVA (16%) en Bs.:</span>
-                  <span className="font-mono font-semibold text-slate-800">
-                    Bs. {(taxAmount * rate).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div className="pt-2 border-t border-slate-200 flex flex-col justify-between text-sm space-y-0.5">
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-slate-900">Total a Liquidar (Bs.):</span>
-                    <span className="font-mono font-bold text-emerald-700 text-base">
-                      Bs. {totalAmountBs?.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "0.00"}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-400 italic">
-                    Monto Total en Bs. calculado a la tasa oficial BCV de {rate.toFixed(2)} Bs./{currCode === "EUR" ? "€" : "$"}
-                  </p>
-                </div>
-              </>
-            ) : (
-              <div className="h-full flex items-center justify-center p-4 text-center text-xs text-slate-400 italic">
-                No se registró tasa de cambio BCV para esta orden.
+          {/* Proveedor Adjudicado */}
+          <div className="p-3.5 rounded-lg border border-slate-300 print:border-black bg-slate-50/50 print:bg-white space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 print:text-black block border-b border-slate-200 print:border-black pb-1">
+              Datos del Proveedor Adjudicado
+            </span>
+            <div className="text-xs font-bold text-slate-900 print:text-black">
+              {order.supplier?.name ?? "Proveedor no asignado"}
+            </div>
+            <div className="font-mono text-xs font-bold text-slate-700 print:text-black">
+              RIF: {order.supplier?.rifOrId || order.supplier?.rif || "N/A"}
+            </div>
+            <div className="text-[11px] text-slate-600 print:text-slate-700">
+              Teléfono: {order.supplier?.phone || "No registrado"}
+            </div>
+            <div className="text-[11px] text-slate-600 print:text-slate-700">
+              Contacto / Email:{" "}
+              {order.supplier?.contactName ||
+                order.supplier?.email ||
+                "No registrado"}
+            </div>
+            {order.supplier?.address && (
+              <div className="text-[11px] text-slate-600 print:text-slate-700">
+                Dirección: {order.supplier.address}
               </div>
             )}
           </div>
         </div>
 
-        {order.notes && (
-          <div className="mt-4 pt-3 border-t border-slate-200 text-xs">
-            <span className="font-bold text-slate-700">Observaciones: </span>
-            <span className="text-slate-600">{order.notes}</span>
+        {/* Metadatos de la Orden */}
+        <DocumentMetadataGrid
+          columns={4}
+          items={[
+            {
+              label: "N° Orden de Compra",
+              value: (
+                <span className="font-mono font-bold">
+                  {order.orderNumber || `#${order.id}`}
+                </span>
+              ),
+            },
+            {
+              label: "Fecha de Emisión",
+              value: order.createdAt
+                ? new Date(order.createdAt).toLocaleDateString("es-VE")
+                : "-",
+            },
+            {
+              label: "Referencia Preorden",
+              value: order.requisition?.requisitionNumber || "N/A",
+            },
+            {
+              label: "Moneda / Condición",
+              value: `${currCode} (${symbol}) • ${order.paymentStatus || "PENDIENTE"}`,
+            },
+          ]}
+        />
+
+        {/* Tabla de Renglones de la Orden */}
+        <div className="space-y-2">
+          <div className="flex justify-between items-center pb-1">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider print:text-black">
+              Renglones de la Orden de Compra ({order.items?.length ?? 0})
+            </h3>
+            <span className="text-[10px] text-slate-500 font-mono print:text-black">
+              Valores en moneda {currCode} ({symbol})
+            </span>
           </div>
-        )}
-      </div>
+
+          <div className="overflow-x-auto border border-slate-300 rounded-lg print:border-black print:rounded-none">
+            <table className="min-w-full text-xs text-left border-collapse">
+              <thead className="bg-slate-100 text-slate-700 border-b border-slate-300 print:bg-slate-200 print:text-black print:border-black font-bold text-[11px]">
+                <tr>
+                  <th className="py-2 px-2.5 text-center border-r border-slate-300 print:border-black w-24">
+                    SKU
+                  </th>
+                  <th className="py-2 px-3 border-r border-slate-300 print:border-black">
+                    Descripción / Insumo
+                  </th>
+                  <th className="py-2 px-2.5 text-center border-r border-slate-300 print:border-black">
+                    Unidad / Empaque
+                  </th>
+                  <th className="py-2 px-2 text-center border-r border-slate-300 print:border-black">
+                    Factor
+                  </th>
+                  <th className="py-2 px-2.5 text-right border-r border-slate-300 print:border-black">
+                    Cantidad
+                  </th>
+                  <th className="py-2 px-2.5 text-right border-r border-slate-300 print:border-black">
+                    Precio Unit. ({symbol})
+                  </th>
+                  <th className="py-2 px-2.5 text-center border-r border-slate-300 print:border-black">
+                    Exento
+                  </th>
+                  <th className="py-2 px-3 text-right">
+                    Total Renglón ({symbol})
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 print:divide-black">
+                {order.items?.map((item) => {
+                  const lineTotal =
+                    Number(item.quantityOrdered) * Number(item.unitPrice);
+                  const unitText =
+                    item.unit?.abbreviation ||
+                    item.product?.baseUnit?.abbreviation ||
+                    item.product?.unitOfMeasure ||
+                    "UND";
+                  const factorText =
+                    Number(item.multiplier || 1) > 1
+                      ? `x${item.multiplier}`
+                      : "1:1";
+
+                  return (
+                    <tr
+                      key={String(item.id)}
+                      className="break-inside-avoid hover:bg-slate-50/70"
+                    >
+                      <td className="py-2 px-2.5 text-center font-mono font-bold text-slate-800 print:text-black border-r border-slate-200 print:border-black">
+                        {item.product?.sku ?? "---"}
+                      </td>
+                      <td className="py-2 px-3 border-r border-slate-200 print:border-black">
+                        <div className="font-bold text-slate-900 print:text-black">
+                          {item.product?.name}
+                        </div>
+                      </td>
+                      <td className="py-2 px-2.5 text-center text-slate-700 print:text-black border-r border-slate-200 print:border-black uppercase">
+                        {unitText}
+                      </td>
+                      <td className="py-2 px-2 text-center font-mono text-[11px] text-slate-600 print:text-black border-r border-slate-200 print:border-black">
+                        {factorText}
+                      </td>
+                      <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-900 print:text-black border-r border-slate-200 print:border-black">
+                        {Number(item.quantityOrdered)}
+                      </td>
+                      <td className="py-2 px-2.5 text-right font-mono font-medium text-slate-800 print:text-black border-r border-slate-200 print:border-black">
+                        {symbol} {Number(item.unitPrice).toFixed(2)}
+                      </td>
+                      <td className="py-2 px-2.5 text-center border-r border-slate-200 print:border-black">
+                        {item.isExempt ? (
+                          <span className="font-bold text-emerald-700 print:text-black text-[11px]">
+                            Sí
+                          </span>
+                        ) : (
+                          <span className="text-slate-600 print:text-black text-[11px]">
+                            No (16%)
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono font-bold text-slate-900 print:text-black">
+                        {symbol} {lineTotal.toFixed(2)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Cuadro de Liquidación Fiscal SENIAT */}
+        <div className="border border-slate-300 print:border-black rounded-lg p-4 bg-slate-50/50 print:bg-white break-inside-avoid space-y-3">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-2 border-b border-slate-200 print:border-black gap-2">
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 print:text-black uppercase tracking-wider">
+                Liquidación y Fiscalidad SENIAT (Venezuela)
+              </h4>
+              <p className="text-[10px] text-slate-500 print:text-black">
+                Cálculo conforme a la Ley del Impuesto al Valor Agregado (IVA 16%) y Providencias Administrativas SENIAT
+              </p>
+            </div>
+            <div className="text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-800 border border-slate-300 print:border-black print:bg-white print:text-black">
+              {currCode === "VED"
+                ? "Tasa oficial BCV: 1.00 (Moneda Base Nacional)"
+                : `Tasa oficial BCV: ${effectiveBcvRate.toFixed(2)} Bs./${currCode === "EUR" ? "€" : "$"}`}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Moneda de la Orden */}
+            <div className="space-y-1.5 text-xs bg-white print:bg-transparent p-3 rounded border border-slate-200 print:border-black">
+              <span className="block font-bold text-slate-700 print:text-black border-b border-slate-100 print:border-black pb-1 uppercase text-[10px]">
+                Totales en Moneda de la Orden ({currCode})
+              </span>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600 print:text-black">Base Imponible Gravable (16%):</span>
+                <span className="font-mono font-semibold text-slate-900 print:text-black">
+                  {symbol} {taxableAmount.toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600 print:text-black">Subtotal Exento de IVA:</span>
+                <span className="font-mono font-semibold text-slate-900 print:text-black">
+                  {symbol} {exemptAmount.toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600 print:text-black">Impuesto al Valor Agregado (IVA 16%):</span>
+                <span className="font-mono font-semibold text-slate-900 print:text-black">
+                  {symbol} {taxAmount.toFixed(2)}
+                </span>
+              </div>
+              <div className="pt-1.5 border-t border-slate-200 print:border-black flex justify-between items-center text-sm font-bold">
+                <span className="text-slate-900 print:text-black">Total en Divisa ({symbol}):</span>
+                <span className="font-mono text-blue-900 print:text-black">
+                  {symbol} {totalAmount.toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Equivalente en Bolívares */}
+            <div className="space-y-1.5 text-xs bg-white print:bg-transparent p-3 rounded border border-slate-200 print:border-black">
+              <span className="block font-bold text-slate-700 print:text-black border-b border-slate-100 print:border-black pb-1 uppercase text-[10px]">
+                Liquidación Oficial en Bolívares (Bs.)
+              </span>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600 print:text-black">Base Gravable en Bs.:</span>
+                <span className="font-mono font-semibold text-slate-900 print:text-black">
+                  Bs. {(taxableAmount * (currCode === "VED" ? 1 : effectiveBcvRate)).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600 print:text-black">Subtotal Exento en Bs.:</span>
+                <span className="font-mono font-semibold text-slate-900 print:text-black">
+                  Bs. {(exemptAmount * (currCode === "VED" ? 1 : effectiveBcvRate)).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600 print:text-black">IVA 16% en Bs.:</span>
+                <span className="font-mono font-semibold text-slate-900 print:text-black">
+                  Bs. {(taxAmount * (currCode === "VED" ? 1 : effectiveBcvRate)).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="pt-1.5 border-t border-slate-200 print:border-black flex justify-between items-center text-sm font-bold">
+                <span className="text-slate-900 print:text-black">Total en Bolívares (Bs.):</span>
+                <span className="font-mono text-emerald-800 print:text-black">
+                  Bs. {totalOrderBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-400 print:text-slate-600 italic text-right pt-0.5">
+                Tasa oficial BCV: {effectiveBcvRate.toFixed(2)} Bs./divisa
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Sección de 3 Firmas */}
+        <DocumentSignatures
+          signatures={[
+            {
+              role: "Elaborado por (Compras)",
+              name: "Coordinación de Compras",
+              department: "Unidad de Procura y Gestión de Proveedores",
+              stampText: "Firma y Sello Compras",
+            },
+            {
+              role: "Revisado por (Administración)",
+              name: "Administración y Finanzas",
+              department: "Control Presupuestario y Fiscal",
+              stampText: "Firma y Sello Administración",
+            },
+            {
+              role: "Aprobado por (Dirección)",
+              name: "Dirección General IDI",
+              department: "Instituto de Inmunología Clínica",
+              stampText: "Firma y Sello Dirección",
+            },
+          ]}
+        />
+
+        {/* Pie del Documento */}
+        <DocumentFooter
+          notes={order.notes || "Esta Orden de Compra constituye un compromiso formal de adquisición y entrega sujeta a inspección física, control de calidad y liquidación de factura legal SENIAT."}
+          institutionText="INMUNOLOGIA ASOCIACION CIVIL · RIF: J-30710739-1"
+          systemSignature={`ERP-IDI v2.0 · Orden ${order.orderNumber || `#${order.id}`}`}
+        />
+      </PrintableDocument>
 
       {/* Historial de Pagos y Amortizaciones */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+      <div className="no-print print:hidden bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
         <div className="p-4 border-b border-slate-100 bg-slate-50/70 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="flex items-center gap-2">
             <CreditCard className="w-4 h-4 text-blue-600" />
@@ -1234,7 +1363,7 @@ export default function OrderDetailPage() {
 
       {/* Modal Dinámico de Registro de Pago */}
       {showPaymentModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="no-print print:hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">

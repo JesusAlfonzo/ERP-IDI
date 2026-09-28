@@ -38,15 +38,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex bg-slate-50">
+    <div className="flex h-screen overflow-hidden bg-slate-50 print:bg-white print:h-auto print:overflow-visible">
       <Sidebar
         user={user}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Navbar user={user} onOpenSidebar={() => setSidebarOpen(true)} />
-        <main className="flex-1 p-4 lg:p-8">
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden print:overflow-visible">
+        <div className="no-print print:hidden shrink-0">
+          <Navbar user={user} onOpenSidebar={() => setSidebarOpen(true)} />
+        </div>
+        <main className="flex-1 p-4 lg:p-8 overflow-y-auto print:p-0 print:m-0 print:overflow-visible">
           <RoleGuard user={user}>{children}</RoleGuard>
         </main>
       </div>

@@ -50,7 +50,7 @@ router.post('/', requireRoles(['ADMINISTRADOR', 'COMPRAS']), createSupplier);
 router.put('/:id', requireRoles(['ADMINISTRADOR', 'COMPRAS']), updateSupplier);
 router.delete(
   '/:id',
-  requireRoles(['ADMINISTRADOR', 'COMPRAS']),
+  requireRoles(['ADMINISTRADOR']),
   deleteSupplier
 );
 

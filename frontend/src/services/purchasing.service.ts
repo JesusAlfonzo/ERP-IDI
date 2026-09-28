@@ -3,11 +3,13 @@ import type { ApiResponse } from "@/types/api";
 import type {
   PurchaseOrder,
   Supplier,
+  SupplierDetail,
   SupplierDebt,
   SupplierStatement,
   SupplierPayment,
   Currency,
   CreateSupplierPayload,
+  UpdateSupplierPayload,
   RegisterPaymentPayload,
   CreatePurchaseOrderPayload,
   ReceiveOrderPayload,
@@ -278,6 +280,15 @@ export const PurchasingClientService = {
     return res.data.data || [];
   },
 
+  getSupplierById: async (id: number | string): Promise<SupplierDetail> => {
+    const res = await apiClient.get<ApiResponse<SupplierDetail>>(
+      `/suppliers/${id}`,
+    );
+    const data = res.data.data;
+    if (!data) throw new Error("Proveedor no encontrado");
+    return data;
+  },
+
   createSupplier: async (payload: CreateSupplierPayload): Promise<Supplier> => {
     const res = await apiClient.post<ApiResponse<Supplier>>(
       "/suppliers",
@@ -286,6 +297,26 @@ export const PurchasingClientService = {
     const data = res.data.data;
     if (!data) throw new Error("Error al registrar proveedor");
     return data;
+  },
+
+  updateSupplier: async (
+    id: number | string,
+    payload: UpdateSupplierPayload,
+  ): Promise<Supplier> => {
+    const res = await apiClient.put<ApiResponse<Supplier>>(
+      `/suppliers/${id}`,
+      payload,
+    );
+    const data = res.data.data;
+    if (!data) throw new Error("Error al actualizar proveedor");
+    return data;
+  },
+
+  deleteSupplier: async (id: number | string): Promise<{ message: string }> => {
+    const res = await apiClient.delete<ApiResponse<null>>(`/suppliers/${id}`);
+    return {
+      message: res.data.message || "Proveedor eliminado correctamente",
+    };
   },
 
   getSupplierDebts: async (): Promise<SupplierDebt[]> => {

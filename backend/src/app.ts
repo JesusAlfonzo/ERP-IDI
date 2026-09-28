@@ -61,6 +61,8 @@ app.use('/api/products', productRoutes);
 app.use('/api/currencies', currencyRoutes);
 app.use('/api/exchange-rates', exchangeRateRoutes);
 app.use('/api/suppliers', supplierRoutes);
+app.use('/api/purchasing/suppliers', supplierRoutes);
+app.use('/api/purchasing/providers', supplierRoutes);
 
 // Compras y Finanzas
 app.use('/api/orders', orderRoutes);

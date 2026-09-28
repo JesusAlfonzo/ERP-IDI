@@ -207,18 +207,18 @@ export function Sidebar({ user, isOpen, onClose }: SidebarProps) {
       {isOpen && (
         <div
           onClick={onClose}
-          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs lg:hidden"
+          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs lg:hidden no-print print:hidden"
         />
       )}
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 bg-slate-950 text-slate-300 flex flex-col border-r border-slate-800/80 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 w-64 h-full flex-shrink-0 bg-slate-950 text-slate-300 flex flex-col border-r border-slate-800/80 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 overflow-hidden no-print print:hidden",
           isOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
         {/* Encabezado */}
-        <div className="h-16 flex items-center justify-between px-5 border-b border-slate-800/80 bg-slate-950">
+        <div className="h-16 flex-shrink-0 flex items-center justify-between px-5 border-b border-slate-800/80 bg-slate-950">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white text-sm font-black shadow-md shadow-blue-600/20">
               E
@@ -349,7 +349,7 @@ export function Sidebar({ user, isOpen, onClose }: SidebarProps) {
         </nav>
 
         {/* Perfil del Usuario Activo */}
-        <div className="p-3 border-t border-slate-800/80 bg-slate-950">
+        <div className="p-3 border-t border-slate-800/80 bg-slate-950 flex-shrink-0">
           <div className="flex items-center gap-3 p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
             <div className="w-8 h-8 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center font-bold text-xs shrink-0 border border-blue-500/20">
               {user?.fullName?.charAt(0) || user?.username?.charAt(0) || "U"}

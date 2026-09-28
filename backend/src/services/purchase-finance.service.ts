@@ -147,7 +147,9 @@ export class PurchaseFinanceService {
       amortizedAmountUsd = Math.round(amortizedAmountUsd * 100) / 100;
 
       // 5. Validar que no supere la deuda restante en USD
-      const orderTotalUsd = Number(order.totalAmountUsd > 0 ? order.totalAmountUsd : order.total);
+      const orderTotalUsd = Number(
+        Number(order.totalAmountUsd) > 0 ? order.totalAmountUsd : order.total
+      );
       const alreadyPaidUsd = order.payments.reduce((acc, p) => {
         const pAmortized = Number(p.amortizedAmountUsd || 0);
         if (pAmortized > 0) return acc + pAmortized;
@@ -303,7 +305,9 @@ export class PurchaseFinanceService {
       throw new Error('Orden de compra no encontrada');
     }
 
-    const orderTotalUsd = Number(order.totalAmountUsd > 0 ? order.totalAmountUsd : order.total);
+    const orderTotalUsd = Number(
+      Number(order.totalAmountUsd) > 0 ? order.totalAmountUsd : order.total
+    );
 
     const totalPaidUsd = order.payments.reduce((acc, p) => {
       const pAmortized = Number(p.amortizedAmountUsd || 0);

@@ -289,11 +289,11 @@ export const getRecentConsumptions = async (
         notes: movement.notes,
         analyst: movement.createdBy,
         batch: {
-          lotNumber: item.batch.lotNumber,
+          lotNumber: item.batch?.lotNumber ?? 'N/A',
           product: {
-            sku: item.batch.product.sku,
-            name: item.batch.product.name,
-            unitOfMeasure: item.batch.product.baseUnit.abbreviation,
+            sku: item.batch?.product?.sku ?? 'N/A',
+            name: item.batch?.product?.name ?? 'Registro Financiero',
+            unitOfMeasure: item.batch?.product?.baseUnit?.abbreviation ?? 'UND',
           },
         },
       }))

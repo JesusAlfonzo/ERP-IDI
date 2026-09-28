@@ -32,6 +32,7 @@ export interface ProductDetail {
   baseUnit?: { id: number; name: string; abbreviation: string };
   purchaseUnit?: { id: number; name: string; abbreviation: string } | null;
   stockBatches?: BatchItem[];
+  batches?: BatchItem[];
 }
 
 // Dentro del objeto ProductService exportado:

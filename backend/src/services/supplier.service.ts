@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma.js';
 import { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
+import { serializeBigInt } from '../utils/serializer.js';
 
 export interface CreateSupplierDTO {
   rifOrId: string;
@@ -11,6 +12,7 @@ export interface CreateSupplierDTO {
 }
 
 export interface UpdateSupplierDTO {
+  rifOrId?: string;
   name?: string;
   contactName?: string | null;
   phone?: string | null;
@@ -32,10 +34,11 @@ export interface RegisterSupplierPaymentDTO {
 export class SupplierService {
   private static normalizePaymentToUsd(
     amount: number,
-    currencyId: number,
+    currencyId: number | null,
     exchangeRate: number
   ) {
-    return currencyId === 1
+    const effectiveCurrencyId = currencyId ?? 1;
+    return effectiveCurrencyId === 1
       ? amount
       : exchangeRate > 0
         ? amount / exchangeRate
@@ -48,7 +51,7 @@ export class SupplierService {
     exchangeRate: unknown;
     payments: {
       amount: unknown;
-      currencyId: number;
+      currencyId: number | null;
       exchangeRate: unknown;
       paymentDate?: Date;
     }[];
@@ -261,10 +264,10 @@ export class SupplierService {
       return payment;
     });
   }
-  static async listSuppliers(search?: string) {
+  static async listSuppliers(search?: string, includeInactive = false) {
     return prisma.supplier.findMany({
       where: {
-        isActive: true,
+        ...(includeInactive ? {} : { isActive: true }),
         ...(search
           ? {
               OR: [
@@ -282,13 +285,40 @@ export class SupplierService {
   static async getSupplierById(id: number) {
     const supplier = await prisma.supplier.findUnique({
       where: { id },
+      include: {
+        _count: {
+          select: { orders: true },
+        },
+        orders: {
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            paymentStatus: true,
+            receptionStatus: true,
+            total: true,
+            totalAmountUsd: true,
+            totalAmountBs: true,
+            currency: true,
+            createdAt: true,
+          },
+        },
+      },
     });
 
     if (!supplier) {
-      throw new Error('Proveedor no encontrado');
+      const error: any = new Error('Proveedor no encontrado');
+      error.statusCode = 404;
+      error.status = 'NOT_FOUND';
+      throw error;
     }
 
-    return supplier;
+    return serializeBigInt({
+      ...supplier,
+      rif: supplier.rifOrId,
+    });
   }
 
   static async createSupplier(data: CreateSupplierDTO) {
@@ -318,37 +348,87 @@ export class SupplierService {
     const supplier = await prisma.supplier.findUnique({ where: { id } });
 
     if (!supplier) {
-      throw new Error('Proveedor no encontrado');
+      const error: any = new Error('Proveedor no encontrado');
+      error.statusCode = 404;
+      error.status = 'NOT_FOUND';
+      throw error;
     }
 
-    return prisma.supplier.update({
+    if (data.rifOrId !== undefined) {
+      const cleanRif = data.rifOrId.trim().toUpperCase();
+      const duplicate = await prisma.supplier.findFirst({
+        where: {
+          rifOrId: cleanRif,
+          id: { not: id },
+        },
+      });
+
+      if (duplicate) {
+        const error: any = new Error(
+          'Ya existe otro proveedor registrado con este RIF o identificación'
+        );
+        error.statusCode = 409;
+        error.status = 'CONFLICT';
+        throw error;
+      }
+    }
+
+    const updated = await prisma.supplier.update({
       where: { id },
       data: {
+        ...(data.rifOrId !== undefined ? { rifOrId: data.rifOrId.trim().toUpperCase() } : {}),
         ...(data.name !== undefined ? { name: data.name.trim() } : {}),
         ...(data.contactName !== undefined
-          ? { contactName: data.contactName }
+          ? { contactName: data.contactName ? data.contactName.trim() : null }
           : {}),
-        ...(data.phone !== undefined ? { phone: data.phone } : {}),
+        ...(data.phone !== undefined ? { phone: data.phone ? data.phone.trim() : null } : {}),
         ...(data.email !== undefined
           ? { email: data.email ? data.email.trim().toLowerCase() : null }
           : {}),
-        ...(data.address !== undefined ? { address: data.address } : {}),
+        ...(data.address !== undefined ? { address: data.address ? data.address.trim() : null } : {}),
         ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
       },
+      include: {
+        _count: {
+          select: { orders: true },
+        },
+      },
+    });
+
+    return serializeBigInt({
+      ...updated,
+      rif: updated.rifOrId,
     });
   }
 
   static async deleteSupplier(id: number) {
-    const supplier = await prisma.supplier.findUnique({ where: { id } });
+    const supplier = await prisma.supplier.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: { orders: true },
+        },
+      },
+    });
 
     if (!supplier) {
-      throw new Error('Proveedor no encontrado');
+      const error: any = new Error('Proveedor no encontrado');
+      error.statusCode = 404;
+      error.status = 'NOT_FOUND';
+      throw error;
     }
 
-    // Desactivación lógica para no romper historial de órdenes
-    return prisma.supplier.update({
+    if (supplier._count.orders > 0) {
+      const error: any = new Error(
+        'No se puede eliminar el proveedor porque tiene órdenes de compra en el historial. Inactívelo en su lugar.'
+      );
+      error.statusCode = 409;
+      error.status = 'CONFLICT';
+      throw error;
+    }
+
+    return prisma.supplier.delete({
       where: { id },
-      data: { isActive: false },
     });
   }
 }

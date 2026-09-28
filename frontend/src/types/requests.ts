@@ -28,7 +28,8 @@ export interface InternalRequestItem {
   };
   batch?: {
     lotNumber: string;
-    currentQuantity: number;
+    currentQuantity?: number;
+    expirationDate?: string | null;
   } | null;
 }
 
@@ -59,6 +60,21 @@ export interface InternalRequest {
     username: string;
   } | null;
   items: InternalRequestItem[];
+  dispatchedMovement?: {
+    id: number;
+    referenceNumber: string;
+    createdAt?: string;
+    items?: Array<{
+      id?: number;
+      quantity?: number;
+      batch?: {
+        id?: number;
+        lotNumber: string;
+        expirationDate?: string | null;
+        productId?: number;
+      } | null;
+    }>;
+  } | null;
 }
 
 export interface CreateInternalRequestPayload {

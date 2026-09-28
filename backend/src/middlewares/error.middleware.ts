@@ -64,8 +64,19 @@ export const errorHandler = (
 
   // 3. Errores con mensaje estándar de la aplicación
   if (err instanceof Error) {
-    res.status(400).json({
-      status: 'BAD_REQUEST',
+    const statusCode = (err as any).statusCode || 400;
+    const status =
+      (err as any).status ||
+      (statusCode === 409
+        ? 'CONFLICT'
+        : statusCode === 404
+          ? 'NOT_FOUND'
+          : statusCode === 403
+            ? 'FORBIDDEN'
+            : 'BAD_REQUEST');
+
+    res.status(statusCode).json({
+      status,
       message: err.message,
     });
     return;

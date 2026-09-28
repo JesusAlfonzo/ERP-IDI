@@ -976,7 +976,7 @@ function RequestsContent() {
 
       {/* Modal: Nueva Solicitud */}
       {isNewModalOpen && canCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+        <div className="no-print print:hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[88vh] flex flex-col overflow-hidden">
             {/* Cabecera del modal fija */}
             <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0 bg-slate-50/70">
@@ -1176,7 +1176,7 @@ function RequestsContent() {
 
       {/* Modal: Despacho Multi-Lote y Despacho Parcial (Solo Almacén) */}
       {selectedForDispatch && isWarehouseStaff && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+        <div className="no-print print:hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-5xl w-full max-h-[88vh] flex flex-col overflow-hidden">
             {/* Cabecera del modal fija */}
             <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0 bg-slate-50/70">
@@ -1571,7 +1571,7 @@ function RequestsContent() {
 
       {/* Modal: Rechazo (Solo Almacén) */}
       {requestToReject && isWarehouseStaff && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+        <div className="no-print print:hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-5">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">

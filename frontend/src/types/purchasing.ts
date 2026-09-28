@@ -107,6 +107,26 @@ export interface Supplier {
   updatedAt?: string;
 }
 
+export interface SupplierOrderSummary {
+  id: string | number;
+  orderNumber: string;
+  status: string;
+  paymentStatus: string;
+  receptionStatus: string;
+  total: number | string;
+  totalAmountUsd?: number | string;
+  totalAmountBs?: number | string;
+  currency?: string;
+  createdAt: string;
+}
+
+export interface SupplierDetail extends Supplier {
+  orders?: SupplierOrderSummary[];
+  _count?: {
+    orders: number;
+  };
+}
+
 export interface CreateSupplierPayload {
   rifOrId: string;
   name: string;
@@ -115,6 +135,21 @@ export interface CreateSupplierPayload {
   email?: string;
   address?: string;
 }
+
+export interface UpdateSupplierPayload {
+  rifOrId?: string;
+  name?: string;
+  contactName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  isActive?: boolean;
+}
+
+export type Provider = Supplier;
+export type ProviderDetail = SupplierDetail;
+export type CreateProviderPayload = CreateSupplierPayload;
+export type UpdateProviderPayload = UpdateSupplierPayload;
 
 export interface RegisterPaymentPayload {
   supplierId: number;

@@ -122,9 +122,10 @@ export const getSuppliers = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { search } = req.query;
+    const { search, includeInactive } = req.query;
     const suppliers = await SupplierService.listSuppliers(
-      typeof search === 'string' ? search.trim() : undefined
+      typeof search === 'string' ? search.trim() : undefined,
+      includeInactive === 'true' || includeInactive === '1'
     );
 
     res.status(200).json({
@@ -157,7 +158,14 @@ export const getSupplierById = async (
       status: 'SUCCESS',
       data: supplier,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.statusCode === 404 || error.status === 'NOT_FOUND') {
+      res.status(404).json({
+        status: 'NOT_FOUND',
+        message: error.message || 'Proveedor no encontrado',
+      });
+      return;
+    }
     next(error);
   }
 };
@@ -178,9 +186,10 @@ export const createSupplier = async (
       return;
     }
 
-    const { rifOrId, name, contactName, phone, email, address } = req.body;
+    const { rifOrId, rif, name, contactName, phone, email, address } = req.body;
+    const finalRif = rifOrId ?? rif;
 
-    if (!rifOrId || !name) {
+    if (!finalRif || !name) {
       res.status(400).json({
         status: 'BAD_REQUEST',
         message: 'El RIF/ID y la Razón Social (nombre) son obligatorios',
@@ -189,7 +198,7 @@ export const createSupplier = async (
     }
 
     const supplier = await SupplierService.createSupplier({
-      rifOrId: String(rifOrId),
+      rifOrId: String(finalRif),
       name: String(name),
       contactName: contactName ? String(contactName) : null,
       phone: phone ? String(phone) : null,
@@ -223,9 +232,12 @@ export const updateSupplier = async (
     }
 
     const { id } = req.params;
-    const { name, contactName, phone, email, address, isActive } = req.body;
+    const { rifOrId, rif, name, contactName, phone, email, address, isActive } =
+      req.body;
+    const finalRif = rifOrId ?? rif;
 
     const supplier = await SupplierService.updateSupplier(Number(id), {
+      ...(finalRif !== undefined ? { rifOrId: String(finalRif) } : {}),
       ...(name !== undefined ? { name: String(name) } : {}),
       ...(contactName !== undefined
         ? { contactName: contactName ? String(contactName) : null }
@@ -243,7 +255,21 @@ export const updateSupplier = async (
       message: 'Proveedor actualizado correctamente',
       data: supplier,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.statusCode === 409 || error.status === 'CONFLICT') {
+      res.status(409).json({
+        status: 'CONFLICT',
+        message: error.message,
+      });
+      return;
+    }
+    if (error.statusCode === 404 || error.status === 'NOT_FOUND') {
+      res.status(404).json({
+        status: 'NOT_FOUND',
+        message: error.message,
+      });
+      return;
+    }
     next(error);
   }
 };
@@ -255,10 +281,11 @@ export const deleteSupplier = async (
 ): Promise<void> => {
   try {
     const userRoles = req.user?.roles ?? [];
-    if (!isPurchasingOrAdmin(userRoles)) {
+    if (!userRoles.includes('ADMINISTRADOR')) {
       res.status(403).json({
         status: 'FORBIDDEN',
-        message: 'No posee privilegios para desactivar proveedores.',
+        message:
+          'Solo permitido para el rol ADMINISTRADOR.',
       });
       return;
     }
@@ -268,9 +295,23 @@ export const deleteSupplier = async (
 
     res.status(200).json({
       status: 'SUCCESS',
-      message: 'Proveedor desactivado correctamente',
+      message: 'Proveedor eliminado correctamente',
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.statusCode === 409 || error.status === 'CONFLICT') {
+      res.status(409).json({
+        status: 'CONFLICT',
+        message: error.message,
+      });
+      return;
+    }
+    if (error.statusCode === 404 || error.status === 'NOT_FOUND') {
+      res.status(404).json({
+        status: 'NOT_FOUND',
+        message: error.message,
+      });
+      return;
+    }
     next(error);
   }
 };

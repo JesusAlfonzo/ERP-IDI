@@ -90,6 +90,10 @@ export default function ProductDetailPage() {
   const totalPurchasePacks =
     conversionFactor > 1 ? (totalUnits / conversionFactor).toFixed(2) : null;
   const isBelowMinStock = totalUnits <= product.minStockAlert;
+  const batches =
+    (product.stockBatches && product.stockBatches.length > 0
+      ? product.stockBatches
+      : product.batches) || [];
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -214,7 +218,7 @@ export default function ProductDetailPage() {
             Lotes Activos Registrados
           </span>
           <div className="text-2xl font-bold text-slate-900 font-mono">
-            {product.stockBatches?.length ?? 0}
+            {batches.length}
           </div>
           <span className="text-[11px] text-slate-400 block">
             Custodia total en almacenes
@@ -280,7 +284,7 @@ export default function ProductDetailPage() {
           </div>
 
           <div className="p-4 flex-1 overflow-x-auto">
-            {!product.stockBatches || product.stockBatches.length === 0 ? (
+            {batches.length === 0 ? (
               <div className="h-48 flex flex-col items-center justify-center text-slate-400 space-y-2">
                 <Boxes className="w-10 h-10 stroke-[1.5]" />
                 <p className="text-xs">
@@ -300,7 +304,7 @@ export default function ProductDetailPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {product.stockBatches.map((batch, index) => {
+                  {batches.map((batch, index) => {
                     const costUsd = Number(batch.unitCostUsd);
                     const costVes =
                       vesRate > 0 ? (costUsd * vesRate).toFixed(2) : null;

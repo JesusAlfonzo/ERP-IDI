@@ -117,6 +117,10 @@ async function main() {
       name: 'SOLICITANTE',
       description: 'Creación de solicitudes semanales de insumos',
     },
+    {
+      name: 'ADMINISTRACION',
+      description: 'Gestión administrativa, tesorería, pagos y preórdenes',
+    },
   ];
 
   const createdRoles: Record<string, number> = {};
@@ -209,6 +213,67 @@ async function main() {
   }
   console.log('✅ Categorías maestras sembradas');
 
+  // 8. Departamentos Institucionales
+  const departmentsData = [
+    {
+      code: 'INM-GEN',
+      name: 'Inmunología General',
+      description: 'Área analítica de inmunología clínica',
+      isActive: true,
+    },
+    {
+      code: 'INM-CEL',
+      name: 'Inmunología Celular',
+      description: 'Área analítica de citometría y cultivos celulares',
+      isActive: true,
+    },
+    {
+      code: 'INM-PAT',
+      name: 'Inmunopatología',
+      description: 'Estudios histológicos e inmunohistoquímica',
+      isActive: true,
+    },
+    {
+      code: 'ALE-INM',
+      name: 'Alergia e Inmunología Clínica',
+      description: 'Atención a pacientes y pruebas de hipersensibilidad',
+      isActive: true,
+    },
+    {
+      code: 'LAB-GEN',
+      name: 'Laboratorio General',
+      description: 'Laboratorio clínico de toma y procesamiento de muestras',
+      isActive: true,
+    },
+    {
+      code: 'INV-DES',
+      name: 'Investigación y Desarrollo (I+D)',
+      description: 'Proyectos científicos y ensayos de investigación',
+      isActive: true,
+    },
+    {
+      code: 'SIS-INF',
+      name: 'Sistemas e Informática',
+      description: 'Soporte tecnológico e infraestructura institucional',
+      isActive: true,
+    },
+    {
+      code: 'ADM-FIN',
+      name: 'Administración y Finanzas',
+      description: 'Dirección administrativa, compras y logística',
+      isActive: true,
+    },
+  ];
+
+  for (const dep of departmentsData) {
+    await prisma.department.upsert({
+      where: { code: dep.code },
+      update: {},
+      create: dep,
+    });
+  }
+  console.log('✅ Departamentos institucionales sembrados');
+
   // 8. Usuario Administrador Inicial
   const adminPasswordHash = await bcrypt.hash('Admin1234!', 10);
   const adminUser = await prisma.user.upsert({
@@ -240,6 +305,42 @@ async function main() {
     },
   });
   console.log('✅ Usuario Superadmin sembrado (admin@idi.ucv.ve / Admin1234!)');
+
+  // 9. Tasas de Cambio BCV Iniciales
+  const vesCurrency = await prisma.currency.findUnique({ where: { code: 'VES' } });
+  if (vesCurrency) {
+    const existingExchange = await prisma.currencyExchange.findFirst({
+      where: { currencyId: vesCurrency.id },
+    });
+    if (!existingExchange) {
+      await prisma.currencyExchange.create({
+        data: {
+          currencyId: vesCurrency.id,
+          rate: 75.0,
+          effectiveDate: new Date(),
+          createdById: adminUser.id,
+        },
+      });
+    }
+  }
+
+  const eurCurrency = await prisma.currency.findUnique({ where: { code: 'EUR' } });
+  if (eurCurrency) {
+    const existingEurExchange = await prisma.currencyExchange.findFirst({
+      where: { currencyId: eurCurrency.id },
+    });
+    if (!existingEurExchange) {
+      await prisma.currencyExchange.create({
+        data: {
+          currencyId: eurCurrency.id,
+          rate: 81.5,
+          effectiveDate: new Date(),
+          createdById: adminUser.id,
+        },
+      });
+    }
+  }
+  console.log('✅ Tasas de cambio iniciales sembradas (BCV USD: 75.00 Bs., EUR: 81.50 Bs.)');
 
   console.log('🚀 Siembra de datos completada exitosamente.');
 }

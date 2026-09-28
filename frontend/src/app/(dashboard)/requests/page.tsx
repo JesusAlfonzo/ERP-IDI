@@ -13,6 +13,10 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { RequestClientService } from "@/services/request.service";
 import { InventoryClientService } from "@/services/inventory.service";
+import {
+  InventoryMasterService,
+  type DepartmentItem,
+} from "@/services/inventory-master.service";
 import { AuthService } from "@/services/auth.service";
 import { ProductCombobox } from "@/components/requests/ProductCombobox";
 import { RequestWindowAdminCard } from "@/components/requests/RequestWindowAdminCard";
@@ -73,14 +77,6 @@ const STATUS_CONFIG: Record<
   },
 };
 
-const SECTIONS = [
-  "Inmunogenética",
-  "Inmunología Celular",
-  "Inmunopatología",
-  "Alergia e Inmunología Clínica",
-  "Laboratorio General",
-  "Investigación",
-];
 
 interface FormItem {
   productId: number;
@@ -138,8 +134,10 @@ function RequestsContent() {
     canCreateRole && (isWarehouseStaff || (windowStatus?.canCreate ?? false));
 
   // Modal Nueva Solicitud
+  const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | "">("");
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
-  const [departmentSection, setDepartmentSection] = useState(SECTIONS[0]);
+  const [departmentSection, setDepartmentSection] = useState("");
   const [justification, setJustification] = useState("");
   const [formItems, setFormItems] = useState<FormItem[]>([
     { productId: 0, requestedQuantity: 1 },
@@ -249,7 +247,7 @@ function RequestsContent() {
   const refreshData = async () => {
     setLoading(true);
     try {
-      const [reqs, prods, batches, cats, wStatus] = await Promise.all([
+      const [reqs, prods, batches, cats, wStatus, deps] = await Promise.all([
         RequestClientService.getRequests(statusFilter || undefined).catch(
           () => []
         ),
@@ -259,12 +257,18 @@ function RequestsContent() {
           : Promise.resolve([]),
         InventoryClientService.getCategories().catch(() => []),
         RequestClientService.getWindowStatus().catch(() => null),
+        InventoryMasterService.getDepartments(true).catch(() => []),
       ]);
       setRequests(reqs);
       setProducts(prods);
       setAvailableBatches(batches);
       setCategories(cats);
       setWindowStatus(wStatus);
+      setDepartments(deps);
+      if (deps.length > 0) {
+        setSelectedDepartmentId((prev) => (prev !== "" ? prev : deps[0].id));
+        setDepartmentSection((prev) => (prev ? prev : deps[0].name));
+      }
     } finally {
       setLoading(false);
     }
@@ -281,7 +285,7 @@ function RequestsContent() {
     startTransition(() => {
       void (async () => {
         try {
-          const [reqs, prods, batches, cats, wStatus] = await Promise.all([
+          const [reqs, prods, batches, cats, wStatus, deps] = await Promise.all([
             RequestClientService.getRequests(statusFilter || undefined).catch(
               () => []
             ),
@@ -291,6 +295,7 @@ function RequestsContent() {
               : Promise.resolve([]),
             InventoryClientService.getCategories().catch(() => []),
             RequestClientService.getWindowStatus().catch(() => null),
+            InventoryMasterService.getDepartments(true).catch(() => []),
           ]);
           if (isMounted) {
             setRequests(reqs);
@@ -298,6 +303,11 @@ function RequestsContent() {
             setAvailableBatches(batches);
             setCategories(cats);
             setWindowStatus(wStatus);
+            setDepartments(deps);
+            if (deps.length > 0) {
+              setSelectedDepartmentId((prev) => (prev !== "" ? prev : deps[0].id));
+              setDepartmentSection((prev) => (prev ? prev : deps[0].name));
+            }
             setLoading(false);
 
             // Si vino query param de despacho y es personal de almacén, abrir modal
@@ -404,10 +414,19 @@ function RequestsContent() {
       return;
     }
 
+    if (!selectedDepartmentId) {
+      setFeedback({
+        status: "error",
+        message: "Debe seleccionar un área o departamento solicitante.",
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
       await RequestClientService.createRequest({
-        departmentSection,
+        departmentId: Number(selectedDepartmentId),
+        departmentSection: departmentSection || undefined,
         justification: justification.trim(),
         items: formItems,
       });
@@ -992,16 +1011,23 @@ function RequestsContent() {
               <div className="p-6 overflow-y-auto pr-3 space-y-5 flex-1 scroll-smooth">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Área Solicitante
+                    Área / Departamento Solicitante *
                   </label>
                   <select
-                    value={departmentSection}
-                    onChange={(e) => setDepartmentSection(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-medium"
+                    value={selectedDepartmentId}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setSelectedDepartmentId(val);
+                      const dep = departments.find((d) => d.id === val);
+                      if (dep) setDepartmentSection(dep.name);
+                    }}
+                    required
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer"
                   >
-                    {SECTIONS.map((sec) => (
-                      <option key={sec} value={sec}>
-                        {sec}
+                    <option value="">-- Seleccione un departamento activo --</option>
+                    {departments.map((dep) => (
+                      <option key={dep.id} value={dep.id}>
+                        {dep.code} - {dep.name}
                       </option>
                     ))}
                   </select>

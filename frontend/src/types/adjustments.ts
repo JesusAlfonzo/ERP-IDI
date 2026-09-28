@@ -4,14 +4,24 @@ export type AdjustmentType =
   | "MERMA_ROTURA"
   | "MERMA_VENCIMIENTO";
 
+export interface InventoryAdjustmentItemPayload {
+  batchId?: number;
+  newBatch?: {
+    productId: number;
+    lotNumber: string;
+    expirationDate?: string | null;
+    locationId: number;
+    costPrice?: number;
+    origin?: string;
+  };
+  action: "INCREMENTO" | "DECREMENTO";
+  quantity: number;
+  reason?: string;
+}
+
 export interface InventoryAdjustmentPayload {
   notes?: string;
-  items: {
-    batchId: number;
-    action: "INCREMENTO" | "DECREMENTO";
-    quantity: number;
-    reason?: string;
-  }[];
+  items: InventoryAdjustmentItemPayload[];
 }
 
 export interface AdjustmentResponseData {

@@ -50,7 +50,25 @@ export const createStockAdjustment = async (
         );
       }
       return {
-        batchId: BigInt(it.batchId),
+        batchId:
+          it.batchId !== undefined && it.batchId !== null && it.batchId !== ''
+            ? BigInt(it.batchId)
+            : undefined,
+        newBatch: it.newBatch
+          ? {
+              productId: BigInt(it.newBatch.productId),
+              lotNumber: String(it.newBatch.lotNumber),
+              expirationDate: it.newBatch.expirationDate
+                ? new Date(it.newBatch.expirationDate)
+                : null,
+              locationId: Number(it.newBatch.locationId),
+              costPrice:
+                it.newBatch.costPrice !== undefined
+                  ? Number(it.newBatch.costPrice)
+                  : 0,
+              origin: it.newBatch.origin ? String(it.newBatch.origin) : 'Ajuste',
+            }
+          : undefined,
         action: it.action as AdjustmentAction,
         quantity: Number(it.quantity),
         reason: it.reason ? String(it.reason) : null,

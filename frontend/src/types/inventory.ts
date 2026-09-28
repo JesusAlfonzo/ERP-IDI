@@ -38,6 +38,7 @@ export interface StockBatch {
   createdAt: string;
   locationId?: number;
   location?: Location;
+  origin?: string | null;
 }
 
 export interface Product {

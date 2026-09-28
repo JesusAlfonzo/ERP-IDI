@@ -144,8 +144,10 @@ export default function ProductDetailPage() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => router.push("/inventory/adjustments")}
-            className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-xs"
+            onClick={() =>
+              router.push(`/inventory/adjustments?productId=${product.id}`)
+            }
+            className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-xs cursor-pointer"
           >
             Ajustar Inventario
           </button>

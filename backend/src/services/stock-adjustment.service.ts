@@ -24,7 +24,15 @@ export interface MovementFilterOptions {
 }
 
 export interface StockAdjustmentItemDTO {
-  batchId: bigint;
+  batchId?: bigint | undefined;
+  newBatch?: {
+    productId: bigint;
+    lotNumber: string;
+    expirationDate?: Date | null | undefined;
+    locationId: number;
+    costPrice?: number | undefined;
+    origin?: string | undefined;
+  } | undefined;
   action: AdjustmentAction;
   quantity: number;
   reason?: string | null;
@@ -45,11 +53,11 @@ export interface ProcessAdjustmentDTO {
 
 export class StockAdjustmentService {
   /**
-   * Procesa un ajuste manual de inventario (cuadre de conteo físico o corrección)
+   * Procesa un ajuste manual de inventario (cuadre de conteo físico, corrección, donación o inventario inicial)
    */
   static async processAdjustment(data: ProcessAdjustmentDTO) {
     if (!data.items || data.items.length === 0) {
-      throw new Error('Debe especificar al menos un lote a ajustar');
+      throw new Error('Debe especificar al menos un ítem a ajustar');
     }
 
     return prisma.$transaction(async (tx) => {
@@ -77,51 +85,112 @@ export class StockAdjustmentService {
           );
         }
 
-        const batch = await tx.stockBatch.findUnique({
-          where: { id: item.batchId },
-          include: { product: true },
-        });
+        let updatedBatch;
+        let currentQty = 0;
+        let newQty = 0;
 
-        if (!batch) {
-          throw new Error(`Lote con ID ${item.batchId} no existe`);
-        }
-
-        const currentQty = Number(batch.currentQuantity);
-        let newQty = currentQty;
-
-        if (item.action === 'DECREMENTO') {
-          if (item.quantity > currentQty) {
+        if (item.newBatch) {
+          if (item.action !== 'INCREMENTO') {
             throw new Error(
-              `Cantidad a descontar (${item.quantity}) excede el stock actual (${currentQty}) en el lote ${batch.lotNumber}`
+              'La creación de un nuevo lote solo está permitida en ajustes de INCREMENTO (entrada)'
             );
           }
-          newQty = currentQty - item.quantity;
-        } else if (item.action === 'INCREMENTO') {
-          newQty = currentQty + item.quantity;
+
+          const trimmedLot = item.newBatch.lotNumber.trim().toUpperCase();
+
+          const existingBatch = await tx.stockBatch.findFirst({
+            where: {
+              productId: item.newBatch.productId,
+              lotNumber: trimmedLot,
+              locationId: item.newBatch.locationId,
+            },
+          });
+
+          if (existingBatch) {
+            throw new Error(
+              `El lote #${trimmedLot} ya existe para este producto en la ubicación seleccionada. Seleccione el lote existente para incrementar existencias.`
+            );
+          }
+
+          const product = await tx.product.findUnique({
+            where: { id: item.newBatch.productId },
+          });
+
+          if (!product) {
+            throw new Error(
+              `Producto con ID ${item.newBatch.productId} no existe`
+            );
+          }
+
+          updatedBatch = await tx.stockBatch.create({
+            data: {
+              productId: item.newBatch.productId,
+              locationId: item.newBatch.locationId,
+              lotNumber: trimmedLot,
+              currentQuantity: item.quantity,
+              costPrice: item.newBatch.costPrice ?? 0,
+              expirationDate: item.newBatch.expirationDate ?? null,
+              status: BatchStatus.DISPONIBLE,
+              origin: item.newBatch.origin || 'Ajuste',
+            },
+            include: { product: true },
+          });
+
+          currentQty = 0;
+          newQty = item.quantity;
+        } else {
+          if (!item.batchId) {
+            throw new Error(
+              'Debe especificar un batchId o los datos de un newBatch'
+            );
+          }
+
+          const batch = await tx.stockBatch.findUnique({
+            where: { id: item.batchId },
+            include: { product: true },
+          });
+
+          if (!batch) {
+            throw new Error(`Lote con ID ${item.batchId} no existe`);
+          }
+
+          currentQty = Number(batch.currentQuantity);
+
+          if (item.action === 'DECREMENTO') {
+            if (item.quantity > currentQty) {
+              throw new Error(
+                `Cantidad a descontar (${item.quantity}) excede el stock actual (${currentQty}) en el lote ${batch.lotNumber}`
+              );
+            }
+            newQty = currentQty - item.quantity;
+          } else if (item.action === 'INCREMENTO') {
+            newQty = currentQty + item.quantity;
+          }
+
+          const nextStatus =
+            newQty === 0
+              ? BatchStatus.AGOTADO
+              : batch.status === BatchStatus.AGOTADO && newQty > 0
+                ? BatchStatus.DISPONIBLE
+                : batch.status;
+
+          updatedBatch = await tx.stockBatch.update({
+            where: { id: batch.id },
+            data: {
+              currentQuantity: newQty,
+              status: nextStatus,
+            },
+            include: { product: true },
+          });
         }
-
-        const nextStatus =
-          newQty === 0
-            ? BatchStatus.AGOTADO
-            : batch.status === BatchStatus.AGOTADO && newQty > 0
-              ? BatchStatus.DISPONIBLE
-              : batch.status;
-
-        const updatedBatch = await tx.stockBatch.update({
-          where: { id: batch.id },
-          data: {
-            currentQuantity: newQty,
-            status: nextStatus,
-          },
-        });
 
         const movementItem = await tx.stockMovementItem.create({
           data: {
             stockMovementId: movement.id,
-            batchId: batch.id,
+            batchId: updatedBatch.id,
             quantity:
               item.action === 'INCREMENTO' ? item.quantity : -item.quantity,
-            unitCost: batch.costPrice,
+            unitCost: updatedBatch.costPrice,
           },
         });
 

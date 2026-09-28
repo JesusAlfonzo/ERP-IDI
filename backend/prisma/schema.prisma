@@ -584,6 +584,7 @@ model StockBatch {
   costPrice       Decimal     @map("cost_price") @db.Decimal(18, 4)
   expirationDate  DateTime?   @map("expiration_date") @db.Date
   status          BatchStatus @default(DISPONIBLE)
+  origin          String?     @default("ORDEN_COMPRA") @map("origin")
   createdAt       DateTime    @default(now()) @map("created_at")
   updatedAt       DateTime    @updatedAt @map("updated_at")
 

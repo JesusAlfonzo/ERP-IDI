@@ -25,7 +25,15 @@ export interface MovementFilterDTO {
 }
 
 export interface InventoryAdjustmentItemDTO {
-  batchId: number;
+  batchId?: number | bigint | undefined;
+  newBatch?: {
+    productId: number | bigint;
+    lotNumber: string;
+    expirationDate?: string | Date | null | undefined;
+    locationId: number;
+    costPrice?: number | undefined;
+    origin?: string | undefined;
+  } | undefined;
   action: 'INCREMENTO' | 'DECREMENTO';
   quantity: number;
   reason?: string;
@@ -415,49 +423,94 @@ export class InventoryService {
           throw new Error('La cantidad ajustada debe ser mayor a 0');
         }
 
-        const batch = await tx.stockBatch.findUnique({
-          where: { id: BigInt(item.batchId) },
-        });
-
-        if (!batch) {
-          throw new Error(`El lote #${item.batchId} no fue encontrado`);
-        }
-
-        const currentQty = Number(batch.currentQuantity);
-        let newQty = currentQty;
+        let updatedBatch;
         let deltaQty = item.quantity;
 
-        if (item.action === 'DECREMENTO') {
-          if (item.quantity > currentQty) {
+        if (item.newBatch) {
+          if (item.action !== 'INCREMENTO') {
             throw new Error(
-              `El decremento (${item.quantity}) supera el saldo actual del lote (${currentQty})`
+              'La creación de un nuevo lote solo está permitida en ajustes de INCREMENTO'
             );
           }
-          newQty = currentQty - item.quantity;
-          deltaQty = -item.quantity;
-        } else {
-          newQty = currentQty + item.quantity;
-        }
 
-        const updatedBatch = await tx.stockBatch.update({
-          where: { id: batch.id },
-          data: {
-            currentQuantity: newQty,
-            status:
-              newQty === 0
-                ? BatchStatus.AGOTADO
-                : batch.status === BatchStatus.AGOTADO && newQty > 0
-                  ? BatchStatus.DISPONIBLE
-                  : batch.status,
-          },
-        });
+          const trimmedLot = item.newBatch.lotNumber.trim().toUpperCase();
+
+          const existingBatch = await tx.stockBatch.findFirst({
+            where: {
+              productId: BigInt(item.newBatch.productId),
+              lotNumber: trimmedLot,
+              locationId: item.newBatch.locationId,
+            },
+          });
+
+          if (existingBatch) {
+            throw new Error(
+              `El lote #${trimmedLot} ya existe para este producto en la ubicación seleccionada.`
+            );
+          }
+
+          updatedBatch = await tx.stockBatch.create({
+            data: {
+              productId: BigInt(item.newBatch.productId),
+              locationId: item.newBatch.locationId,
+              lotNumber: trimmedLot,
+              currentQuantity: item.quantity,
+              costPrice: item.newBatch.costPrice ?? 0,
+              expirationDate: item.newBatch.expirationDate
+                ? new Date(item.newBatch.expirationDate)
+                : null,
+              status: BatchStatus.DISPONIBLE,
+              origin: item.newBatch.origin || 'Ajuste',
+            },
+          });
+        } else {
+          if (!item.batchId) {
+            throw new Error('Debe especificar un batchId o los datos de newBatch');
+          }
+
+          const batch = await tx.stockBatch.findUnique({
+            where: { id: BigInt(item.batchId) },
+          });
+
+          if (!batch) {
+            throw new Error(`El lote #${item.batchId} no fue encontrado`);
+          }
+
+          const currentQty = Number(batch.currentQuantity);
+          let newQty = currentQty;
+
+          if (item.action === 'DECREMENTO') {
+            if (item.quantity > currentQty) {
+              throw new Error(
+                `El decremento (${item.quantity}) supera el saldo actual del lote (${currentQty})`
+              );
+            }
+            newQty = currentQty - item.quantity;
+            deltaQty = -item.quantity;
+          } else {
+            newQty = currentQty + item.quantity;
+          }
+
+          updatedBatch = await tx.stockBatch.update({
+            where: { id: batch.id },
+            data: {
+              currentQuantity: newQty,
+              status:
+                newQty === 0
+                  ? BatchStatus.AGOTADO
+                  : batch.status === BatchStatus.AGOTADO && newQty > 0
+                    ? BatchStatus.DISPONIBLE
+                    : batch.status,
+            },
+          });
+        }
 
         await tx.stockMovementItem.create({
           data: {
             stockMovementId: movement.id,
-            batchId: batch.id,
+            batchId: updatedBatch.id,
             quantity: deltaQty,
-            unitCost: batch.costPrice,
+            unitCost: updatedBatch.costPrice,
           },
         });
 

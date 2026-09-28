@@ -34,3 +34,21 @@ export const getAuthTokenForRoles = (roles: string[]): string => {
 
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
 };
+
+/**
+ * Helper para asegurar la existencia de un Departamento de pruebas en la base de datos
+ */
+export const getOrCreateTestDepartment = async () => {
+  const { prisma } = await import('../src/config/prisma.js');
+  return prisma.department.upsert({
+    where: { code: 'DEP-TEST' },
+    update: {},
+    create: {
+      code: 'DEP-TEST',
+      name: 'Departamento de Pruebas',
+      description: 'Área reservada para tests de integración',
+      isActive: true,
+    },
+  });
+};
+

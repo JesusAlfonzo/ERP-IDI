@@ -24,7 +24,7 @@ export function ProductCombobox({
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] =
-    useState<number | null>(null);
+    useState<string>("");
 
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -32,6 +32,11 @@ export function ProductCombobox({
   const selectedProduct = useMemo(
     () => products.find((p) => p.id === selectedProductId),
     [products, selectedProductId]
+  );
+
+  const hasUnassignedCategory = useMemo(
+    () => products.some((p) => !p.categoryId && !p.category),
+    [products]
   );
 
   // Cerrar al hacer clic fuera del componente
@@ -67,11 +72,12 @@ export function ProductCombobox({
 
     return products.filter((p) => {
       // Filtro de categoría
-      if (
-        selectedCategoryFilter !== null &&
-        p.categoryId !== selectedCategoryFilter
-      ) {
-        return false;
+      if (selectedCategoryFilter !== "") {
+        if (selectedCategoryFilter === "unassigned") {
+          if (p.categoryId || p.category) return false;
+        } else {
+          if (String(p.categoryId) !== selectedCategoryFilter) return false;
+        }
       }
 
       // Filtro de texto por Nombre, SKU o Nombre de Categoría
@@ -163,54 +169,41 @@ export function ProductCombobox({
       {/* Popover / Menú desplegable */}
       {isOpen && (
         <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden text-xs max-h-80 flex flex-col">
-          {/* Barra de búsqueda reactiva */}
+          {/* Barra de búsqueda y selector de categorías */}
           <div className="p-2 border-b border-slate-100 bg-slate-50/70">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Filtrar por nombre, código SKU o categoría..."
-                className="w-full bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            {/* Filtros rápidos por Categoría */}
-            {categories.length > 0 && (
-              <div className="flex items-center gap-1 overflow-x-auto pt-2 scrollbar-none">
-                <button
-                  type="button"
-                  onClick={() => setSelectedCategoryFilter(null)}
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap transition-colors cursor-pointer ${
-                    selectedCategoryFilter === null
-                      ? "bg-blue-600 text-white"
-                      : "bg-slate-200 text-slate-700 hover:bg-slate-300"
-                  }`}
+            <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+              {/* Select nativo estilizado */}
+              <div className="w-full sm:w-44 shrink-0">
+                <select
+                  value={selectedCategoryFilter}
+                  onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                  className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                 >
-                  Todas las categorías
-                </button>
-                {categories.map((cat) => (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() =>
-                      setSelectedCategoryFilter((prev) =>
-                        prev === cat.id ? null : cat.id
-                      )
-                    }
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap transition-colors cursor-pointer ${
-                      selectedCategoryFilter === cat.id
-                        ? "bg-blue-600 text-white"
-                        : "bg-slate-200 text-slate-700 hover:bg-slate-300"
-                    }`}
-                  >
-                    {cat.name}
-                  </button>
-                ))}
+                  <option value="">Todas las categorías</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={String(cat.id)}>
+                      {cat.name}
+                    </option>
+                  ))}
+                  {hasUnassignedCategory && (
+                    <option value="unassigned">Sin asignar</option>
+                  )}
+                </select>
               </div>
-            )}
+
+              {/* Input de Búsqueda reactiva */}
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Buscar insumo por nombre o SKU..."
+                  className="w-full bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Lista de productos encontrados */}
@@ -220,14 +213,14 @@ export function ProductCombobox({
                 No se encontraron insumos o reactivos disponibles.
               </div>
             ) : (
-              filteredProducts.map((p) => {
+              filteredProducts.map((p, index) => {
                 const isSelected = p.id === selectedProductId;
                 const unit =
                   p.unitOfMeasure || p.baseUnit?.abbreviation || "UND";
 
                 return (
                   <div
-                    key={p.id}
+                    key={`${p.id}-${index}`}
                     onClick={() => handleSelect(p.id)}
                     className={`p-2.5 flex items-center justify-between hover:bg-blue-50/60 cursor-pointer transition-colors ${
                       isSelected ? "bg-blue-50 text-blue-900" : "text-slate-800"

@@ -8,6 +8,7 @@ import {
   DashboardClientService,
   SystemNotification,
 } from "@/services/dashboard.service";
+import { toast } from "@/utils/toast";
 import type { AuthUser } from "@/types/auth";
 import {
   Menu,
@@ -33,12 +34,30 @@ interface NavbarProps {
   onOpenSidebar: () => void;
 }
 
+interface LiveRateInfo {
+  usd: number | null;
+  eur: number | null;
+  effectiveDate: string | null;
+  lastUpdated: string | null;
+  loading: boolean;
+  error: boolean;
+}
+
 export function Navbar({ user, onOpenSidebar }: NavbarProps) {
   const router = useRouter();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
   const [currencies, setCurrencies] = useState<CurrencyItem[]>([]);
+  const [liveRates, setLiveRates] = useState<LiveRateInfo>({
+    usd: null,
+    eur: null,
+    effectiveDate: null,
+    lastUpdated: null,
+    loading: true,
+    error: false,
+  });
+  const [refreshingRates, setRefreshingRates] = useState(false);
   const [showRateModal, setShowRateModal] = useState(false);
   const [selectedCurrencyId, setSelectedCurrencyId] = useState<number | "">("");
   const [newRate, setNewRate] = useState("");
@@ -68,12 +87,85 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
   const canEditRate =
     user?.roles?.includes("ADMINISTRADOR") || user?.roles?.includes("COMPRAS");
 
-  const loadCurrencies = async () => {
+  const loadCurrencies = useCallback(async () => {
     try {
       const data = await CurrencyService.getCurrencies();
       setCurrencies(data);
+      return data;
     } catch (err) {
       console.error("Error al cargar monedas", err);
+      return [];
+    }
+  }, []);
+
+  const loadLiveRates = useCallback(async () => {
+    try {
+      const data = await CurrencyService.getCurrentRates();
+      if (data) {
+        const usd =
+          Number(
+            data.usdRate ??
+              data.bcvRate ??
+              data.rate ??
+              data.USD ??
+              data.rates?.USD ??
+              data.VES ??
+              0
+          ) || null;
+
+        const eur =
+          Number(data.eurRate ?? data.EUR ?? data.rates?.EUR ?? 0) || null;
+
+        const effectiveDate = data.effectiveDate || data.date || null;
+        const lastUpdated = data.lastUpdated || null;
+
+        setLiveRates({
+          usd,
+          eur,
+          effectiveDate,
+          lastUpdated,
+          loading: false,
+          error: false,
+        });
+        return;
+      }
+    } catch (err) {
+      console.error("Error al cargar tasas de cambio en vivo en Navbar", err);
+    }
+
+    // Fallback: consultar listado general de monedas con última tasa
+    try {
+      const currs = await CurrencyService.getCurrencies();
+      setCurrencies(currs);
+      const ves = currs.find((c) => c.code === "VES" || c.code === "VED");
+      const eur = currs.find((c) => c.code === "EUR");
+      const usdVal = ves?.latestRate ? Number(ves.latestRate) : null;
+      const eurVal = eur?.latestRate ? Number(eur.latestRate) : null;
+
+      setLiveRates((prev) => ({
+        usd: usdVal ?? prev.usd,
+        eur: eurVal ?? prev.eur,
+        effectiveDate: ves?.effectiveDate
+          ? String(ves.effectiveDate).split("T")[0]
+          : prev.effectiveDate,
+        lastUpdated: ves?.effectiveDate
+          ? String(ves.effectiveDate)
+          : prev.lastUpdated,
+        loading: false,
+        error: !usdVal && !prev.usd,
+      }));
+    } catch (fallbackErr) {
+      console.error("Error en fallback de tasas de Navbar", fallbackErr);
+      setLiveRates((prev) => ({ ...prev, loading: false, error: true }));
+    }
+  }, []);
+
+  const handleManualRefresh = async () => {
+    setRefreshingRates(true);
+    try {
+      await Promise.all([loadLiveRates(), loadCurrencies()]);
+    } finally {
+      setTimeout(() => setRefreshingRates(false), 500);
     }
   };
 
@@ -87,17 +179,40 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
     startTransition(() => {
       void loadCurrencies();
+      void loadLiveRates();
       void loadNotifications(dismissedNotifIds);
     });
 
-    const interval = window.setInterval(() => {
-      void loadNotifications(dismissedNotifIds);
+    const notifInterval = window.setInterval(() => {
+      if (isMounted) {
+        void loadNotifications(dismissedNotifIds);
+      }
     }, 45000);
 
-    return () => window.clearInterval(interval);
-  }, [loadNotifications, dismissedNotifIds]);
+    const ratesInterval = window.setInterval(() => {
+      if (isMounted) {
+        void loadLiveRates();
+      }
+    }, 60000);
+
+    const handleExternalRateUpdate = () => {
+      if (isMounted) {
+        void loadLiveRates();
+        void loadCurrencies();
+      }
+    };
+    window.addEventListener("idi:exchange-rate-updated", handleExternalRateUpdate);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(notifInterval);
+      window.clearInterval(ratesInterval);
+      window.removeEventListener("idi:exchange-rate-updated", handleExternalRateUpdate);
+    };
+  }, [loadCurrencies, loadLiveRates, loadNotifications, dismissedNotifIds]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -159,15 +274,59 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
     AuthService.logout();
   };
 
-  const vesItem = currencies.find((c) => c.code === "VES");
+  const vesItem = currencies.find((c) => c.code === "VES" || c.code === "VED");
   const eurItem = currencies.find((c) => c.code === "EUR");
-  const vesRate = vesItem?.latestRate ? Number(vesItem.latestRate) : null;
-  const eurRate = eurItem?.latestRate ? Number(eurItem.latestRate) : null;
+  const vesRate =
+    liveRates.usd ?? (vesItem?.latestRate ? Number(vesItem.latestRate) : null);
+  const eurRate =
+    liveRates.eur ?? (eurItem?.latestRate ? Number(eurItem.latestRate) : null);
 
-  const handleOpenRateModal = () => {
-    if (vesItem) {
-      setSelectedCurrencyId(vesItem.id);
-      setNewRate(vesRate ? String(vesRate) : "");
+  const handleOpenRateModal = async () => {
+    let currList = currencies;
+    if (currList.length === 0) {
+      currList = await loadCurrencies();
+    }
+
+    if (!currList || currList.length === 0) {
+      currList = [
+        {
+          id: 2,
+          code: "VES",
+          name: "Bolívar Digital",
+          symbol: "Bs.",
+          isDefault: false,
+          latestRate: liveRates.usd ?? 75.0,
+          effectiveDate: liveRates.effectiveDate,
+        },
+        {
+          id: 3,
+          code: "EUR",
+          name: "Euro",
+          symbol: "€",
+          isDefault: false,
+          latestRate: liveRates.eur ?? 81.5,
+          effectiveDate: liveRates.effectiveDate,
+        },
+      ];
+      setCurrencies(currList);
+    }
+
+    const target =
+      currList.find((c) => c.code === "VES" || c.code === "VED") ||
+      currList.find((c) => !c.isDefault && c.code !== "USD") ||
+      currList[0];
+
+    if (target) {
+      setSelectedCurrencyId(target.id);
+      const initialVal =
+        (target.code === "VES" || target.code === "VED") && liveRates.usd
+          ? String(liveRates.usd)
+          : target.code === "EUR" && liveRates.eur
+            ? String(liveRates.eur)
+            : target.latestRate
+              ? String(target.latestRate)
+              : "";
+      setNewRate(initialVal);
     }
     setShowRateModal(true);
   };
@@ -175,24 +334,78 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
   const handleCurrencySelectionChange = (currId: number) => {
     setSelectedCurrencyId(currId);
     const curr = currencies.find((c) => c.id === currId);
-    setNewRate(curr?.latestRate ? String(curr.latestRate) : "");
+    if (curr) {
+      if ((curr.code === "VES" || curr.code === "VED") && liveRates.usd) {
+        setNewRate(String(liveRates.usd));
+      } else if (curr.code === "EUR" && liveRates.eur) {
+        setNewRate(String(liveRates.eur));
+      } else {
+        setNewRate(curr.latestRate ? String(curr.latestRate) : "");
+      }
+    }
   };
 
   const handleSaveRate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCurrencyId || !newRate) return;
+    const parsedRate = parseFloat(newRate);
+    if (!newRate || isNaN(parsedRate) || parsedRate <= 0) {
+      toast.error("Por favor ingresa una tasa de cambio válida mayor a 0.");
+      return;
+    }
+
+    const targetCurr =
+      currencies.find((c) => c.id === Number(selectedCurrencyId)) ||
+      currencies.find((c) => c.code === "VES" || c.code === "VED") ||
+      currencies[0];
+
+    const currencyId = targetCurr ? targetCurr.id : Number(selectedCurrencyId);
+    const currencyCode = targetCurr?.code ?? "VES";
+
     setSubmittingRate(true);
     try {
-      await CurrencyService.registerRate({
-        currencyId: Number(selectedCurrencyId),
-        rate: parseFloat(newRate),
-      });
-      await loadCurrencies();
+      const payload = {
+        currencyId: currencyId ? Number(currencyId) : undefined,
+        code: currencyCode,
+        rate: parsedRate,
+        ...(currencyCode === "VES" || currencyCode === "VED"
+          ? { usdRate: parsedRate }
+          : currencyCode === "EUR"
+            ? { eurRate: parsedRate }
+            : {}),
+      };
+
+      await CurrencyService.registerRate(payload);
+
+      // Inmediatamente tras éxito (HTTP 200):
+      // 1. Cerrar el modal
       setShowRateModal(false);
       setNewRate("");
-    } catch (err) {
-      console.error("Error guardando tasa", err);
-      alert("Error al actualizar la tasa de cambio");
+
+      // 2. Disparar el evento global
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("idi:exchange-rate-updated", {
+            detail: {
+              currencyId,
+              code: currencyCode,
+              rate: parsedRate,
+            },
+          })
+        );
+      }
+
+      // 3. Mostrar mensaje de éxito
+      toast.success("Tasa de cambio actualizada exitosamente en la base de datos.");
+
+      // Sincronizar en segundo plano estado local
+      void Promise.all([loadCurrencies(), loadLiveRates()]);
+    } catch (err: unknown) {
+      console.error("Error guardando tasa en backend:", err);
+      const errMsg =
+        err instanceof Error
+          ? err.message
+          : "Error al actualizar la tasa de cambio en la base de datos.";
+      toast.error(errMsg);
     } finally {
       setSubmittingRate(false);
     }
@@ -211,6 +424,8 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
         return "bg-emerald-50 text-emerald-700 border-emerald-200";
       case "SOLICITANTE":
         return "bg-blue-50 text-blue-700 border-blue-200";
+      case "ADMINISTRACION":
+        return "bg-teal-50 text-teal-700 border-teal-200";
       default:
         return "bg-slate-100 text-slate-700 border-slate-200";
     }
@@ -264,7 +479,14 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
 
         <div className="flex items-center gap-2.5">
           {/* Widget Multimoneda */}
-          <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+          <div
+            className="hidden sm:flex items-center gap-2 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+            title={
+              liveRates.effectiveDate
+                ? `Tasa oficial BCV vigente al: ${liveRates.effectiveDate}`
+                : "Tasas oficiales de cambio"
+            }
+          >
             <Coins className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
 
             <div className="flex items-center gap-1 font-mono">
@@ -287,14 +509,35 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
               </span>
             </div>
 
+            {liveRates.effectiveDate && (
+              <span
+                className="hidden xl:inline text-[10px] text-slate-400 font-mono ml-0.5"
+                title={`Fecha valor BCV: ${liveRates.effectiveDate}`}
+              >
+                ({liveRates.effectiveDate})
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={handleManualRefresh}
+              disabled={refreshingRates}
+              className="ml-0.5 p-0.5 text-slate-400 hover:text-blue-600 rounded transition-colors cursor-pointer disabled:opacity-50"
+              title="Refrescar tasas en vivo"
+            >
+              <RefreshCw
+                className={`w-3 h-3 ${refreshingRates ? "animate-spin text-blue-600" : ""}`}
+              />
+            </button>
+
             {canEditRate && (
               <button
                 type="button"
                 onClick={handleOpenRateModal}
-                className="ml-1 p-0.5 text-slate-400 hover:text-blue-600 rounded transition-colors cursor-pointer"
-                title="Actualizar tasas de cambio"
+                className="p-0.5 text-slate-400 hover:text-emerald-600 rounded transition-colors cursor-pointer"
+                title="Ajustar tasa oficial manualmente"
               >
-                <RefreshCw className="w-3 h-3" />
+                <Coins className="w-3 h-3" />
               </button>
             )}
           </div>

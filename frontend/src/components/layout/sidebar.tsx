@@ -20,6 +20,7 @@ import {
   ClipboardList,
   Shield,
   ChevronDown,
+  Wallet,
 } from "lucide-react";
 
 interface SubItem {
@@ -83,7 +84,7 @@ const NAVIGATION_GROUPS: NavGroup[] = [
         label: "Maestros del Almacén",
         href: "/inventory/settings",
         icon: Settings,
-        roles: ["ADMINISTRADOR", "ALMACENISTA"],
+        roles: ["ADMINISTRADOR", "ALMACENISTA", "ADMINISTRACION"],
       },
     ],
   },
@@ -105,7 +106,7 @@ const NAVIGATION_GROUPS: NavGroup[] = [
         roles: ["ADMINISTRADOR", "ANALISTA_LABORATORIO"],
       },
       {
-        label: "Lotes en Cuarentena",
+        label: "Incidencias / Cuarentena",
         href: "/quality/quarantine",
         icon: ShieldAlert,
         roles: ["ADMINISTRADOR", "ANALISTA_LABORATORIO"],
@@ -116,25 +117,31 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     groupLabel: "GESTIÓN",
     label: "Compras & Finanzas",
     icon: ShoppingCart,
-    roles: ["ADMINISTRADOR", "COMPRAS"],
+    roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
     children: [
       {
         label: "Preórdenes de Compra",
         href: "/purchasing/requisitions",
         icon: FileText,
-        roles: ["ADMINISTRADOR", "COMPRAS"],
+        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
       },
       {
         label: "Órdenes de Compra",
         href: "/purchasing/orders",
         icon: ShoppingCart,
-        roles: ["ADMINISTRADOR", "COMPRAS"],
+        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
       },
       {
         label: "Pagos & Cuentas",
         href: "/purchasing/debts",
         icon: Building2,
-        roles: ["ADMINISTRADOR", "COMPRAS"],
+        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
+      },
+      {
+        label: "Egresos / Pagos Directos",
+        href: "/admin/financial/payments",
+        icon: Wallet,
+        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
       },
       {
         label: "Proveedores & Contactos",

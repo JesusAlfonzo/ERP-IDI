@@ -7,11 +7,12 @@ import { ShieldAlert, RefreshCw } from "lucide-react";
 // Matriz de permisos ordenada por estricta especificidad (rutas hijas primero)
 const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
   // 1. Módulos Administrativos y Configuración
+  { pattern: "/admin/financial/payments", roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"] },
   { pattern: "/admin", roles: ["ADMINISTRADOR"] },
   { pattern: "/settings/users", roles: ["ADMINISTRADOR"] },
 
   // 2. Operaciones Críticas de Almacén y Kardex
-  { pattern: "/inventory/settings", roles: ["ADMINISTRADOR", "ALMACENISTA"] },
+  { pattern: "/inventory/settings", roles: ["ADMINISTRADOR", "ALMACENISTA", "ADMINISTRACION"] },
   {
     pattern: "/inventory/adjustments",
     roles: ["ADMINISTRADOR", "ALMACENISTA"],
@@ -22,6 +23,10 @@ const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
   // Restringido para que SOLICITANTE no vea costos de lote ni auditoría profunda
   {
     pattern: /^\/inventory\/products\/[^/]+$/,
+    roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS", "ANALISTA_LABORATORIO"],
+  },
+  {
+    pattern: /^\/inventory\/catalog\/[^/]+$/,
     roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS", "ANALISTA_LABORATORIO"],
   },
 
@@ -36,13 +41,23 @@ const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
       "SOLICITANTE",
     ],
   },
+  {
+    pattern: "/inventory/catalog",
+    roles: [
+      "ADMINISTRADOR",
+      "ALMACENISTA",
+      "COMPRAS",
+      "ANALISTA_LABORATORIO",
+      "SOLICITANTE",
+    ],
+  },
 
   // 5. Cadena de Frío y Calidad
   { pattern: "/laboratory", roles: ["ADMINISTRADOR", "ANALISTA_LABORATORIO"] },
   { pattern: "/quality", roles: ["ADMINISTRADOR", "ANALISTA_LABORATORIO"] },
 
   // 6. Compras y Proveedores
-  { pattern: "/purchasing", roles: ["ADMINISTRADOR", "COMPRAS"] },
+  { pattern: "/purchasing", roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"] },
 
   // 7. Solicitudes Internas
   {

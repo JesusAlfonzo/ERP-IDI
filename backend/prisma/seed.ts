@@ -595,7 +595,7 @@ async function main() {
           locationId: centralWarehouseId,
           lotNumber: `LOT-INI-${sku}`,
           currentQuantity: item.quantity,
-          costPrice: 1.0,
+          costPrice: 0.0,
           status: BatchStatus.DISPONIBLE,
           expirationDate: item.category === 'Laboratorio' ? new Date('2027-12-31') : null,
         },

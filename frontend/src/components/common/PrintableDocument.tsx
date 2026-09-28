@@ -59,7 +59,7 @@ export function DocumentHeader({
               <img
                 src={logoSrc}
                 alt="Logo IAC"
-                className="h-14 w-auto max-w-[130px] object-contain"
+                className="h-14 w-auto max-w-32.5 object-contain"
                 onError={() => setImgError(true)}
               />
             ) : (
@@ -171,7 +171,7 @@ export function DocumentMetadataGrid({
           <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 print:text-slate-700">
             {item.label}
           </span>
-          <div className="text-slate-900 print:text-black font-medium text-xs break-words">
+          <div className="text-slate-900 print:text-black font-medium text-xs wrap-break-word">
             {item.value || "---"}
           </div>
         </div>
@@ -203,7 +203,7 @@ export function DocumentSignatures({
         {signatures.map((sig, idx) => (
           <div
             key={idx}
-            className="border border-slate-300 rounded-lg p-3 text-center flex flex-col justify-between bg-white print:border-black break-inside-avoid min-h-[140px]"
+            className="border border-slate-300 rounded-lg p-3 text-center flex flex-col justify-between bg-white print:border-black break-inside-avoid min-h-35"
           >
             <div className="text-[11px] font-bold uppercase tracking-wider text-slate-700 print:text-black border-b border-slate-100 pb-1">
               {sig.role}

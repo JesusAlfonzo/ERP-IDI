@@ -5,7 +5,15 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { InventoryClientService } from "@/services/inventory.service";
+import { CurrencyService } from "@/services/currency.service";
 import { AuthService } from "@/services/auth.service";
+import {
+  type CurrencyCode,
+  CURRENCY_OPTIONS,
+  getCurrencySymbol,
+  normalizeCurrencyCode,
+  formatCurrencyAmount,
+} from "@/utils/currency";
 import type {
   PurchaseOrder,
   Supplier,
@@ -92,8 +100,14 @@ export default function PurchaseOrdersPage() {
   // Modal de Creación
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [supplierId, setSupplierId] = useState<string>("");
+  const [currency, setCurrency] = useState<CurrencyCode>("USD");
   const [currencyId, setCurrencyId] = useState<string>("");
   const [exchangeRate, setExchangeRate] = useState<number>(75.0);
+  const [bcvRates, setBcvRates] = useState<{ USD: number; EUR: number; VED: number }>({
+    USD: 75.0,
+    EUR: 81.5,
+    VED: 1.0,
+  });
   const [notes, setNotes] = useState<string>("");
   const [items, setItems] = useState<FormRow[]>([
     { productId: 0, unitId: 0, quantityOrdered: 1, unitPrice: 0, isExempt: false },
@@ -107,7 +121,7 @@ export default function PurchaseOrdersPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [ordersData, suppliersData, currenciesData, productsData] =
+      const [ordersData, suppliersData, currenciesData, productsData, currentRates] =
         await Promise.all([
           PurchasingClientService.getOrders(statusFilter || undefined).catch(
             () => []
@@ -115,11 +129,27 @@ export default function PurchaseOrdersPage() {
           PurchasingClientService.getSuppliers().catch(() => []),
           PurchasingClientService.getCurrencies().catch(() => []),
           InventoryClientService.getProducts().catch(() => []),
+          CurrencyService.getCurrentRates().catch(() => null),
         ]);
       setOrders(ordersData);
       setSuppliers(suppliersData);
       setCurrencies(currenciesData);
       setCatalogProducts(productsData);
+
+      if (currentRates) {
+        const rates = {
+          USD: Number(currentRates.USD || currentRates.rates?.USD || 75.0),
+          EUR: Number(currentRates.EUR || currentRates.rates?.EUR || 81.5),
+          VED: 1.0,
+        };
+        setBcvRates(rates);
+        setExchangeRate((prev) => {
+          if (currency === "USD") return rates.USD;
+          if (currency === "EUR") return rates.EUR;
+          if (currency === "VED") return 1.0;
+          return prev || rates.USD;
+        });
+      }
 
       if (currenciesData.length > 0 && !currencyId) {
         const def = currenciesData.find((c) => c.isDefault) || currenciesData[0];
@@ -128,7 +158,25 @@ export default function PurchaseOrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, currencyId]);
+  }, [statusFilter, currencyId, currency]);
+
+  const handleCurrencyChange = (newCurrency: CurrencyCode) => {
+    setCurrency(newCurrency);
+    if (newCurrency === "USD") {
+      setExchangeRate(bcvRates.USD);
+    } else if (newCurrency === "EUR") {
+      setExchangeRate(bcvRates.EUR);
+    } else if (newCurrency === "VED") {
+      setExchangeRate(1.0);
+    }
+
+    const matched = currencies.find(
+      (c) => c.code === (newCurrency === "VED" ? "VES" : newCurrency)
+    );
+    if (matched) {
+      setCurrencyId(String(matched.id));
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -140,8 +188,15 @@ export default function PurchaseOrdersPage() {
       if (isMounted) await loadData();
     };
     void init();
+
+    const handleExternalRate = () => {
+      if (isMounted) void loadData();
+    };
+    window.addEventListener("idi:exchange-rate-updated", handleExternalRate);
+
     return () => {
       isMounted = false;
+      window.removeEventListener("idi:exchange-rate-updated", handleExternalRate);
     };
   }, [router, loadData]);
 
@@ -207,30 +262,25 @@ export default function PurchaseOrdersPage() {
     taxableAmount = Math.round(taxableAmount * 100) / 100;
     exemptAmount = Math.round(exemptAmount * 100) / 100;
     const iva16 = Math.round(taxableAmount * 0.16 * 100) / 100;
-    const totalUsd = Math.round((taxableAmount + exemptAmount + iva16) * 100) / 100;
+    const totalAmount = Math.round((taxableAmount + exemptAmount + iva16) * 100) / 100;
     const rate = Number(exchangeRate) || 1.0;
-    const totalBs = Math.round(totalUsd * rate * 100) / 100;
+    const totalBs =
+      currency === "VED"
+        ? totalAmount
+        : Math.round(totalAmount * rate * 100) / 100;
 
     return {
       taxableAmount,
       exemptAmount,
       iva16,
-      totalUsd,
+      totalAmount,
       totalBs,
     };
-  }, [items, exchangeRate]);
+  }, [items, exchangeRate, currency]);
 
   const handleSubmitOrder = async (e: FormEvent) => {
     e.preventDefault();
     setFeedback(null);
-
-    if (!currencyId) {
-      setFeedback({
-        status: "error",
-        message: "Seleccione la moneda de compra.",
-      });
-      return;
-    }
 
     const hasInvalidItem = items.some(
       (it) => !it.productId || it.quantityOrdered <= 0 || it.unitPrice <= 0
@@ -249,7 +299,8 @@ export default function PurchaseOrdersPage() {
     try {
       await PurchasingClientService.createOrder({
         supplierId: supplierId ? Number(supplierId) : null,
-        currencyId: Number(currencyId),
+        currency,
+        currencyId: currencyId ? Number(currencyId) : undefined,
         exchangeRate: Number(exchangeRate),
         notes: notes.trim() || null,
         items: items.map((it) => ({
@@ -286,6 +337,8 @@ export default function PurchaseOrdersPage() {
       setSubmitting(false);
     }
   };
+
+  const currentSymbol = getCurrencySymbol(currency);
 
   return (
     <div className="space-y-6">
@@ -406,9 +459,6 @@ export default function PurchaseOrdersPage() {
                     order.status !== "CANCELADA" &&
                     order.status !== "CANCELADO";
 
-                  const totalUsd =
-                    Number(order.totalAmountUsd || order.totalAmount || order.total || 0);
-
                   return (
                     <tr
                       key={String(order.id)}
@@ -439,15 +489,20 @@ export default function PurchaseOrdersPage() {
                           : "-"}
                       </td>
                       <td className="py-3 px-4 text-center font-mono text-slate-700">
-                        <span className="font-bold">{order.currency?.code || "USD"}</span>
-                        {Number(order.exchangeRate || 1) > 1 && (
+                        <span className="font-bold">{normalizeCurrencyCode(order.currency)}</span>
+                        {normalizeCurrencyCode(order.currency) !== "VED" && Number(order.exchangeRate || 1) > 1 && (
                           <div className="text-[10px] text-slate-400">
-                            {Number(order.exchangeRate).toFixed(2)} Bs/$
+                            {Number(order.exchangeRate).toFixed(2)} Bs/{normalizeCurrencyCode(order.currency) === "EUR" ? "€" : "$"}
                           </div>
                         )}
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">
-                        ${totalUsd.toFixed(2)}
+                        {formatCurrencyAmount(order.totalAmount ?? order.totalAmountUsd ?? order.total ?? 0, order.currency)}
+                        {normalizeCurrencyCode(order.currency) !== "VED" && order.totalAmountBs && (
+                          <div className="text-[10px] text-slate-400 font-normal">
+                            Bs. {Number(order.totalAmountBs).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-center font-semibold text-slate-700">
                         {order.items?.length || 0}
@@ -544,14 +599,14 @@ export default function PurchaseOrdersPage() {
                       Moneda de Compra *
                     </label>
                     <select
-                      value={currencyId}
-                      onChange={(e) => setCurrencyId(e.target.value)}
+                      value={currency}
+                      onChange={(e) => handleCurrencyChange(e.target.value as CurrencyCode)}
                       className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-medium"
                       required
                     >
-                      {currencies.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} ({c.code} - {c.symbol})
+                      {CURRENCY_OPTIONS.map((opt) => (
+                        <option key={opt.code} value={opt.code}>
+                          {opt.label}
                         </option>
                       ))}
                     </select>
@@ -559,7 +614,9 @@ export default function PurchaseOrdersPage() {
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                      Tasa BCV del Día (Bs./USD)
+                      {currency === "VED"
+                        ? "Tasa de Cambio (VED)"
+                        : `Tasa BCV del Día (${currency === "EUR" ? "Bs./EUR" : "Bs./USD"})`}
                     </label>
                     <div className="relative">
                       <input
@@ -567,12 +624,13 @@ export default function PurchaseOrdersPage() {
                         step="0.01"
                         min="0.01"
                         value={exchangeRate}
+                        disabled={currency === "VED"}
                         onChange={(e) => setExchangeRate(Number(e.target.value))}
-                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold focus:ring-2 focus:ring-blue-500"
+                        className="w-full bg-white disabled:bg-slate-100 disabled:text-slate-500 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold focus:ring-2 focus:ring-blue-500"
                         required
                       />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-mono">
-                        Bs./$
+                        {currency === "VED" ? "1.00" : currency === "EUR" ? "Bs./€" : "Bs./$"}
                       </span>
                     </div>
                   </div>
@@ -654,7 +712,7 @@ export default function PurchaseOrdersPage() {
                         {/* Precio Unitario */}
                         <div className="w-full sm:w-32 shrink-0">
                           <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Costo Unit. ($)
+                            Costo Unit. ({currentSymbol})
                           </label>
                           <input
                             type="number"
@@ -725,36 +783,43 @@ export default function PurchaseOrdersPage() {
                     <div className="flex justify-between text-slate-600">
                       <span>Subtotal Gravable (Base 16%):</span>
                       <span className="font-mono font-semibold">
-                        ${fiscalSummary.taxableAmount.toFixed(2)}
+                        {currentSymbol} {fiscalSummary.taxableAmount.toFixed(2)}
                       </span>
                     </div>
                     <div className="flex justify-between text-slate-600">
                       <span>Subtotal Exento:</span>
                       <span className="font-mono font-semibold text-emerald-700">
-                        ${fiscalSummary.exemptAmount.toFixed(2)}
+                        {currentSymbol} {fiscalSummary.exemptAmount.toFixed(2)}
                       </span>
                     </div>
                     <div className="flex justify-between text-slate-600">
                       <span>IVA (16%):</span>
                       <span className="font-mono font-semibold">
-                        ${fiscalSummary.iva16.toFixed(2)}
+                        {currentSymbol} {fiscalSummary.iva16.toFixed(2)}
                       </span>
                     </div>
                     <div className="border-t border-slate-200 pt-1.5 flex justify-between font-bold text-slate-900 text-sm">
-                      <span>Total General (USD):</span>
+                      <span>Total General ({currency}):</span>
                       <span className="font-mono text-blue-700">
-                        ${fiscalSummary.totalUsd.toFixed(2)}
+                        {currentSymbol} {fiscalSummary.totalAmount.toFixed(2)}
                       </span>
                     </div>
-                    <div className="flex justify-between text-slate-500 font-mono text-[11px] pt-0.5">
-                      <span>Total en Bolívares (Bs.):</span>
-                      <span className="font-bold text-slate-800">
-                        {fiscalSummary.totalBs.toLocaleString("es-VE", {
-                          minimumFractionDigits: 2,
-                        })}{" "}
-                        Bs.
-                      </span>
-                    </div>
+                    {currency !== "VED" && (
+                      <div className="border-t border-dashed border-slate-200 pt-1.5 space-y-0.5">
+                        <div className="flex justify-between text-slate-700 font-mono text-[11px]">
+                          <span className="font-semibold">Monto Total en Bs.:</span>
+                          <span className="font-bold text-slate-900">
+                            Bs. {fiscalSummary.totalBs.toLocaleString("es-VE", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 italic">
+                          Calculado a la tasa oficial BCV de {exchangeRate.toFixed(2)} Bs./{currency === "EUR" ? "€" : "$"}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -776,7 +841,10 @@ export default function PurchaseOrdersPage() {
               {/* Pie Fijo */}
               <div className="flex items-center justify-between p-4 px-6 border-t border-slate-100 bg-slate-50/70 shrink-0">
                 <span className="text-xs text-slate-500">
-                  Total orden: <strong className="text-slate-800">${fiscalSummary.totalUsd.toFixed(2)} USD</strong>
+                  Total orden:{" "}
+                  <strong className="text-slate-800">
+                    {currentSymbol} {fiscalSummary.totalAmount.toFixed(2)} {currency}
+                  </strong>
                 </span>
                 <div className="flex items-center gap-2">
                   <button

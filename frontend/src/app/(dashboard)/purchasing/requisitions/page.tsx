@@ -4,6 +4,16 @@ import { useState, useEffect, useCallback, useMemo, type FormEvent } from "react
 import { useRouter } from "next/navigation";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { InventoryClientService } from "@/services/inventory.service";
+import { CurrencyService } from "@/services/currency.service";
+import {
+  type CurrencyCode,
+  CURRENCY_OPTIONS,
+  getCurrencySymbol,
+} from "@/utils/currency";
+import {
+  InventoryMasterService,
+  type DepartmentItem,
+} from "@/services/inventory-master.service";
 import type {
   PurchaseRequisition,
   PurchaseRequisitionStatus,
@@ -38,16 +48,6 @@ function getErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
-const SECTIONS = [
-  "Inmunogenética",
-  "Biología Molecular",
-  "Bioquímica Clínica",
-  "Microbiología",
-  "Hematología y Coagulación",
-  "Inmunología y Serología",
-  "Toxicología y Farmacología",
-  "Almacén Central / Compras",
-];
 
 const STATUS_BADGES: Record<
   PurchaseRequisitionStatus,
@@ -107,8 +107,10 @@ export default function PurchaseRequisitionsPage() {
   } | null>(null);
 
   // Modal: Nueva Preorden
+  const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | "">("");
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
-  const [departmentSection, setDepartmentSection] = useState(SECTIONS[0]);
+  const [departmentSection, setDepartmentSection] = useState("");
   const [justification, setJustification] = useState("");
   const [notes, setNotes] = useState("");
   const [formItems, setFormItems] = useState<PreorderRow[]>([
@@ -122,8 +124,14 @@ export default function PurchaseRequisitionsPage() {
   // Modal: Adjudicar y Convertir a Orden
   const [requisitionToConvert, setRequisitionToConvert] = useState<PurchaseRequisition | null>(null);
   const [adjudicateSupplierId, setAdjudicateSupplierId] = useState<string>("");
+  const [adjudicateCurrency, setAdjudicateCurrency] = useState<CurrencyCode>("USD");
   const [adjudicateCurrencyId, setAdjudicateCurrencyId] = useState<string>("");
   const [adjudicateExchangeRate, setAdjudicateExchangeRate] = useState<number>(75.0);
+  const [bcvRates, setBcvRates] = useState<{ USD: number; EUR: number; VED: number }>({
+    USD: 75.0,
+    EUR: 81.5,
+    VED: 1.0,
+  });
   const [adjudicateNotes, setAdjudicateNotes] = useState<string>("");
   const [conversionItems, setConversionItems] = useState<ConversionRow[]>([]);
   const [converting, setConverting] = useState(false);
@@ -131,7 +139,7 @@ export default function PurchaseRequisitionsPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [reqs, supps, currs, prods] = await Promise.all([
+      const [reqs, supps, currs, prods, deps, currentRates] = await Promise.all([
         PurchasingClientService.getRequisitions({
           status: statusFilter || undefined,
           search: searchFilter || undefined,
@@ -139,11 +147,34 @@ export default function PurchaseRequisitionsPage() {
         PurchasingClientService.getSuppliers().catch(() => []),
         PurchasingClientService.getCurrencies().catch(() => []),
         InventoryClientService.getProducts().catch(() => []),
+        InventoryMasterService.getDepartments(true).catch(() => []),
+        CurrencyService.getCurrentRates().catch(() => null),
       ]);
       setRequisitions(reqs);
       setSuppliers(supps);
       setCurrencies(currs);
       setCatalogProducts(prods);
+      setDepartments(deps);
+
+      if (currentRates) {
+        const rates = {
+          USD: Number(currentRates.USD || currentRates.rates?.USD || 75.0),
+          EUR: Number(currentRates.EUR || currentRates.rates?.EUR || 81.5),
+          VED: 1.0,
+        };
+        setBcvRates(rates);
+        setAdjudicateExchangeRate((prev) => {
+          if (adjudicateCurrency === "USD") return rates.USD;
+          if (adjudicateCurrency === "EUR") return rates.EUR;
+          if (adjudicateCurrency === "VED") return 1.0;
+          return prev || rates.USD;
+        });
+      }
+
+      if (deps.length > 0) {
+        setSelectedDepartmentId((prev) => (prev !== "" ? prev : deps[0].id));
+        setDepartmentSection((prev) => (prev ? prev : deps[0].name));
+      }
 
       if (currs.length > 0 && !adjudicateCurrencyId) {
         const defaultCurr = currs.find((c) => c.isDefault) || currs[0];
@@ -158,7 +189,25 @@ export default function PurchaseRequisitionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, searchFilter, adjudicateCurrencyId]);
+  }, [statusFilter, searchFilter, adjudicateCurrencyId, adjudicateCurrency]);
+
+  const handleAdjudicateCurrencyChange = (newCurrency: CurrencyCode) => {
+    setAdjudicateCurrency(newCurrency);
+    if (newCurrency === "USD") {
+      setAdjudicateExchangeRate(bcvRates.USD);
+    } else if (newCurrency === "EUR") {
+      setAdjudicateExchangeRate(bcvRates.EUR);
+    } else if (newCurrency === "VED") {
+      setAdjudicateExchangeRate(1.0);
+    }
+
+    const matched = currencies.find(
+      (c) => c.code === (newCurrency === "VED" ? "VES" : newCurrency)
+    );
+    if (matched) {
+      setAdjudicateCurrencyId(String(matched.id));
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -168,8 +217,15 @@ export default function PurchaseRequisitionsPage() {
       }
     };
     void init();
+
+    const handleExternalRate = () => {
+      if (isMounted) void loadData();
+    };
+    window.addEventListener("idi:exchange-rate-updated", handleExternalRate);
+
     return () => {
       isMounted = false;
+      window.removeEventListener("idi:exchange-rate-updated", handleExternalRate);
     };
   }, [loadData]);
 
@@ -227,11 +283,20 @@ export default function PurchaseRequisitionsPage() {
       return;
     }
 
+    if (!selectedDepartmentId) {
+      setFeedback({
+        status: "error",
+        message: "Debe seleccionar un departamento solicitante.",
+      });
+      return;
+    }
+
     setSubmitting(true);
     setFeedback(null);
     try {
       await PurchasingClientService.createRequisition({
-        departmentSection,
+        departmentId: Number(selectedDepartmentId),
+        departmentSection: departmentSection || undefined,
         justification,
         notes: notes.trim() || undefined,
         items: formItems.map((it) => ({
@@ -282,6 +347,13 @@ export default function PurchaseRequisitionsPage() {
   const openAdjudicateModal = (req: PurchaseRequisition) => {
     setRequisitionToConvert(req);
     setAdjudicateNotes(`Generada a partir de preorden ${req.requisitionNumber}`);
+    setAdjudicateCurrency("USD");
+    setAdjudicateExchangeRate(bcvRates.USD);
+
+    const matched = currencies.find((c) => c.code === "USD");
+    if (matched) {
+      setAdjudicateCurrencyId(String(matched.id));
+    }
 
     const mappedRows: ConversionRow[] = req.items.map((it) => {
       const prod = catalogProducts.find((p) => p.id === it.productId) || it.product;
@@ -325,18 +397,21 @@ export default function PurchaseRequisitionsPage() {
     taxableAmount = Math.round(taxableAmount * 100) / 100;
     exemptAmount = Math.round(exemptAmount * 100) / 100;
     const iva16 = Math.round(taxableAmount * 0.16 * 100) / 100;
-    const totalUsd = Math.round((taxableAmount + exemptAmount + iva16) * 100) / 100;
+    const totalAmount = Math.round((taxableAmount + exemptAmount + iva16) * 100) / 100;
     const rate = Number(adjudicateExchangeRate) || 1.0;
-    const totalBs = Math.round(totalUsd * rate * 100) / 100;
+    const totalBs =
+      adjudicateCurrency === "VED"
+        ? totalAmount
+        : Math.round(totalAmount * rate * 100) / 100;
 
     return {
       taxableAmount,
       exemptAmount,
       iva16,
-      totalUsd,
+      totalAmount,
       totalBs,
     };
-  }, [conversionItems, adjudicateExchangeRate]);
+  }, [conversionItems, adjudicateExchangeRate, adjudicateCurrency]);
 
   // Alternar exento para todos
   const handleToggleAllExempt = (exempt: boolean) => {
@@ -374,7 +449,8 @@ export default function PurchaseRequisitionsPage() {
         requisitionToConvert.id,
         {
           supplierId: Number(adjudicateSupplierId),
-          currencyId: Number(adjudicateCurrencyId),
+          currency: adjudicateCurrency,
+          currencyId: adjudicateCurrencyId ? Number(adjudicateCurrencyId) : undefined,
           exchangeRate: Number(adjudicateExchangeRate),
           notes: adjudicateNotes.trim() || undefined,
           items: conversionItems.map((r) => ({
@@ -404,6 +480,8 @@ export default function PurchaseRequisitionsPage() {
       setConverting(false);
     }
   };
+
+  const adjudicateSymbol = getCurrencySymbol(adjudicateCurrency);
 
   return (
     <div className="space-y-6">
@@ -634,14 +712,20 @@ export default function PurchaseRequisitionsPage() {
                     Departamento Solicitante *
                   </label>
                   <select
-                    value={departmentSection}
-                    onChange={(e) => setDepartmentSection(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-medium"
+                    value={selectedDepartmentId}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setSelectedDepartmentId(val);
+                      const dep = departments.find((d) => d.id === val);
+                      if (dep) setDepartmentSection(dep.name);
+                    }}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer"
                     required
                   >
-                    {SECTIONS.map((sec) => (
-                      <option key={sec} value={sec}>
-                        {sec}
+                    <option value="">-- Seleccione un departamento activo --</option>
+                    {departments.map((sec) => (
+                      <option key={sec.id} value={sec.id}>
+                        {sec.code} - {sec.name}
                       </option>
                     ))}
                   </select>
@@ -961,14 +1045,14 @@ export default function PurchaseRequisitionsPage() {
                       Moneda de Facturación *
                     </label>
                     <select
-                      value={adjudicateCurrencyId}
-                      onChange={(e) => setAdjudicateCurrencyId(e.target.value)}
+                      value={adjudicateCurrency}
+                      onChange={(e) => handleAdjudicateCurrencyChange(e.target.value as CurrencyCode)}
                       className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-medium"
                       required
                     >
-                      {currencies.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} ({c.code} - {c.symbol})
+                      {CURRENCY_OPTIONS.map((opt) => (
+                        <option key={opt.code} value={opt.code}>
+                          {opt.label}
                         </option>
                       ))}
                     </select>
@@ -976,7 +1060,9 @@ export default function PurchaseRequisitionsPage() {
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                      Tasa Cambiaria BCV (Bs./USD) *
+                      {adjudicateCurrency === "VED"
+                        ? "Tasa de Cambio (VED)"
+                        : `Tasa BCV del Día (${adjudicateCurrency === "EUR" ? "Bs./EUR" : "Bs./USD"})`}
                     </label>
                     <div className="relative">
                       <input
@@ -984,12 +1070,13 @@ export default function PurchaseRequisitionsPage() {
                         step="0.01"
                         min="0.01"
                         value={adjudicateExchangeRate}
+                        disabled={adjudicateCurrency === "VED"}
                         onChange={(e) => setAdjudicateExchangeRate(Number(e.target.value))}
-                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold focus:ring-2 focus:ring-blue-500"
+                        className="w-full bg-white disabled:bg-slate-100 disabled:text-slate-500 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold focus:ring-2 focus:ring-blue-500"
                         required
                       />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-mono">
-                        Bs./$
+                        {adjudicateCurrency === "VED" ? "1.00" : adjudicateCurrency === "EUR" ? "Bs./€" : "Bs./$"}
                       </span>
                     </div>
                   </div>
@@ -1026,9 +1113,9 @@ export default function PurchaseRequisitionsPage() {
                           <th className="py-2.5 px-3">Insumo / Reactivo</th>
                           <th className="py-2.5 px-3 text-center">Unidad</th>
                           <th className="py-2.5 px-3 text-right w-24">Cantidad</th>
-                          <th className="py-2.5 px-3 text-right w-32">Precio Unit. ($)</th>
+                          <th className="py-2.5 px-3 text-right w-32">Precio Unit. ({adjudicateSymbol})</th>
                           <th className="py-2.5 px-3 text-center w-28">¿Exento IVA?</th>
-                          <th className="py-2.5 px-3 text-right w-28">Subtotal ($)</th>
+                          <th className="py-2.5 px-3 text-right w-28">Subtotal ({adjudicateSymbol})</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -1116,7 +1203,7 @@ export default function PurchaseRequisitionsPage() {
                                 </label>
                               </td>
                               <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
-                                ${lineSubtotal.toFixed(2)}
+                                {adjudicateSymbol} {lineSubtotal.toFixed(2)}
                               </td>
                             </tr>
                           );
@@ -1139,36 +1226,43 @@ export default function PurchaseRequisitionsPage() {
                     <div className="flex justify-between text-slate-600">
                       <span>Subtotal Gravable (Base 16%):</span>
                       <span className="font-mono font-semibold">
-                        ${fiscalSummary.taxableAmount.toFixed(2)}
+                        {adjudicateSymbol} {fiscalSummary.taxableAmount.toFixed(2)}
                       </span>
                     </div>
                     <div className="flex justify-between text-slate-600">
                       <span>Subtotal Exento:</span>
                       <span className="font-mono font-semibold text-emerald-700">
-                        ${fiscalSummary.exemptAmount.toFixed(2)}
+                        {adjudicateSymbol} {fiscalSummary.exemptAmount.toFixed(2)}
                       </span>
                     </div>
                     <div className="flex justify-between text-slate-600">
                       <span>IVA (16%):</span>
                       <span className="font-mono font-semibold">
-                        ${fiscalSummary.iva16.toFixed(2)}
+                        {adjudicateSymbol} {fiscalSummary.iva16.toFixed(2)}
                       </span>
                     </div>
                     <div className="border-t border-slate-200 pt-1.5 flex justify-between font-bold text-slate-900 text-sm">
-                      <span>Total General (USD):</span>
+                      <span>Total General ({adjudicateCurrency}):</span>
                       <span className="font-mono text-blue-700">
-                        ${fiscalSummary.totalUsd.toFixed(2)}
+                        {adjudicateSymbol} {fiscalSummary.totalAmount.toFixed(2)}
                       </span>
                     </div>
-                    <div className="flex justify-between text-slate-500 font-mono text-[11px] pt-0.5">
-                      <span>Total en Bolívares (Bs.):</span>
-                      <span className="font-bold text-slate-800">
-                        {fiscalSummary.totalBs.toLocaleString("es-VE", {
-                          minimumFractionDigits: 2,
-                        })}{" "}
-                        Bs.
-                      </span>
-                    </div>
+                    {adjudicateCurrency !== "VED" && (
+                      <div className="border-t border-dashed border-slate-200 pt-1.5 space-y-0.5">
+                        <div className="flex justify-between text-slate-700 font-mono text-[11px]">
+                          <span className="font-semibold">Monto Total en Bs.:</span>
+                          <span className="font-bold text-slate-900">
+                            Bs. {fiscalSummary.totalBs.toLocaleString("es-VE", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 italic">
+                          Calculado a la tasa oficial BCV de {adjudicateExchangeRate.toFixed(2)} Bs./{adjudicateCurrency === "EUR" ? "€" : "$"}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1190,7 +1284,10 @@ export default function PurchaseRequisitionsPage() {
               {/* Pie Fijo */}
               <div className="flex items-center justify-between p-4 px-6 border-t border-slate-100 bg-slate-50/70 shrink-0">
                 <span className="text-xs text-slate-500">
-                  Total a ordenar: <strong className="text-slate-800">${fiscalSummary.totalUsd.toFixed(2)} USD</strong>
+                  Total a ordenar:{" "}
+                  <strong className="text-slate-800">
+                    {adjudicateSymbol} {fiscalSummary.totalAmount.toFixed(2)} {adjudicateCurrency}
+                  </strong>
                 </span>
                 <div className="flex items-center gap-2">
                   <button

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
+import { getCurrencySymbol } from "@/utils/currency";
 import type { PurchaseOrder, PurchaseOrderItem } from "@/types/purchasing";
 import type { Location } from "@/types/inventory";
 import {
@@ -32,6 +33,7 @@ interface ReceptionRow {
   lotNumber: string;
   expirationDate: string;
   locationId: number;
+  isConforming: boolean;
 }
 
 export default function ReceiveOrderPage() {
@@ -88,6 +90,7 @@ export default function ReceiveOrderPage() {
             lotNumber: "",
             expirationDate: "",
             locationId: defaultLocId,
+            isConforming: true,
           };
         })
         .filter((row: ReceptionRow) => row.pendingQuantity > 0);
@@ -118,7 +121,7 @@ export default function ReceiveOrderPage() {
   const handleRowChange = (
     index: number,
     field: keyof ReceptionRow,
-    value: string | number,
+    value: string | number | boolean,
   ) => {
     setItemsData((prev) => {
       const updated = [...prev];
@@ -166,13 +169,17 @@ export default function ReceiveOrderPage() {
           expirationDate: row.expirationDate,
           quantityReceived: Number(row.receivedQuantity),
           locationId: Number(row.locationId),
+          requiresQuarantine: !row.isConforming,
         })),
       });
 
+      const quarantineCount = itemsData.filter((it) => !it.isConforming).length;
       setFeedback({
         status: "success",
         message:
-          "Mercancía recibida e inventario actualizado. Los lotes ingresaron a Cuarentena bajo control de calidad.",
+          quarantineCount > 0
+            ? `Mercancía recibida e inventario actualizado. ${quarantineCount} lote(s) ingresaron a Cuarentena/Revisión Técnica y los restantes a Stock Disponible.`
+            : "Mercancía recibida e inventario actualizado. Todos los lotes ingresaron como Disponibles (Vía Verde).",
       });
 
       setTimeout(() => {
@@ -227,7 +234,7 @@ export default function ReceiveOrderPage() {
             Recepción de Mercancía
           </h1>
           <p className="text-xs text-slate-500">
-            Ingreso de lotes físicos y asignación preventiva a Cuarentena
+            Ingreso de lotes físicos y verificación de conformidad (Vía Verde / Ámbar)
           </p>
         </div>
       </div>
@@ -275,7 +282,7 @@ export default function ReceiveOrderPage() {
             Monto Acordado
           </span>
           <div className="text-sm font-bold font-mono text-slate-800">
-            {order.currency?.symbol || "$"}{" "}
+            {getCurrencySymbol(order.currency)}{" "}
             {displayTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
           </div>
         </div>
@@ -322,7 +329,7 @@ export default function ReceiveOrderPage() {
                 Renglones Pendientes por Recibir
               </span>
               <span className="text-[11px] text-slate-500">
-                Estado asignado: <b className="text-amber-700">EN_CUARENTENA</b>
+                Modelo de Inspección: <b className="text-emerald-700">Vía Verde (Disponible) / Vía Ámbar (Cuarentena)</b>
               </span>
             </div>
 
@@ -429,6 +436,39 @@ export default function ReceiveOrderPage() {
                           </option>
                         ))}
                       </select>
+                    </div>
+
+                    {/* Control de Conformidad: Vía Verde vs Vía Ámbar */}
+                    <div className="md:col-span-12 mt-2 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                      <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={row.isConforming}
+                          onChange={(e) =>
+                            handleRowChange(
+                              idx,
+                              "isConforming",
+                              e.target.checked,
+                            )
+                          }
+                          className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                        />
+                        <span className="text-xs font-semibold text-slate-700">
+                          Ingreso Conforme (Pasa directo a Disponible)
+                        </span>
+                      </label>
+
+                      {row.isConforming ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          Vía Verde: Lote DISPONIBLE
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          Irá a Cuarentena / Revisión Técnica
+                        </span>
+                      )}
                     </div>
                   </div>
                 );

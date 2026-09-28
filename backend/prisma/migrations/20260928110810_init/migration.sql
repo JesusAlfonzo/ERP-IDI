@@ -23,7 +23,7 @@ CREATE TYPE "PaymentMethod" AS ENUM ('TRANSFERENCIA_USD', 'TRANSFERENCIA_BS', 'T
 CREATE TYPE "BatchStatus" AS ENUM ('DISPONIBLE', 'EN_CUARENTENA', 'DEFECTUOSO', 'VENCIDO', 'AGOTADO');
 
 -- CreateEnum
-CREATE TYPE "StockMovementType" AS ENUM ('ENTRADA_COMPRA', 'TRASLADO_A_LABORATORIO', 'DESPACHO_SOLICITUD', 'AJUSTE_INVENTARIO', 'DESCARTE_MERMA');
+CREATE TYPE "StockMovementType" AS ENUM ('ENTRADA_COMPRA', 'TRASLADO_A_LABORATORIO', 'DESPACHO_SOLICITUD', 'AJUSTE_INVENTARIO', 'DESCARTE_MERMA', 'PAGO_ORDEN', 'EGRESO_DIRECTO');
 
 -- CreateEnum
 CREATE TYPE "LabUnitStatus" AS ENUM ('SELLADO', 'EN_USO', 'AGOTADO', 'DESCARTADO');
@@ -130,6 +130,19 @@ CREATE TABLE "currency_exchanges" (
 );
 
 -- CreateTable
+CREATE TABLE "departments" (
+    "id" SERIAL NOT NULL,
+    "code" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "departments_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "categories" (
     "id" SERIAL NOT NULL,
     "code" TEXT,
@@ -222,7 +235,8 @@ CREATE TABLE "orders" (
     "id" BIGSERIAL NOT NULL,
     "order_number" TEXT NOT NULL,
     "supplier_id" INTEGER,
-    "currency_id" INTEGER NOT NULL,
+    "currency" TEXT NOT NULL DEFAULT 'USD',
+    "currency_id" INTEGER NOT NULL DEFAULT 1,
     "exchange_rate" DECIMAL(18,4) NOT NULL,
     "status" "OrderStatus" NOT NULL DEFAULT 'BORRADOR',
     "payment_status" "PaymentStatus" NOT NULL DEFAULT 'PENDIENTE',
@@ -230,6 +244,10 @@ CREATE TABLE "orders" (
     "subtotal" DECIMAL(18,2) NOT NULL,
     "tax_total" DECIMAL(18,2) NOT NULL,
     "total" DECIMAL(18,2) NOT NULL,
+    "taxable_amount" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    "exempt_amount" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    "tax_amount" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    "total_amount" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
     "taxable_amount_usd" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
     "exempt_amount_usd" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
     "tax_amount_usd" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
@@ -264,21 +282,71 @@ CREATE TABLE "order_items" (
 );
 
 -- CreateTable
+CREATE TABLE "bank_accounts" (
+    "id" SERIAL NOT NULL,
+    "bank_name" TEXT NOT NULL,
+    "account_number" TEXT,
+    "type" TEXT NOT NULL DEFAULT 'CORRIENTE',
+    "currency" TEXT NOT NULL DEFAULT 'USD',
+    "holder_name" TEXT NOT NULL,
+    "holder_id" TEXT NOT NULL,
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "bank_accounts_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "order_payments" (
     "id" BIGSERIAL NOT NULL,
     "order_id" BIGINT NOT NULL,
-    "payment_method" "PaymentMethod" NOT NULL,
+    "method" TEXT NOT NULL DEFAULT 'TRANSFERENCIA',
+    "payment_method" "PaymentMethod" NOT NULL DEFAULT 'TRANSFERENCIA_NACIONAL',
+    "source_account_id" INTEGER,
+    "destination_account" TEXT,
     "bank_name" TEXT,
     "reference_number" TEXT,
-    "currency_id" INTEGER NOT NULL,
-    "exchange_rate" DECIMAL(18,4) NOT NULL,
+    "currency_id" INTEGER DEFAULT 1,
+    "transaction_currency" TEXT NOT NULL DEFAULT 'USD',
+    "exchange_rate" DECIMAL(18,4) NOT NULL DEFAULT 1.0000,
     "amount" DECIMAL(18,2) NOT NULL,
+    "amount_paid" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    "amortized_amount_usd" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
     "payment_date" TIMESTAMP(3) NOT NULL,
     "receipt_image_url" TEXT,
+    "reviewed_by" TEXT,
+    "authorized_by" TEXT,
+    "approved_by" TEXT,
     "registered_by_id" INTEGER NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "order_payments_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "direct_payments" (
+    "id" BIGSERIAL NOT NULL,
+    "concept" TEXT NOT NULL,
+    "beneficiary" TEXT NOT NULL,
+    "method" TEXT NOT NULL DEFAULT 'TRANSFERENCIA',
+    "source_account_id" INTEGER,
+    "destination_account" TEXT,
+    "reference_number" TEXT,
+    "payment_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "amount_paid" DECIMAL(18,2) NOT NULL,
+    "transaction_currency" TEXT NOT NULL DEFAULT 'USD',
+    "exchange_rate" DECIMAL(18,4) NOT NULL DEFAULT 1.0000,
+    "equivalent_amount_usd" DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    "notes" TEXT,
+    "receipt_image_url" TEXT,
+    "reviewed_by" TEXT,
+    "authorized_by" TEXT,
+    "approved_by" TEXT,
+    "registered_by_id" INTEGER NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "direct_payments_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -300,7 +368,8 @@ CREATE TABLE "order_invoices" (
 CREATE TABLE "purchase_requisitions" (
     "id" BIGSERIAL NOT NULL,
     "requisition_number" TEXT NOT NULL,
-    "department_section" TEXT NOT NULL,
+    "department_id" INTEGER NOT NULL,
+    "department_section" TEXT,
     "justification" TEXT NOT NULL,
     "status" "PurchaseRequisitionStatus" NOT NULL DEFAULT 'BORRADOR',
     "notes" TEXT,
@@ -350,6 +419,7 @@ CREATE TABLE "stock_movements" (
     "notes" TEXT,
     "created_by_id" INTEGER NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "product_id" BIGINT,
 
     CONSTRAINT "stock_movements_pkey" PRIMARY KEY ("id")
 );
@@ -358,7 +428,7 @@ CREATE TABLE "stock_movements" (
 CREATE TABLE "stock_movement_items" (
     "id" BIGSERIAL NOT NULL,
     "stock_movement_id" BIGINT NOT NULL,
-    "batch_id" BIGINT NOT NULL,
+    "batch_id" BIGINT,
     "order_item_id" BIGINT,
     "quantity" DECIMAL(12,2) NOT NULL,
     "unit_cost" DECIMAL(18,4),
@@ -407,7 +477,8 @@ CREATE TABLE "requests" (
     "user_id" INTEGER NOT NULL,
     "status" "RequestStatus" NOT NULL DEFAULT 'PENDIENTE',
     "priority" "RequestPriority" NOT NULL DEFAULT 'RUTINA',
-    "department_section" TEXT NOT NULL,
+    "department_id" INTEGER NOT NULL,
+    "department_section" TEXT,
     "justification" TEXT NOT NULL,
     "weekly_token_cycle" TEXT NOT NULL,
     "dispatched_movement_id" BIGINT,
@@ -485,6 +556,12 @@ CREATE UNIQUE INDEX "refresh_tokens_token_key" ON "refresh_tokens"("token");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "currencies_code_key" ON "currencies"("code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "departments_code_key" ON "departments"("code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "departments_name_key" ON "departments"("name");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "categories_code_key" ON "categories"("code");
@@ -589,13 +666,25 @@ ALTER TABLE "order_items" ADD CONSTRAINT "order_items_unit_id_fkey" FOREIGN KEY 
 ALTER TABLE "order_payments" ADD CONSTRAINT "order_payments_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "order_payments" ADD CONSTRAINT "order_payments_currency_id_fkey" FOREIGN KEY ("currency_id") REFERENCES "currencies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "order_payments" ADD CONSTRAINT "order_payments_source_account_id_fkey" FOREIGN KEY ("source_account_id") REFERENCES "bank_accounts"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "order_payments" ADD CONSTRAINT "order_payments_currency_id_fkey" FOREIGN KEY ("currency_id") REFERENCES "currencies"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "order_payments" ADD CONSTRAINT "order_payments_registered_by_id_fkey" FOREIGN KEY ("registered_by_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "direct_payments" ADD CONSTRAINT "direct_payments_source_account_id_fkey" FOREIGN KEY ("source_account_id") REFERENCES "bank_accounts"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "direct_payments" ADD CONSTRAINT "direct_payments_registered_by_id_fkey" FOREIGN KEY ("registered_by_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "order_invoices" ADD CONSTRAINT "order_invoices_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "purchase_requisitions" ADD CONSTRAINT "purchase_requisitions_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "departments"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "purchase_requisitions" ADD CONSTRAINT "purchase_requisitions_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -616,6 +705,9 @@ ALTER TABLE "stock_batches" ADD CONSTRAINT "stock_batches_product_id_fkey" FOREI
 ALTER TABLE "stock_batches" ADD CONSTRAINT "stock_batches_location_id_fkey" FOREIGN KEY ("location_id") REFERENCES "locations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "stock_movements" ADD CONSTRAINT "stock_movements_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "stock_movements" ADD CONSTRAINT "stock_movements_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -631,7 +723,7 @@ ALTER TABLE "stock_movements" ADD CONSTRAINT "stock_movements_created_by_id_fkey
 ALTER TABLE "stock_movement_items" ADD CONSTRAINT "stock_movement_items_stock_movement_id_fkey" FOREIGN KEY ("stock_movement_id") REFERENCES "stock_movements"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "stock_movement_items" ADD CONSTRAINT "stock_movement_items_batch_id_fkey" FOREIGN KEY ("batch_id") REFERENCES "stock_batches"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "stock_movement_items" ADD CONSTRAINT "stock_movement_items_batch_id_fkey" FOREIGN KEY ("batch_id") REFERENCES "stock_batches"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "stock_movement_items" ADD CONSTRAINT "stock_movement_items_order_item_id_fkey" FOREIGN KEY ("order_item_id") REFERENCES "order_items"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -659,6 +751,9 @@ ALTER TABLE "lab_stock_movements" ADD CONSTRAINT "lab_stock_movements_to_fridge_
 
 -- AddForeignKey
 ALTER TABLE "lab_stock_movements" ADD CONSTRAINT "lab_stock_movements_executed_by_id_fkey" FOREIGN KEY ("executed_by_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "requests" ADD CONSTRAINT "requests_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "departments"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "requests" ADD CONSTRAINT "requests_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

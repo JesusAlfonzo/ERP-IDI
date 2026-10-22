@@ -45,6 +45,27 @@ export interface DepartmentItem {
   _count?: { requests: number; purchaseRequisitions: number };
 }
 
+export interface PaymentMethodItem {
+  id: number;
+  code: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface JustificationConceptItem {
+  id: number;
+  code: string;
+  title: string;
+  description: string | null;
+  category: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export const InventoryMasterService = {
   // ==================== ÁREAS / DEPARTAMENTOS ====================
   getDepartments: async (activeOnly?: boolean): Promise<DepartmentItem[]> => {
@@ -193,6 +214,80 @@ export const InventoryMasterService = {
     id: number,
   ): Promise<{ status: string; message: string }> => {
     const res = await apiClient.delete(`/inventory/masters/locations/${id}`);
+    return res.data;
+  },
+
+  // ==================== MÉTODOS DE PAGO ====================
+  getPaymentMethods: async (activeOnly?: boolean): Promise<PaymentMethodItem[]> => {
+    const res = await apiClient.get("/inventory/masters/payment-methods", {
+      params: activeOnly ? { activeOnly: "true" } : undefined,
+    });
+    return res.data;
+  },
+  createPaymentMethod: async (data: {
+    code: string;
+    name: string;
+    description?: string;
+    isActive?: boolean;
+  }): Promise<PaymentMethodItem> => {
+    const res = await apiClient.post("/inventory/masters/payment-methods", data);
+    return res.data;
+  },
+  updatePaymentMethod: async (
+    id: number,
+    data: {
+      code?: string;
+      name?: string;
+      description?: string;
+      isActive?: boolean;
+    },
+  ): Promise<PaymentMethodItem> => {
+    const res = await apiClient.patch(`/inventory/masters/payment-methods/${id}`, data);
+    return res.data;
+  },
+  deletePaymentMethod: async (id: number): Promise<{ status: string; message: string }> => {
+    const res = await apiClient.delete(`/inventory/masters/payment-methods/${id}`);
+    return res.data;
+  },
+
+  // ==================== CONCEPTOS DE JUSTIFICACIÓN Y PROTOCOLOS ====================
+  getJustificationConcepts: async (
+    category?: string,
+    activeOnly?: boolean,
+  ): Promise<JustificationConceptItem[]> => {
+    const res = await apiClient.get("/inventory/masters/justification-concepts", {
+      params: {
+        ...(activeOnly ? { activeOnly: "true" } : {}),
+        ...(category ? { category } : {}),
+      },
+    });
+    return res.data;
+  },
+  createJustificationConcept: async (data: {
+    code: string;
+    title: string;
+    description?: string;
+    category?: string;
+    isActive?: boolean;
+  }): Promise<JustificationConceptItem> => {
+    const res = await apiClient.post("/inventory/masters/justification-concepts", data);
+    return res.data;
+  },
+  updateJustificationConcept: async (
+    id: number,
+    data: {
+      code?: string;
+      title?: string;
+      description?: string;
+      category?: string;
+      isActive?: boolean;
+    },
+  ): Promise<JustificationConceptItem> => {
+    const res = await apiClient.patch(`/inventory/masters/justification-concepts/${id}`, data);
+    return res.data;
+  },
+  deleteJustificationConcept: async (id: number): Promise<{ status: string; message: string }> => {
+    const res = await apiClient.delete(`/inventory/masters/justification-concepts/${id}`);
     return res.data;
   },
 };

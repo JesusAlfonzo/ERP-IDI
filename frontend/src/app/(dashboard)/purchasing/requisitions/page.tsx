@@ -13,6 +13,7 @@ import {
 import {
   InventoryMasterService,
   type DepartmentItem,
+  type JustificationConceptItem,
 } from "@/services/inventory-master.service";
 import type {
   PurchaseRequisition,
@@ -37,7 +38,34 @@ import {
   Send,
   Calculator,
   ShieldCheck,
+  Mail,
+  MessageCircle,
+  Printer,
 } from "lucide-react";
+
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 function getErrorMessage(err: unknown, fallback: string): string {
   if (err && typeof err === "object" && "response" in err) {
@@ -48,26 +76,25 @@ function getErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
-
 const STATUS_BADGES: Record<
   PurchaseRequisitionStatus,
-  { label: string; className: string }
+  { label: string; variant: "secondary" | "warning" | "success" | "destructive" }
 > = {
   BORRADOR: {
     label: "Borrador",
-    className: "bg-slate-100 text-slate-700 border-slate-200",
+    variant: "secondary",
   },
   EN_COTIZACION: {
     label: "En Cotización",
-    className: "bg-amber-50 text-amber-700 border-amber-200",
+    variant: "warning",
   },
   ADJUDICADA: {
     label: "Adjudicada (Orden Generada)",
-    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    variant: "success",
   },
   CANCELADA: {
     label: "Cancelada",
-    className: "bg-rose-50 text-rose-700 border-rose-200",
+    variant: "destructive",
   },
 };
 
@@ -97,21 +124,16 @@ export default function PurchaseRequisitionsPage() {
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [justificationConcepts, setJustificationConcepts] = useState<JustificationConceptItem[]>([]);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | "">("");
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [searchFilter, setSearchFilter] = useState<string>("");
 
-  // Feedback banner
-  const [feedback, setFeedback] = useState<{
-    status: "success" | "error";
-    message: string;
-  } | null>(null);
-
-  // Modal: Nueva Preorden
-  const [departments, setDepartments] = useState<DepartmentItem[]>([]);
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | "">("");
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("");
+  // Modal Crear Preorden
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("");
   const [departmentSection, setDepartmentSection] = useState("");
   const [justification, setJustification] = useState("");
   const [notes, setNotes] = useState("");
@@ -120,10 +142,10 @@ export default function PurchaseRequisitionsPage() {
   ]);
   const [submitting, setSubmitting] = useState(false);
 
-  // Modal: Ver Detalle
+  // Modal Ver Detalle
   const [selectedForView, setSelectedForView] = useState<PurchaseRequisition | null>(null);
 
-  // Modal: Adjudicar y Convertir a Orden
+  // Modal Adjudicación (Conversión a Orden)
   const [requisitionToConvert, setRequisitionToConvert] = useState<PurchaseRequisition | null>(null);
   const [adjudicateSupplierId, setAdjudicateSupplierId] = useState<string>("");
   const [adjudicateCurrency, setAdjudicateCurrency] = useState<CurrencyCode>("USD");
@@ -134,132 +156,93 @@ export default function PurchaseRequisitionsPage() {
     EUR: 81.5,
     VED: 1.0,
   });
-  const [adjudicateNotes, setAdjudicateNotes] = useState<string>("");
+  const [adjudicateNotes, setAdjudicateNotes] = useState("");
   const [conversionItems, setConversionItems] = useState<ConversionRow[]>([]);
   const [converting, setConverting] = useState(false);
+
+  // Feedback
+  const [feedback, setFeedback] = useState<{
+    status: "success" | "error";
+    message: string;
+  } | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [reqs, supps, currs, prods, cats, deps, currentRates] = await Promise.all([
+      const [reqs, sups, currs, prods, cats, rates, deps, concepts] = await Promise.all([
         PurchasingClientService.getRequisitions({
           status: statusFilter || undefined,
           search: searchFilter || undefined,
-        }),
+        }).catch(() => []),
         PurchasingClientService.getSuppliers().catch(() => []),
         PurchasingClientService.getCurrencies().catch(() => []),
         InventoryClientService.getProducts().catch(() => []),
         InventoryClientService.getCategories().catch(() => []),
-        InventoryMasterService.getDepartments(true).catch(() => []),
         CurrencyService.getCurrentRates().catch(() => null),
+        InventoryMasterService.getDepartments(true).catch(() => []),
+        InventoryMasterService.getJustificationConcepts(undefined, true).catch(() => []),
       ]);
+
       setRequisitions(reqs);
-      setSuppliers(supps);
+      setSuppliers(sups);
       setCurrencies(currs);
       setCatalogProducts(prods);
       setCategories(cats);
       setDepartments(deps);
-
-      if (currentRates) {
-        const rates = {
-          USD: Number(currentRates.USD || currentRates.rates?.USD || 75.0),
-          EUR: Number(currentRates.EUR || currentRates.rates?.EUR || 81.5),
-          VED: 1.0,
-        };
-        setBcvRates(rates);
-        setAdjudicateExchangeRate((prev) => {
-          if (adjudicateCurrency === "USD") return rates.USD;
-          if (adjudicateCurrency === "EUR") return rates.EUR;
-          if (adjudicateCurrency === "VED") return 1.0;
-          return prev || rates.USD;
-        });
-      }
-
+      setJustificationConcepts(concepts);
       if (deps.length > 0) {
         setSelectedDepartmentId((prev) => (prev !== "" ? prev : deps[0].id));
         setDepartmentSection((prev) => (prev ? prev : deps[0].name));
       }
 
-      if (currs.length > 0 && !adjudicateCurrencyId) {
-        const defaultCurr = currs.find((c) => c.isDefault) || currs[0];
-        setAdjudicateCurrencyId(String(defaultCurr?.id ?? ""));
+      if (rates) {
+        const ratesObj = {
+          USD: Number(rates.USD || rates.rates?.USD || 75.0),
+          EUR: Number(rates.EUR || rates.rates?.EUR || 81.5),
+          VED: 1.0,
+        };
+        setBcvRates(ratesObj);
+        setAdjudicateExchangeRate((prev) =>
+          prev === 75.0 ? ratesObj.USD : prev
+        );
       }
-    } catch (err: unknown) {
-      console.error("Error al cargar requisiciones", err);
-      setFeedback({
-        status: "error",
-        message: getErrorMessage(err, "Error al sincronizar datos."),
-      });
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, searchFilter, adjudicateCurrencyId, adjudicateCurrency]);
-
-  const handleAdjudicateCurrencyChange = (newCurrency: CurrencyCode) => {
-    setAdjudicateCurrency(newCurrency);
-    if (newCurrency === "USD") {
-      setAdjudicateExchangeRate(bcvRates.USD);
-    } else if (newCurrency === "EUR") {
-      setAdjudicateExchangeRate(bcvRates.EUR);
-    } else if (newCurrency === "VED") {
-      setAdjudicateExchangeRate(1.0);
-    }
-
-    const matched = currencies.find(
-      (c) => c.code === (newCurrency === "VED" ? "VES" : newCurrency)
-    );
-    if (matched) {
-      setAdjudicateCurrencyId(String(matched.id));
-    }
-  };
+  }, [statusFilter, searchFilter]);
 
   useEffect(() => {
-    let isMounted = true;
-    const init = async () => {
-      if (isMounted) {
-        await loadData();
-      }
-    };
-    void init();
-
-    const handleExternalRate = () => {
-      if (isMounted) void loadData();
-    };
-    window.addEventListener("idi:exchange-rate-updated", handleExternalRate);
-
-    return () => {
-      isMounted = false;
-      window.removeEventListener("idi:exchange-rate-updated", handleExternalRate);
-    };
+    loadData();
   }, [loadData]);
 
-  // Manejo de ítems en el formulario de creación de preorden
+  // Manejadores del Formulario Crear Preorden
   const handleAddItem = () => {
-    setFormItems((prev) => [...prev, { productId: 0, unitId: 0, quantityRequested: 1 }]);
+    setFormItems((prev) => [
+      ...prev,
+      { productId: 0, unitId: 0, quantityRequested: 1 },
+    ]);
   };
 
   const handleRemoveItem = (index: number) => {
+    if (formItems.length === 1) return;
     setFormItems((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleProductSelect = (index: number, prodId: number, unitId: number) => {
+  const handleProductSelect = (index: number, productId: number, unitId: number) => {
     setFormItems((prev) => {
       const updated = [...prev];
-      updated[index] = {
-        productId: prodId,
-        unitId,
-        quantityRequested: updated[index]?.quantityRequested || 1,
-        estimatedPrice: updated[index]?.estimatedPrice,
-      };
+      if (updated[index]) {
+        updated[index] = { ...updated[index], productId, unitId };
+      }
       return updated;
     });
   };
 
-  const handleQuantityChange = (index: number, quantity: number) => {
+  const handleQuantityChange = (index: number, qty: number) => {
     setFormItems((prev) => {
       const updated = [...prev];
       if (updated[index]) {
-        updated[index] = { ...updated[index], quantityRequested: quantity };
+        updated[index] = { ...updated[index], quantityRequested: qty };
       }
       return updated;
     });
@@ -269,20 +252,26 @@ export default function PurchaseRequisitionsPage() {
     setFormItems((prev) => {
       const updated = [...prev];
       if (updated[index]) {
-        updated[index] = { ...updated[index], estimatedPrice: price };
+        updated[index] = {
+          ...updated[index],
+          estimatedPrice: price > 0 ? price : undefined,
+        };
       }
       return updated;
     });
   };
 
-  // Enviar Nueva Preorden
   const handleSubmitPreorder = async (e: FormEvent) => {
     e.preventDefault();
-    const hasInvalid = formItems.some((it) => !it.productId || it.quantityRequested <= 0);
-    if (hasInvalid) {
+    setFeedback(null);
+
+    const hasInvalid = formItems.some(
+      (it) => !it.productId || !it.unitId || it.quantityRequested <= 0
+    );
+    if (hasInvalid || !justification.trim()) {
       setFeedback({
         status: "error",
-        message: "Todos los renglones deben tener un insumo válido y cantidad mayor a 0.",
+        message: "Complete todos los renglones, unidades y la justificación requerida.",
       });
       return;
     }
@@ -296,113 +285,124 @@ export default function PurchaseRequisitionsPage() {
     }
 
     setSubmitting(true);
-    setFeedback(null);
     try {
       await PurchasingClientService.createRequisition({
         departmentId: Number(selectedDepartmentId),
         departmentSection: departmentSection || undefined,
-        justification,
+        justification: justification.trim(),
         notes: notes.trim() || undefined,
-        items: formItems.map((it) => ({
-          productId: it.productId,
-          unitId: it.unitId,
-          quantityRequested: it.quantityRequested,
-          estimatedPrice: it.estimatedPrice || undefined,
-        })),
+        items: formItems,
       });
 
       setFeedback({
         status: "success",
-        message: "Preorden de compra creada exitosamente. Lista para cotizaciones.",
+        message: "Preorden de compra creada correctamente en estado Borrador.",
       });
       setIsNewModalOpen(false);
-      setFormItems([{ productId: 0, unitId: 0, quantityRequested: 1 }]);
       setJustification("");
       setNotes("");
+      setFormItems([{ productId: 0, unitId: 0, quantityRequested: 1 }]);
       loadData();
     } catch (err: unknown) {
       setFeedback({
         status: "error",
-        message: getErrorMessage(err, "Error al crear la preorden de compra."),
+        message: getErrorMessage(err, "Error al crear la preorden."),
       });
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Cambiar estado a EN_COTIZACION
+  // Pasar a Cotización
   const handleMoveToQuote = async (req: PurchaseRequisition) => {
     try {
       await PurchasingClientService.updateRequisitionStatus(req.id, "EN_COTIZACION");
       setFeedback({
         status: "success",
-        message: `Preorden #${req.requisitionNumber} pasada a estado 'En Cotización'.`,
+        message: `Preorden #${req.requisitionNumber} actualizada a En Cotización.`,
       });
       loadData();
     } catch (err: unknown) {
       setFeedback({
         status: "error",
-        message: getErrorMessage(err, "No se pudo actualizar el estado."),
+        message: getErrorMessage(err, "Error al actualizar estado."),
       });
     }
   };
 
-  // Abrir Modal de Adjudicación / Conversión
+  // Iniciar Modal de Adjudicación
   const openAdjudicateModal = (req: PurchaseRequisition) => {
     setRequisitionToConvert(req);
-    setAdjudicateNotes(`Generada a partir de preorden ${req.requisitionNumber}`);
+    setAdjudicateSupplierId("");
     setAdjudicateCurrency("USD");
     setAdjudicateExchangeRate(bcvRates.USD);
+    setAdjudicateNotes("");
 
-    const matched = currencies.find((c) => c.code === "USD");
-    if (matched) {
-      setAdjudicateCurrencyId(String(matched.id));
-    }
-
-    const mappedRows: ConversionRow[] = req.items.map((it) => {
-      const prod = catalogProducts.find((p) => p.id === it.productId) || it.product;
-      const isExempt = prod?.isTaxExempt ?? false;
+    // Inicializar renglones mapeando insumo, empaque y precio estimado si existía
+    const rows: ConversionRow[] = req.items.map((it) => {
+      const prod = it.product;
       const unitLabel =
-        it.unit?.abbreviation ||
-        prod?.baseUnit?.abbreviation ||
-        "UND";
+        it.unit?.abbreviation || it.unit?.name || prod?.baseUnit?.abbreviation || "UND";
 
       return {
         itemId: it.id,
         productId: it.productId,
-        unitId: it.unitId,
+        unitId: it.unitId || it.unit?.id || prod?.purchaseUnitId || prod?.baseUnitId || 1,
         quantityOrdered: Number(it.quantityRequested),
-        unitPrice: Number(it.estimatedPrice) || 0,
-        isExempt,
+        unitPrice: Number(it.estimatedPrice || 0),
+        isExempt: Boolean(prod?.isTaxExempt ?? true),
         productName: prod?.name || "Insumo",
         productSku: prod?.sku,
         unitLabel,
       };
     });
 
-    setConversionItems(mappedRows);
-    setFeedback(null);
+    setConversionItems(rows);
   };
 
-  // Cálculos fiscales en vivo para la Adjudicación
+  const handleAdjudicateCurrencyChange = (c: CurrencyCode) => {
+    setAdjudicateCurrency(c);
+    const matchedCurr = currencies.find(
+      (cur) => cur.code.toUpperCase() === c.toUpperCase()
+    );
+    setAdjudicateCurrencyId(matchedCurr ? String(matchedCurr.id) : "");
+
+    if (c === "VED") {
+      setAdjudicateExchangeRate(1.0);
+    } else if (c === "EUR") {
+      setAdjudicateExchangeRate(bcvRates.EUR);
+    } else {
+      setAdjudicateExchangeRate(bcvRates.USD);
+    }
+  };
+
+  const handleToggleAllExempt = (exempt: boolean) => {
+    setConversionItems((prev) =>
+      prev.map((r) => ({ ...r, isExempt: exempt }))
+    );
+  };
+
+  // Cálculos Fiscales SENIAT
   const fiscalSummary = useMemo(() => {
     let taxableAmount = 0;
     let exemptAmount = 0;
 
-    for (const row of conversionItems) {
-      const lineSubtotal = Math.round(row.quantityOrdered * row.unitPrice * 100) / 100;
-      if (row.isExempt) {
+    conversionItems.forEach((r) => {
+      const lineSubtotal = Math.round(r.quantityOrdered * r.unitPrice * 100) / 100;
+      if (r.isExempt) {
         exemptAmount += lineSubtotal;
       } else {
         taxableAmount += lineSubtotal;
       }
-    }
+    });
 
     taxableAmount = Math.round(taxableAmount * 100) / 100;
     exemptAmount = Math.round(exemptAmount * 100) / 100;
+
     const iva16 = Math.round(taxableAmount * 0.16 * 100) / 100;
     const totalAmount = Math.round((taxableAmount + exemptAmount + iva16) * 100) / 100;
-    const rate = Number(adjudicateExchangeRate) || 1.0;
+
+    const rate = Number(adjudicateExchangeRate) || 1;
     const totalBs =
       adjudicateCurrency === "VED"
         ? totalAmount
@@ -416,13 +416,6 @@ export default function PurchaseRequisitionsPage() {
       totalBs,
     };
   }, [conversionItems, adjudicateExchangeRate, adjudicateCurrency]);
-
-  // Alternar exento para todos
-  const handleToggleAllExempt = (exempt: boolean) => {
-    setConversionItems((prev) =>
-      prev.map((row) => ({ ...row, isExempt: exempt }))
-    );
-  };
 
   // Enviar Adjudicación
   const handleConfirmConversion = async (e: FormEvent) => {
@@ -487,860 +480,990 @@ export default function PurchaseRequisitionsPage() {
 
   const adjudicateSymbol = getCurrencySymbol(adjudicateCurrency);
 
+  // Manejadores de Exportación y Compartición de Preorden
+  const handleSendRequisitionEmail = () => {
+    if (!selectedForView) return;
+    const itemsList = selectedForView.items
+      .map(
+        (it, idx) =>
+          `${idx + 1}. ${it.product?.name || "Insumo"} - Cantidad: ${it.quantityRequested} ${it.unit?.abbreviation || it.product?.baseUnit?.abbreviation || "UND"}`
+      )
+      .join("\n");
+
+    const subject = encodeURIComponent(
+      `Solicitud de Cotización / Preorden #${selectedForView.requisitionNumber} - Instituto de Inmunología Clínica IDI`
+    );
+    const body = encodeURIComponent(
+      `Estimado proveedor,\n\nLe contactamos del Instituto de Inmunología Clínica IDI C.A. para solicitar formalmente cotización para los siguientes renglones:\n\n${itemsList}\n\nJustificación: ${selectedForView.justification || "Requerimiento operativo"}\n\nAgradecemos enviarnos su oferta con precios unitarios, disponibilidad y condición de pago.\n\nAtentamente,\nDepartamento de Compras y Suministros\nInstituto de Inmunología Clínica IDI`
+    );
+    window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
+  };
+
+  const handleSendRequisitionWhatsApp = () => {
+    if (!selectedForView) return;
+    const itemsList = selectedForView.items
+      .map(
+        (it, idx) =>
+          `*${idx + 1}.* ${it.product?.name || "Insumo"} -> *${it.quantityRequested}* ${it.unit?.abbreviation || it.product?.baseUnit?.abbreviation || "UND"}`
+      )
+      .join("\n");
+
+    const message = encodeURIComponent(
+      `*Instituto de Inmunología Clínica IDI*\n*Preorden / Solicitud de Cotización #${selectedForView.requisitionNumber}*\n\nHola, un saludo cordial. Solicitamos cotización para los siguientes renglones:\n\n${itemsList}\n\nPor favor hacernos llegar su cotización a la brevedad posible. ¡Muchas gracias!`
+    );
+    window.open(`https://api.whatsapp.com/send?text=${message}`, "_blank");
+  };
+
+  const handlePrintRequisition = () => {
+    window.print();
+  };
+
   return (
     <div className="space-y-6">
       {/* Encabezado */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <FileText className="w-6 h-6 text-blue-600" />
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <FileText className="w-6 h-6 text-primary" />
             Preórdenes de Compra (Solicitud de Cotización)
           </h1>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted-foreground">
             Requisiciones internas, comparativa de ofertas y adjudicación a órdenes de compra
           </p>
         </div>
 
-        <button
-          type="button"
+        <Button
           onClick={() => {
             setIsNewModalOpen(true);
             setFeedback(null);
           }}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto cursor-pointer"
+          className="gap-2 self-start sm:self-auto"
         >
           <Plus className="w-4 h-4" />
           Nueva Preorden
-        </button>
+        </Button>
       </div>
 
       {feedback && (
-        <div
-          className={`p-4 rounded-xl text-xs flex items-center gap-2 border shadow-2xs ${
-            feedback.status === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : "bg-red-50 border-red-200 text-red-800"
-          }`}
-        >
+        <Alert variant={feedback.status === "success" ? "success" : "destructive"}>
           {feedback.status === "success" ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            <CheckCircle2 className="w-4 h-4" />
           ) : (
-            <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+            <AlertCircle className="w-4 h-4" />
           )}
-          <span>{feedback.message}</span>
-        </div>
+          <AlertTitle>{feedback.status === "success" ? "Operación Exitosa" : "Error"}</AlertTitle>
+          <AlertDescription>{feedback.message}</AlertDescription>
+        </Alert>
       )}
 
       {/* Barra de Filtros */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-400" />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none"
-            >
-              <option value="">Todos los estados</option>
-              <option value="BORRADOR">Borradores</option>
-              <option value="EN_COTIZACION">En Cotización</option>
-              <option value="ADJUDICADA">Adjudicadas</option>
-              <option value="CANCELADA">Canceladas</option>
-            </select>
+      <Card className="p-4 shadow-2xs">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-muted-foreground" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring outline-none cursor-pointer"
+              >
+                <option value="">Todos los estados</option>
+                <option value="BORRADOR">Borradores</option>
+                <option value="EN_COTIZACION">En Cotización</option>
+                <option value="ADJUDICADA">Adjudicadas</option>
+                <option value="CANCELADA">Canceladas</option>
+              </select>
+            </div>
+
+            <Input
+              type="text"
+              placeholder="Buscar por correlativo o área..."
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              className="text-xs flex-1 max-w-sm"
+            />
           </div>
 
-          <input
-            type="text"
-            placeholder="Buscar por correlativo o área..."
-            value={searchFilter}
-            onChange={(e) => setSearchFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none flex-1 max-w-sm"
-          />
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => loadData()}
+            title="Actualizar listado"
+            className="self-end sm:self-auto"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+          </Button>
         </div>
-
-        <button
-          type="button"
-          onClick={() => loadData()}
-          className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs cursor-pointer self-end sm:self-auto"
-          title="Actualizar listado"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-        </button>
-      </div>
+      </Card>
 
       {/* Tabla de Preórdenes */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-              <tr>
-                <th className="py-3 px-4">N° Preorden</th>
-                <th className="py-3 px-4">Departamento Solicitante</th>
-                <th className="py-3 px-4">Fecha Emisión</th>
-                <th className="py-3 px-4 text-center">Renglones</th>
-                <th className="py-3 px-4 text-center">Estado</th>
-                <th className="py-3 px-4 text-center">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2" />
-                    Cargando preórdenes de compra...
-                  </td>
-                </tr>
-              ) : requisitions.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400">
-                    No se encontraron preórdenes registradas.
-                  </td>
-                </tr>
-              ) : (
-                requisitions.map((req) => {
-                  const badge = STATUS_BADGES[req.status] || {
-                    label: req.status,
-                    className: "bg-slate-50 text-slate-700",
-                  };
-                  const canAdjudicate =
-                    req.status === "BORRADOR" || req.status === "EN_COTIZACION";
-                  const canMoveToQuote = req.status === "BORRADOR";
+      <Card className="overflow-hidden shadow-2xs">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/30">
+              <TableHead className="py-3 px-4 font-semibold">N° Preorden</TableHead>
+              <TableHead className="py-3 px-4 font-semibold">Departamento Solicitante</TableHead>
+              <TableHead className="py-3 px-4 font-semibold">Fecha Emisión</TableHead>
+              <TableHead className="py-3 px-4 text-center font-semibold">Renglones</TableHead>
+              <TableHead className="py-3 px-4 text-center font-semibold">Estado</TableHead>
+              <TableHead className="py-3 px-4 text-center font-semibold">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
+                  Cargando preórdenes de compra...
+                </TableCell>
+              </TableRow>
+            ) : requisitions.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
+                  No se encontraron preórdenes registradas.
+                </TableCell>
+              </TableRow>
+            ) : (
+              requisitions.map((req) => {
+                const badge = STATUS_BADGES[req.status] || {
+                  label: req.status,
+                  variant: "secondary" as const,
+                };
+                const canAdjudicate =
+                  req.status === "BORRADOR" || req.status === "EN_COTIZACION";
+                const canMoveToQuote = req.status === "BORRADOR";
 
-                  return (
-                    <tr
-                      key={String(req.id)}
-                      className="hover:bg-slate-50/60 transition-colors"
-                    >
-                      <td className="py-3 px-4 font-mono font-bold text-slate-800">
-                        {req.requisitionNumber}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-slate-800">
-                          {req.departmentSection}
-                        </div>
-                        <div className="text-[11px] text-slate-400 truncate max-w-xs">
-                          {req.justification}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
-                        {req.createdAt
-                          ? new Date(req.createdAt).toLocaleDateString()
-                          : "-"}
-                      </td>
-                      <td className="py-3 px-4 text-center font-semibold text-slate-700">
-                        {req.items?.length || 0}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <span
-                          className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold border ${badge.className}`}
-                        >
-                          {badge.label}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedForView(req)}
-                            className="inline-flex items-center gap-1 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer"
-                            title="Ver detalle de renglones"
-                          >
-                            <Eye className="w-3.5 h-3.5" /> Ver
-                          </button>
-
-                          {canMoveToQuote && (
-                            <button
-                              type="button"
-                              onClick={() => handleMoveToQuote(req)}
-                              className="inline-flex items-center gap-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer"
-                              title="Pasar a En Cotización"
-                            >
-                              <Send className="w-3.5 h-3.5" /> Cotizar
-                            </button>
-                          )}
-
-                          {canAdjudicate && (
-                            <button
-                              type="button"
-                              onClick={() => openAdjudicateModal(req)}
-                              className="inline-flex items-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer"
-                              title="Adjudicar y Convertir en Orden de Compra"
-                            >
-                              <ArrowRight className="w-3.5 h-3.5" /> Adjudicar
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Modal: Crear Preorden */}
-      {isNewModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[88vh] flex flex-col overflow-hidden">
-            {/* Cabecera Fija */}
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0 bg-slate-50/70">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                  <FileText className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-800 text-base">
-                    Nueva Preorden de Compra
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Defina los requerimientos institucionales para solicitar cotización a proveedores
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsNewModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200/50 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Cuerpo Scrolleable */}
-            <form onSubmit={handleSubmitPreorder} className="flex flex-col flex-1 min-h-0">
-              <div className="p-6 overflow-y-auto pr-3 space-y-5 flex-1 scroll-smooth">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Departamento Solicitante *
-                  </label>
-                  <select
-                    value={selectedDepartmentId}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      setSelectedDepartmentId(val);
-                      const dep = departments.find((d) => d.id === val);
-                      if (dep) setDepartmentSection(dep.name);
-                    }}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer"
-                    required
+                return (
+                  <TableRow
+                    key={String(req.id)}
+                    className="hover:bg-muted/40 transition-colors"
                   >
-                    <option value="">-- Seleccione un departamento activo --</option>
-                    {departments.map((sec) => (
-                      <option key={sec.id} value={sec.id}>
-                        {sec.code} - {sec.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-3 pt-2 border-t border-slate-100">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                        Insumos ({formItems.length})
-                      </span>
-                      <span className="text-slate-300 hidden sm:inline">|</span>
-                      <div className="flex items-center gap-1.5">
-                        <label
-                          htmlFor="req-category-filter"
-                          className="text-xs font-medium text-slate-600 whitespace-nowrap"
-                        >
-                          Filtrar productos por categoría:
-                        </label>
-                        <select
-                          id="req-category-filter"
-                          value={selectedCategoryFilter}
-                          onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                          className="bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors cursor-pointer"
-                        >
-                          <option value="">Todas las categorías</option>
-                          {categories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
+                    <TableCell className="py-3 px-4 font-mono font-bold text-foreground">
+                      {req.requisitionNumber}
+                    </TableCell>
+                    <TableCell className="py-3 px-4">
+                      <div className="font-semibold text-foreground">
+                        {req.departmentSection}
                       </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleAddItem}
-                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/70 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer border border-blue-200 shrink-0"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Agregar renglón
-                    </button>
-                  </div>
-
-                  <div className="space-y-3">
-                    {formItems.map((item, idx) => (
-                      <div
-                        key={idx}
-                        className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-2xs"
-                      >
-                        <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-white border border-slate-200 text-xs font-mono font-bold text-slate-600 shrink-0">
-                          {idx + 1}
-                        </div>
-
-                        {/* Selector de Producto y Empaque */}
-                        <div className="flex-1 min-w-0">
-                          <ProductPackagingSelector
-                            products={catalogProducts}
-                            selectedCategoryId={selectedCategoryFilter}
-                            selectedProductId={item.productId}
-                            selectedUnitId={item.unitId}
-                            onChange={(pId, uId) => handleProductSelect(idx, pId, uId)}
-                          />
-                        </div>
-
-                        {/* Cantidad solicitada */}
-                        <div className="w-full sm:w-28 shrink-0">
-                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Cantidad
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            placeholder="1"
-                            value={item.quantityRequested}
-                            onChange={(e) =>
-                              handleQuantityChange(
-                                idx,
-                                Math.max(1, Number(e.target.value))
-                              )
-                            }
-                            className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold focus:ring-2 focus:ring-blue-500"
-                            required
-                          />
-                        </div>
-
-                        {/* Precio Estimado (Opcional) */}
-                        <div className="w-full sm:w-32 shrink-0">
-                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Precio Est. ($)
-                          </label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            placeholder="0.00"
-                            value={item.estimatedPrice || ""}
-                            onChange={(e) =>
-                              handleEstimatedPriceChange(
-                                idx,
-                                Math.max(0, Number(e.target.value))
-                              )
-                            }
-                            className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-
-                        {/* Eliminar renglón */}
-                        <div className="sm:self-end mb-0.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveItem(idx)}
-                            disabled={formItems.length === 1}
-                            className="text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-30 cursor-pointer p-2 rounded-lg border border-transparent hover:border-red-200 transition-colors"
-                            title="Eliminar renglón"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                      <div className="text-[11px] text-muted-foreground truncate max-w-xs">
+                        {req.justification}
                       </div>
-                    ))}
-                  </div>
-                </div>
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-muted-foreground whitespace-nowrap">
+                      {req.createdAt
+                        ? new Date(req.createdAt).toLocaleDateString()
+                        : "-"}
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-center font-semibold text-foreground">
+                      {req.items?.length || 0}
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-center">
+                      <Badge variant={badge.variant}>
+                        {badge.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-center">
+                      <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedForView(req)}
+                          className="gap-1 h-7 text-xs font-semibold"
+                          title="Ver detalle de renglones"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> Ver
+                        </Button>
 
-                <div className="pt-2 border-t border-slate-100">
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Justificación de la Compra / Protocolo *
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={justification}
-                    onChange={(e) => setJustification(e.target.value)}
-                    placeholder="Explique el requerimiento de insumos o el protocolo científico a ejecutar..."
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 resize-none font-medium"
-                    required
-                  />
-                </div>
+                        {canMoveToQuote && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleMoveToQuote(req)}
+                            className="gap-1 h-7 text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200"
+                            title="Pasar a En Cotización"
+                          >
+                            <Send className="w-3.5 h-3.5" /> Cotizar
+                          </Button>
+                        )}
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Notas y Observaciones (Opcional)
-                  </label>
-                  <input
-                    type="text"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Especificaciones adicionales o condiciones de entrega requeridas..."
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+                        {canAdjudicate && (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => openAdjudicateModal(req)}
+                            className="gap-1 h-7 text-xs font-semibold"
+                            title="Adjudicar y Convertir en Orden de Compra"
+                          >
+                            <ArrowRight className="w-3.5 h-3.5" /> Adjudicar
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+
+      {/* Modal: Crear Preorden con shadcn Dialog */}
+      <Dialog open={isNewModalOpen} onOpenChange={setIsNewModalOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[88vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-5 border-b border-border bg-muted/30">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <FileText className="w-5 h-5" />
               </div>
-
-              {/* Pie Fijo */}
-              <div className="flex items-center justify-between p-4 px-6 border-t border-slate-100 bg-slate-50/70 shrink-0">
-                <span className="text-xs text-slate-500">
-                  {formItems.length}{" "}
-                  {formItems.length === 1
-                    ? "renglón agregado"
-                    : "renglones agregados"}
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsNewModalOpen(false)}
-                    className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-200/60 rounded-lg font-medium cursor-pointer transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
-                  >
-                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {submitting ? "Creando..." : "Crear Preorden"}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Ver Detalle de Preorden */}
-      {selectedForView && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/70 shrink-0">
               <div>
-                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                  Preorden #{selectedForView.requisitionNumber}
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Área: <strong className="text-slate-700">{selectedForView.departmentSection}</strong>
+                <DialogTitle className="font-bold text-foreground text-base">
+                  Nueva Preorden de Compra
+                </DialogTitle>
+                <p className="text-xs text-muted-foreground">
+                  Defina los requerimientos institucionales para solicitar cotización a proveedores
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedForView(null)}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200/50 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            </div>
+          </DialogHeader>
+
+          <form onSubmit={handleSubmitPreorder} className="flex flex-col flex-1 min-h-0">
+            <div className="p-6 overflow-y-auto space-y-5 flex-1 scroll-smooth">
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wider">
+                  Departamento Solicitante *
+                </Label>
+                <select
+                  value={selectedDepartmentId}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setSelectedDepartmentId(val);
+                    const dep = departments.find((d) => d.id === val);
+                    if (dep) setDepartmentSection(dep.name);
+                  }}
+                  className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
+                  required
+                >
+                  <option value="">-- Seleccione un departamento activo --</option>
+                  {departments.map((sec) => (
+                    <option key={sec.id} value={sec.id}>
+                      {sec.code} - {sec.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-3 pt-2 border-t border-border">
+                <Card className="p-3 bg-muted/20 border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-none">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="text-xs font-bold text-foreground uppercase tracking-wider">
+                      Renglones ({formItems.length})
+                    </span>
+                    <span className="text-muted-foreground hidden sm:inline">|</span>
+                    <div className="flex items-center gap-1.5">
+                      <Label
+                        htmlFor="req-category-filter"
+                        className="text-xs font-medium text-muted-foreground whitespace-nowrap"
+                      >
+                        Filtrar productos por categoría:
+                      </Label>
+                      <select
+                        id="req-category-filter"
+                        value={selectedCategoryFilter}
+                        onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                        className="h-8 bg-background border border-input rounded-lg px-2.5 text-xs font-semibold text-foreground focus:ring-2 focus:ring-ring transition-colors cursor-pointer"
+                      >
+                        <option value="">Todas las categorías</option>
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddItem}
+                    className="gap-1.5 text-xs text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Agregar renglón
+                  </Button>
+                </Card>
+
+                <div className="space-y-3">
+                  {formItems.map((item, idx) => {
+                    const selectedProd = catalogProducts.find((p) => p.id === item.productId);
+                    const activeUnit =
+                      item.unitId === selectedProd?.purchaseUnitId
+                        ? selectedProd?.purchaseUnit?.abbreviation || selectedProd?.purchaseUnit?.name
+                        : selectedProd?.baseUnit?.abbreviation || selectedProd?.baseUnit?.name || "";
+                    const hasConversion =
+                      selectedProd?.conversionFactor &&
+                      Number(selectedProd.conversionFactor) > 1 &&
+                      item.unitId === selectedProd?.purchaseUnitId;
+                    const baseQty = hasConversion
+                      ? Math.round(Number(item.quantityRequested || 0) * Number(selectedProd.conversionFactor) * 100) / 100
+                      : null;
+
+                    return (
+                      <Card
+                        key={idx}
+                        className="p-4 bg-muted/20 border-border"
+                      >
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-background border border-border text-xs font-mono font-bold text-muted-foreground shrink-0">
+                            {idx + 1}
+                          </div>
+
+                          {/* Selector de Producto y Empaque */}
+                          <div className="flex-1 min-w-0">
+                            <ProductPackagingSelector
+                              products={catalogProducts}
+                              selectedCategoryId={selectedCategoryFilter}
+                              selectedProductId={item.productId}
+                              selectedUnitId={item.unitId}
+                              onChange={(pId, uId) => handleProductSelect(idx, pId, uId)}
+                            />
+                          </div>
+
+                          {/* Cantidad solicitada */}
+                          <div className="w-full sm:w-32 shrink-0">
+                            <Label className="text-[11px] mb-1 block">
+                              Cantidad {activeUnit ? `(${activeUnit})` : ""}
+                            </Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              placeholder="1"
+                              value={item.quantityRequested}
+                              onChange={(e) =>
+                                handleQuantityChange(
+                                  idx,
+                                  Math.max(1, Number(e.target.value))
+                                )
+                              }
+                              className="font-mono font-bold text-xs"
+                              required
+                            />
+                            {hasConversion && baseQty !== null && (
+                              <span className="text-[10px] text-primary font-medium block mt-0.5 truncate">
+                                ≈ {baseQty} {selectedProd?.baseUnit?.abbreviation || "UND"}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Precio Estimado (Opcional) */}
+                          <div className="w-full sm:w-32 shrink-0">
+                            <Label className="text-[11px] mb-1 block">
+                              Precio Est. ($)
+                            </Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="0.00"
+                              value={item.estimatedPrice || ""}
+                              onChange={(e) =>
+                                handleEstimatedPriceChange(
+                                  idx,
+                                  Math.max(0, Number(e.target.value))
+                                )
+                              }
+                              className="font-mono text-xs"
+                            />
+                          </div>
+
+                          {/* Eliminar renglón */}
+                          <div className="sm:self-end mb-0.5 shrink-0">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => handleRemoveItem(idx)}
+                              disabled={formItems.length === 1}
+                              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                              title="Eliminar renglón"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-border space-y-1.5">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <Label className="text-xs uppercase tracking-wider">
+                    Justificación de la Compra / Protocolo *
+                  </Label>
+                  {justificationConcepts.length > 0 && (
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!val) return;
+                        const found = justificationConcepts.find((c) => String(c.id) === val);
+                        if (found) {
+                          const snippet = `${found.title}${found.description ? `: ${found.description}` : ""}`;
+                          setJustification((prev) => (prev ? `${prev}\n• ${snippet}` : snippet));
+                        }
+                      }}
+                      className="text-[11px] bg-primary/5 border border-primary/20 text-primary rounded-md px-2 py-1 focus:ring-1 focus:ring-ring font-medium cursor-pointer"
+                    >
+                      <option value="">+ Seleccionar concepto / protocolo predefinido...</option>
+                      {justificationConcepts.map((jc) => (
+                        <option key={jc.id} value={jc.id}>
+                          [{jc.code}] {jc.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                <Textarea
+                  rows={3}
+                  value={justification}
+                  onChange={(e) => setJustification(e.target.value)}
+                  placeholder="Explique el requerimiento de insumos o el protocolo científico a ejecutar..."
+                  className="text-xs resize-none font-medium"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wider">
+                  Notas y Observaciones (Opcional)
+                </Label>
+                <Input
+                  type="text"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Especificaciones adicionales o condiciones de entrega requeridas..."
+                  className="text-xs"
+                />
+              </div>
             </div>
 
+            <DialogFooter className="p-4 px-6 border-t border-border bg-muted/20 flex sm:justify-between items-center">
+              <span className="text-xs text-muted-foreground">
+                {formItems.length}{" "}
+                {formItems.length === 1
+                  ? "renglón agregado"
+                  : "renglones agregados"}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsNewModalOpen(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={submitting}
+                  className="gap-2"
+                >
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {submitting ? "Creando..." : "Crear Preorden"}
+                </Button>
+              </div>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Ver Detalle de Preorden con shadcn Dialog */}
+      <Dialog
+        open={!!selectedForView}
+        onOpenChange={(open) => {
+          if (!open) setSelectedForView(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-5 border-b border-border bg-muted/30">
+            <div className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              <div>
+                <DialogTitle className="font-bold text-foreground text-base">
+                  Preorden #{selectedForView?.requisitionNumber}
+                </DialogTitle>
+                <p className="text-xs text-muted-foreground">
+                  Área: <strong className="text-foreground">{selectedForView?.departmentSection}</strong>
+                </p>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {selectedForView && (
             <div className="p-6 overflow-y-auto space-y-4 flex-1">
               <div>
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1">
+                <span className="text-xs font-bold text-foreground uppercase tracking-wider block mb-1">
                   Justificación Técnica
                 </span>
-                <p className="text-xs text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <p className="text-xs text-foreground bg-muted/30 p-3 rounded-lg border border-border">
                   {selectedForView.justification}
                 </p>
               </div>
 
               {selectedForView.notes && (
                 <div>
-                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1">
+                  <span className="text-xs font-bold text-foreground uppercase tracking-wider block mb-1">
                     Notas y Observaciones
                   </span>
-                  <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                  <p className="text-xs text-muted-foreground bg-muted/30 p-2.5 rounded-lg border border-border">
                     {selectedForView.notes}
                   </p>
                 </div>
               )}
 
               <div>
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2">
+                <span className="text-xs font-bold text-foreground uppercase tracking-wider block mb-2">
                   Renglones Solicitados ({selectedForView.items.length})
                 </span>
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-xs text-left">
-                    <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                      <tr>
-                        <th className="py-2.5 px-3">#</th>
-                        <th className="py-2.5 px-3">Insumo / Reactivo</th>
-                        <th className="py-2.5 px-3 text-center">Unidad</th>
-                        <th className="py-2.5 px-3 text-right">Cant. Solicitada</th>
-                        <th className="py-2.5 px-3 text-right">Precio Est. ($)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {selectedForView.items.map((it, idx) => (
-                        <tr key={it.id} className="hover:bg-slate-50/60">
-                          <td className="py-2.5 px-3 font-mono text-slate-500">
-                            {idx + 1}
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <span className="font-semibold text-slate-800 block">
-                              {it.product?.name}
-                            </span>
-                            {it.product?.sku && (
-                              <span className="font-mono text-[10px] text-slate-400">
-                                SKU: {it.product.sku}
+                <Card className="overflow-hidden shadow-none">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/30">
+                        <TableHead className="py-2.5 px-3">#</TableHead>
+                        <TableHead className="py-2.5 px-3">Insumo / Reactivo</TableHead>
+                        <TableHead className="py-2.5 px-3 text-right">Cant. Solicitada</TableHead>
+                        <TableHead className="py-2.5 px-3 text-center">Conversión Base</TableHead>
+                        <TableHead className="py-2.5 px-3 text-right">Precio Est. ($)</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedForView.items.map((it, idx) => {
+                        const unitName = it.unit?.abbreviation || it.product?.baseUnit?.abbreviation || "UND";
+                        const baseUnitName = it.product?.baseUnit?.abbreviation || "UND";
+                        const hasConversion =
+                          Boolean(it.product?.conversionFactor &&
+                          Number(it.product.conversionFactor) > 1 &&
+                          it.unit?.id !== it.product.baseUnitId);
+                        const baseQty = hasConversion
+                          ? Math.round(Number(it.quantityRequested) * Number(it.product!.conversionFactor!) * 100) / 100
+                          : null;
+
+                        return (
+                          <TableRow key={it.id} className="hover:bg-muted/40">
+                            <TableCell className="py-2.5 px-3 font-mono text-muted-foreground">
+                              {idx + 1}
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3">
+                              <span className="font-semibold text-foreground block">
+                                {it.product?.name}
                               </span>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-center font-medium text-slate-600">
-                            {it.unit?.abbreviation || it.product?.baseUnit?.abbreviation || "UND"}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
-                            {Number(it.quantityRequested)}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono text-slate-600">
-                            {it.estimatedPrice ? `$${Number(it.estimatedPrice).toFixed(2)}` : "-"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 px-6 border-t border-slate-100 bg-slate-50/70 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setSelectedForView(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200/60 rounded-lg cursor-pointer"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Adjudicar y Convertir en Orden de Compra */}
-      {requisitionToConvert && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-            {/* Cabecera Fija */}
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0 bg-slate-50/70">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                  <Calculator className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-800 text-base">
-                    Adjudicar Preorden #{requisitionToConvert.requisitionNumber} a Orden de Compra
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Defina el proveedor adjudicado, precios finales acordados y soporte fiscal SENIAT (IVA 16% / Exentos)
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setRequisitionToConvert(null)}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200/50 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Formulario y Tabla */}
-            <form onSubmit={handleConfirmConversion} className="flex flex-col flex-1 min-h-0">
-              <div className="p-6 overflow-y-auto pr-3 space-y-5 flex-1 scroll-smooth">
-                {/* Datos Comerciales y Fiscales */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                      Proveedor Adjudicado *
-                    </label>
-                    <select
-                      value={adjudicateSupplierId}
-                      onChange={(e) => setAdjudicateSupplierId(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-medium"
-                      required
-                    >
-                      <option value="">-- Seleccione proveedor ganador --</option>
-                      {suppliers.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} ({s.rifOrId || s.rif || "N/A"})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                      Moneda de Facturación *
-                    </label>
-                    <select
-                      value={adjudicateCurrency}
-                      onChange={(e) => handleAdjudicateCurrencyChange(e.target.value as CurrencyCode)}
-                      className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-medium"
-                      required
-                    >
-                      {CURRENCY_OPTIONS.map((opt) => (
-                        <option key={opt.code} value={opt.code}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                      {adjudicateCurrency === "VED"
-                        ? "Tasa de Cambio (VED)"
-                        : `Tasa BCV del Día (${adjudicateCurrency === "EUR" ? "Bs./EUR" : "Bs./USD"})`}
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        value={adjudicateExchangeRate}
-                        disabled={adjudicateCurrency === "VED"}
-                        onChange={(e) => setAdjudicateExchangeRate(Number(e.target.value))}
-                        className="w-full bg-white disabled:bg-slate-100 disabled:text-slate-500 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold focus:ring-2 focus:ring-blue-500"
-                        required
-                      />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-mono">
-                        {adjudicateCurrency === "VED" ? "1.00" : adjudicateCurrency === "EUR" ? "Bs./€" : "Bs./$"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tabla de Renglones Adjudicados */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                      Renglones de Material a Adjudicar ({conversionItems.length})
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleAllExempt(true)}
-                        className="text-[11px] text-emerald-700 hover:text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded cursor-pointer font-medium"
-                      >
-                        Marcar todo Exento
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleAllExempt(false)}
-                        className="text-[11px] text-slate-700 hover:text-slate-800 bg-slate-100 border border-slate-200 px-2 py-1 rounded cursor-pointer font-medium"
-                      >
-                        Marcar todo Gravable (16%)
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                        <tr>
-                          <th className="py-2.5 px-3">Insumo / Reactivo</th>
-                          <th className="py-2.5 px-3 text-center">Unidad</th>
-                          <th className="py-2.5 px-3 text-right w-24">Cantidad</th>
-                          <th className="py-2.5 px-3 text-right w-32">Precio Unit. ({adjudicateSymbol})</th>
-                          <th className="py-2.5 px-3 text-center w-28">¿Exento IVA?</th>
-                          <th className="py-2.5 px-3 text-right w-28">Subtotal ({adjudicateSymbol})</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {conversionItems.map((row, idx) => {
-                          const lineSubtotal = Math.round(row.quantityOrdered * row.unitPrice * 100) / 100;
-                          return (
-                            <tr key={idx} className="hover:bg-slate-50/60">
-                              <td className="py-2.5 px-3">
-                                <span className="font-semibold text-slate-900 block">
-                                  {row.productName}
+                              {it.product?.sku && (
+                                <span className="font-mono text-[10px] text-muted-foreground">
+                                  SKU: {it.product.sku}
                                 </span>
-                                {row.productSku && (
-                                  <span className="font-mono text-[10px] text-slate-400">
-                                    SKU: {row.productSku}
+                              )}
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3 text-right font-mono font-bold text-foreground">
+                              {Number(it.quantityRequested)} {unitName}
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3 text-center">
+                              {hasConversion && baseQty !== null ? (
+                                <div className="text-[11px] text-primary font-medium font-mono">
+                                  ≈ {baseQty} {baseUnitName}
+                                  <span className="text-muted-foreground text-[10px] block font-sans">
+                                    (1 {unitName} = {Number(it.product!.conversionFactor)} {baseUnitName})
                                   </span>
-                                )}
-                              </td>
-                              <td className="py-2.5 px-3 text-center font-medium text-slate-600">
-                                {row.unitLabel}
-                              </td>
-                              <td className="py-2.5 px-3 text-right">
-                                <input
-                                  type="number"
-                                  min="1"
-                                  value={row.quantityOrdered}
-                                  onChange={(e) => {
-                                    const qty = Math.max(1, Number(e.target.value));
-                                    setConversionItems((prev) => {
-                                      const updated = [...prev];
-                                      if (updated[idx]) {
-                                        updated[idx] = { ...updated[idx], quantityOrdered: qty };
-                                      }
-                                      return updated;
-                                    });
-                                  }}
-                                  className="w-full bg-slate-50 border border-slate-300 rounded px-2 py-1 text-right font-mono font-bold text-xs text-slate-600"
-                                  required
-                                />
-                              </td>
-                              <td className="py-2.5 px-3 text-right">
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min="0.01"
-                                  placeholder="0.00"
-                                  value={row.unitPrice || ""}
-                                  onChange={(e) => {
-                                    const price = Math.max(0, Number(e.target.value));
-                                    setConversionItems((prev) => {
-                                      const updated = [...prev];
-                                      if (updated[idx]) {
-                                        updated[idx] = { ...updated[idx], unitPrice: price };
-                                      }
-                                      return updated;
-                                    });
-                                  }}
-                                  className="w-full bg-slate-50 border border-slate-300 rounded px-2 py-1 text-right font-mono font-bold text-xs text-blue-700"
-                                  required
-                                />
-                              </td>
-                              <td className="py-2.5 px-3 text-center">
-                                <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={row.isExempt}
-                                    onChange={(e) => {
-                                      const isEx = e.target.checked;
-                                      setConversionItems((prev) => {
-                                        const updated = [...prev];
-                                        if (updated[idx]) {
-                                          updated[idx] = { ...updated[idx], isExempt: isEx };
-                                        }
-                                        return updated;
-                                      });
-                                    }}
-                                    className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
-                                  />
-                                  <span
-                                    className={`text-[11px] font-semibold ${
-                                      row.isExempt ? "text-emerald-700" : "text-slate-400"
-                                    }`}
-                                  >
-                                    {row.isExempt ? "Exento" : "Gravable"}
-                                  </span>
-                                </label>
-                              </td>
-                              <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
-                                {adjudicateSymbol} {lineSubtotal.toFixed(2)}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground font-mono text-[11px]">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3 text-right font-mono text-muted-foreground">
+                              {it.estimatedPrice ? `$${Number(it.estimatedPrice).toFixed(2)}` : "-"}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </Card>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="p-4 px-6 border-t border-border bg-muted/20 flex flex-wrap items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSendRequisitionEmail}
+                className="gap-1.5 text-xs"
+                title="Enviar preorden por Correo Electrónico"
+              >
+                <Mail className="w-3.5 h-3.5 text-blue-600" />
+                <span>Correo</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSendRequisitionWhatsApp}
+                className="gap-1.5 text-xs"
+                title="Enviar preorden por WhatsApp"
+              >
+                <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                <span>WhatsApp</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handlePrintRequisition}
+                className="gap-1.5 text-xs"
+                title="Descargar o Imprimir Documento"
+              >
+                <Printer className="w-3.5 h-3.5 text-muted-foreground" />
+                <span>Imprimir / PDF</span>
+              </Button>
+            </div>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              onClick={() => setSelectedForView(null)}
+            >
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Adjudicar y Convertir en Orden de Compra con shadcn Dialog */}
+      <Dialog
+        open={!!requisitionToConvert}
+        onOpenChange={(open) => {
+          if (!open) setRequisitionToConvert(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-5xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-5 border-b border-border bg-muted/30">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
+                <Calculator className="w-5 h-5" />
+              </div>
+              <div>
+                <DialogTitle className="font-bold text-foreground text-base">
+                  Adjudicar Preorden #{requisitionToConvert?.requisitionNumber} a Orden de Compra
+                </DialogTitle>
+                <p className="text-xs text-muted-foreground">
+                  Defina el proveedor adjudicado, precios finales acordados y soporte fiscal SENIAT (IVA 16% / Exentos)
+                </p>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <form onSubmit={handleConfirmConversion} className="flex flex-col flex-1 min-h-0">
+            <div className="p-6 overflow-y-auto space-y-5 flex-1 scroll-smooth">
+              {/* Datos Comerciales y Fiscales */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-muted/20 p-4 rounded-xl border border-border">
+                <div className="space-y-1.5">
+                  <Label className="text-xs uppercase tracking-wider">
+                    Proveedor Adjudicado *
+                  </Label>
+                  <select
+                    value={adjudicateSupplierId}
+                    onChange={(e) => setAdjudicateSupplierId(e.target.value)}
+                    className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
+                    required
+                  >
+                    <option value="">-- Seleccione proveedor ganador --</option>
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.rifOrId || s.rif || "N/A"})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                {/* Cuadro Resumen Financiero SENIAT */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-2 text-slate-600 text-xs">
-                    <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
-                    <span>
-                      Cálculo fiscal automatizado según providencias SENIAT. La orden guardará snapshot inmutable de la tasa oficial BCV.
+                <div className="space-y-1.5">
+                  <Label className="text-xs uppercase tracking-wider">
+                    Moneda de Facturación *
+                  </Label>
+                  <select
+                    value={adjudicateCurrency}
+                    onChange={(e) => handleAdjudicateCurrencyChange(e.target.value as CurrencyCode)}
+                    className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
+                    required
+                  >
+                    {CURRENCY_OPTIONS.map((opt) => (
+                      <option key={opt.code} value={opt.code}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs uppercase tracking-wider">
+                    {adjudicateCurrency === "VED"
+                      ? "Tasa de Cambio (VED)"
+                      : `Tasa BCV del Día (${adjudicateCurrency === "EUR" ? "Bs./EUR" : "Bs./USD"})`}
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={adjudicateExchangeRate}
+                      disabled={adjudicateCurrency === "VED"}
+                      onChange={(e) => setAdjudicateExchangeRate(Number(e.target.value))}
+                      className="font-mono font-bold text-xs pr-12"
+                      required
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-mono">
+                      {adjudicateCurrency === "VED" ? "1.00" : adjudicateCurrency === "EUR" ? "Bs./€" : "Bs./$"}
                     </span>
                   </div>
+                </div>
+              </div>
 
-                  <div className="w-full sm:w-80 bg-white p-3 rounded-lg border border-slate-200 shadow-2xs space-y-1.5 text-xs">
-                    <div className="flex justify-between text-slate-600">
-                      <span>Subtotal Gravable (Base 16%):</span>
-                      <span className="font-mono font-semibold">
-                        {adjudicateSymbol} {fiscalSummary.taxableAmount.toFixed(2)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-slate-600">
-                      <span>Subtotal Exento:</span>
-                      <span className="font-mono font-semibold text-emerald-700">
-                        {adjudicateSymbol} {fiscalSummary.exemptAmount.toFixed(2)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-slate-600">
-                      <span>IVA (16%):</span>
-                      <span className="font-mono font-semibold">
-                        {adjudicateSymbol} {fiscalSummary.iva16.toFixed(2)}
-                      </span>
-                    </div>
-                    <div className="border-t border-slate-200 pt-1.5 flex justify-between font-bold text-slate-900 text-sm">
-                      <span>Total General ({adjudicateCurrency}):</span>
-                      <span className="font-mono text-blue-700">
-                        {adjudicateSymbol} {fiscalSummary.totalAmount.toFixed(2)}
-                      </span>
-                    </div>
-                    {adjudicateCurrency !== "VED" && (
-                      <div className="border-t border-dashed border-slate-200 pt-1.5 space-y-0.5">
-                        <div className="flex justify-between text-slate-700 font-mono text-[11px]">
-                          <span className="font-semibold">Monto Total en Bs.:</span>
-                          <span className="font-bold text-slate-900">
-                            Bs. {fiscalSummary.totalBs.toLocaleString("es-VE", {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-slate-400 italic">
-                          Calculado a la tasa oficial BCV de {adjudicateExchangeRate.toFixed(2)} Bs./{adjudicateCurrency === "EUR" ? "€" : "$"}
-                        </p>
-                      </div>
-                    )}
+              {/* Tabla de Renglones Adjudicados */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                    Renglones de Material a Adjudicar ({conversionItems.length})
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleToggleAllExempt(true)}
+                      className="text-[11px] h-7 text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100"
+                    >
+                      Marcar todo Exento
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleToggleAllExempt(false)}
+                      className="text-[11px] h-7"
+                    >
+                      Marcar todo Gravable (16%)
+                    </Button>
                   </div>
                 </div>
 
-                {/* Notas de adjudicación */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Términos de Despacho o Notas de la Orden (Opcional)
-                  </label>
-                  <input
-                    type="text"
-                    value={adjudicateNotes}
-                    onChange={(e) => setAdjudicateNotes(e.target.value)}
-                    placeholder="Condiciones de pago a 30 días, flete incluido..."
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+                <Card className="overflow-hidden shadow-none">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/30">
+                        <TableHead className="py-2.5 px-3">Insumo / Reactivo</TableHead>
+                        <TableHead className="py-2.5 px-3 text-center">Unidad</TableHead>
+                        <TableHead className="py-2.5 px-3 text-right w-24">Cantidad</TableHead>
+                        <TableHead className="py-2.5 px-3 text-right w-32">Precio Unit. ({adjudicateSymbol})</TableHead>
+                        <TableHead className="py-2.5 px-3 text-center w-28">¿Exento IVA?</TableHead>
+                        <TableHead className="py-2.5 px-3 text-right w-28">Subtotal ({adjudicateSymbol})</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {conversionItems.map((row, idx) => {
+                        const lineSubtotal = Math.round(row.quantityOrdered * row.unitPrice * 100) / 100;
+                        return (
+                          <TableRow key={idx} className="hover:bg-muted/40">
+                            <TableCell className="py-2.5 px-3">
+                              <span className="font-semibold text-foreground block">
+                                {row.productName}
+                              </span>
+                              {row.productSku && (
+                                <span className="font-mono text-[10px] text-muted-foreground">
+                                  SKU: {row.productSku}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3 text-center font-medium text-muted-foreground">
+                              {row.unitLabel}
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3 text-right">
+                              <Input
+                                type="number"
+                                min="1"
+                                value={row.quantityOrdered}
+                                onChange={(e) => {
+                                  const qty = Math.max(1, Number(e.target.value));
+                                  setConversionItems((prev) => {
+                                    const updated = [...prev];
+                                    if (updated[idx]) {
+                                      updated[idx] = { ...updated[idx], quantityOrdered: qty };
+                                    }
+                                    return updated;
+                                  });
+                                }}
+                                className="h-7 text-right font-mono font-bold text-xs"
+                                required
+                              />
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3 text-right">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                placeholder="0.00"
+                                value={row.unitPrice || ""}
+                                onChange={(e) => {
+                                  const price = Math.max(0, Number(e.target.value));
+                                  setConversionItems((prev) => {
+                                    const updated = [...prev];
+                                    if (updated[idx]) {
+                                      updated[idx] = { ...updated[idx], unitPrice: price };
+                                    }
+                                    return updated;
+                                  });
+                                }}
+                                className="h-7 text-right font-mono font-bold text-xs text-primary"
+                                required
+                              />
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <Checkbox
+                                  checked={row.isExempt}
+                                  onCheckedChange={(checked) => {
+                                    const isEx = !!checked;
+                                    setConversionItems((prev) => {
+                                      const updated = [...prev];
+                                      if (updated[idx]) {
+                                        updated[idx] = { ...updated[idx], isExempt: isEx };
+                                      }
+                                      return updated;
+                                    });
+                                  }}
+                                />
+                                <span
+                                  className={`text-[11px] font-semibold ${
+                                    row.isExempt ? "text-emerald-700" : "text-muted-foreground"
+                                  }`}
+                                >
+                                  {row.isExempt ? "Exento" : "Gravable"}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3 text-right font-mono font-bold text-foreground">
+                              {adjudicateSymbol} {lineSubtotal.toFixed(2)}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </Card>
               </div>
 
-              {/* Pie Fijo */}
-              <div className="flex items-center justify-between p-4 px-6 border-t border-slate-100 bg-slate-50/70 shrink-0">
-                <span className="text-xs text-slate-500">
-                  Total a ordenar:{" "}
-                  <strong className="text-slate-800">
-                    {adjudicateSymbol} {fiscalSummary.totalAmount.toFixed(2)} {adjudicateCurrency}
-                  </strong>
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRequisitionToConvert(null)}
-                    className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-200/60 rounded-lg font-medium cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={converting}
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
-                  >
-                    {converting && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {converting ? "Generando Orden..." : "Adjudicar y Generar Orden"}
-                  </button>
+              {/* Cuadro Resumen Financiero SENIAT */}
+              <div className="bg-muted/20 p-4 rounded-xl border border-border flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>
+                    Cálculo fiscal automatizado según providencias SENIAT. La orden guardará snapshot inmutable de la tasa oficial BCV.
+                  </span>
                 </div>
+
+                <Card className="w-full sm:w-80 p-3 shadow-2xs space-y-1.5 text-xs">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Subtotal Gravable (Base 16%):</span>
+                    <span className="font-mono font-semibold text-foreground">
+                      {adjudicateSymbol} {fiscalSummary.taxableAmount.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Subtotal Exento:</span>
+                    <span className="font-mono font-semibold text-emerald-700">
+                      {adjudicateSymbol} {fiscalSummary.exemptAmount.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>IVA (16%):</span>
+                    <span className="font-mono font-semibold text-foreground">
+                      {adjudicateSymbol} {fiscalSummary.iva16.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="border-t border-border pt-1.5 flex justify-between font-bold text-foreground text-sm">
+                    <span>Total General ({adjudicateCurrency}):</span>
+                    <span className="font-mono text-primary">
+                      {adjudicateSymbol} {fiscalSummary.totalAmount.toFixed(2)}
+                    </span>
+                  </div>
+                  {adjudicateCurrency !== "VED" && (
+                    <div className="border-t border-dashed border-border pt-1.5 space-y-0.5">
+                      <div className="flex justify-between text-muted-foreground font-mono text-[11px]">
+                        <span className="font-semibold text-foreground">Monto Total en Bs.:</span>
+                        <span className="font-bold text-foreground">
+                          Bs. {fiscalSummary.totalBs.toLocaleString("es-VE", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground italic">
+                        Calculado a la tasa oficial BCV de {adjudicateExchangeRate.toFixed(2)} Bs./{adjudicateCurrency === "EUR" ? "€" : "$"}
+                      </p>
+                    </div>
+                  )}
+                </Card>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+
+              {/* Notas de adjudicación */}
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wider">
+                  Términos de Despacho o Notas de la Orden (Opcional)
+                </Label>
+                <Input
+                  type="text"
+                  value={adjudicateNotes}
+                  onChange={(e) => setAdjudicateNotes(e.target.value)}
+                  placeholder="Condiciones de pago a 30 días, flete incluido..."
+                  className="text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Pie Fijo */}
+            <DialogFooter className="p-4 px-6 border-t border-border bg-muted/20 flex sm:justify-between items-center">
+              <span className="text-xs text-muted-foreground">
+                Total a ordenar:{" "}
+                <strong className="text-foreground">
+                  {adjudicateSymbol} {fiscalSummary.totalAmount.toFixed(2)} {adjudicateCurrency}
+                </strong>
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRequisitionToConvert(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="success"
+                  disabled={converting}
+                  className="gap-2"
+                >
+                  {converting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {converting ? "Generando Orden..." : "Adjudicar y Generar Orden"}
+                </Button>
+              </div>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

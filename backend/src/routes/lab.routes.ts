@@ -26,18 +26,18 @@ router.use(authenticateJWT);
 router.get('/fridges', getFridges);
 router.post(
   '/fridges',
-  requireRoles(['ADMINISTRADOR', 'ANALISTA_LABORATORIO']),
+  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
   createFridge
 );
 router.get('/fridges/:id/contents', getFridgeContents);
 router.post(
   '/fridges/:id/assign',
-  requireRoles(['ADMINISTRADOR', 'ANALISTA_LABORATORIO']),
+  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
   assignUnitToFridge
 );
 router.post(
   '/fridges/:id/assign-batch',
-  requireRoles(['ADMINISTRADOR', 'ANALISTA_LABORATORIO']),
+  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
   assignBatchToFridge
 );
 
@@ -45,38 +45,38 @@ router.post(
 router.get('/units', getLabUnits);
 router.get(
   '/reagents',
-  requireRoles(['ADMINISTRADOR', 'ANALISTA_LABORATORIO']),
+  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
   getAvailableReagents
 );
 router.get(
   '/consumptions',
-  requireRoles(['ADMINISTRADOR', 'ANALISTA_LABORATORIO']),
+  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
   getRecentConsumptions
 );
 router.post(
   '/consumptions',
-  requireRoles(['ADMINISTRADOR', 'ANALISTA_LABORATORIO']),
+  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
   registerReagentConsumption
 );
 router.get('/units/:id', getLabUnitById);
 router.patch(
   '/units/:id/open',
-  requireRoles(['ADMINISTRADOR', 'ANALISTA_LABORATORIO']),
+  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
   openLabUnit
 );
 router.post(
   '/units/:id/consume',
-  requireRoles(['ADMINISTRADOR', 'ANALISTA_LABORATORIO']),
+  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
   consumeLabUnit
 );
 router.post(
   '/units/:id/transfer',
-  requireRoles(['ADMINISTRADOR', 'ANALISTA_LABORATORIO']),
+  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
   transferFridge
 );
 router.post(
   '/units/:id/discard',
-  requireRoles(['ADMINISTRADOR', 'ANALISTA_LABORATORIO']),
+  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
   discardLabUnit
 );
 

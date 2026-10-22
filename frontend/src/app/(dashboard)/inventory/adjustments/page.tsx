@@ -43,6 +43,14 @@ import {
   Thermometer,
 } from "lucide-react";
 
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+
 const ADJUSTMENT_OPTIONS: {
   type: AdjustmentType;
   label: string;
@@ -547,64 +555,62 @@ function AdjustmentsContent() {
     <div className="space-y-6 max-w-4xl mx-auto pb-12">
       {/* Encabezado */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-          <SlidersHorizontal className="w-6 h-6 text-blue-600" />
+        <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+          <SlidersHorizontal className="w-6 h-6 text-primary" />
           Ajustes de Inventario y Mermas
         </h1>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           Modificaciones directas al stock físico con justificación técnica para
           el Kardex
         </p>
       </div>
 
       {!isAuthorized ? (
-        <div className="bg-white border border-amber-200 rounded-xl p-8 text-center space-y-4 shadow-xs">
+        <Card className="border-amber-200 p-8 text-center space-y-4">
           <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
             <ShieldAlert className="w-6 h-6" />
           </div>
           <div className="space-y-1">
-            <h2 className="text-base font-bold text-slate-800">
+            <h2 className="text-base font-bold text-foreground">
               Módulo de Modificación Física Restringido
             </h2>
-            <p className="text-xs text-slate-500 max-w-md mx-auto">
+            <p className="text-xs text-muted-foreground max-w-md mx-auto">
               Los ajustes manuales de stock, ingresos de insumos por donación y
               bajas por descarte o merma son competencia exclusiva del personal
               de <strong>Almacén</strong> o <strong>Administración</strong>.
             </p>
           </div>
           <div className="pt-2">
-            <button
+            <Button
               type="button"
               onClick={() => router.push("/inventory/kardex")}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition-colors cursor-pointer"
             >
               Consultar Kardex de Movimientos
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
       ) : (
         <>
           {feedback && (
-            <div
-              className={`p-4 rounded-xl text-xs flex items-center gap-2.5 border animate-in fade-in duration-200 ${
-                feedback.status === "success"
-                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                  : "bg-red-50 border-red-200 text-red-800"
-              }`}
+            <Alert
+              variant={feedback.status === "success" ? "default" : "destructive"}
+              className={feedback.status === "success" ? "border-emerald-300 bg-emerald-50 text-emerald-900" : ""}
             >
               {feedback.status === "success" ? (
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
               ) : (
-                <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                <AlertCircle className="w-4 h-4" />
               )}
-              <span className="font-medium">{feedback.message}</span>
-            </div>
+              <AlertDescription className="font-medium">{feedback.message}</AlertDescription>
+            </Alert>
           )}
 
-          <form
-            onSubmit={handleSubmit}
-            className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-6"
-          >
+          <Card>
+            <CardContent className="p-6">
+              <form
+                onSubmit={handleSubmit}
+                className="space-y-6"
+              >
             {/* 1. Selección del Tipo de Operación */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
@@ -658,13 +664,13 @@ function AdjustmentsContent() {
 
                 {/* Filtro por Categoría (Separado, fuera de la fila del buscador) */}
                 <div className="flex items-center gap-2 self-start sm:self-auto">
-                  <span className="text-[11px] font-semibold text-slate-500 shrink-0">
+                  <span className="text-[11px] font-semibold text-muted-foreground shrink-0">
                     Categoría:
                   </span>
                   <select
                     value={categoryFilter}
                     onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="bg-white border border-slate-300 hover:border-slate-400 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors cursor-pointer"
+                    className="bg-background border border-input rounded-lg px-2.5 py-1 text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors cursor-pointer"
                   >
                     <option value="">Todas las categorías</option>
                     {categories.map((c) => (
@@ -689,35 +695,35 @@ function AdjustmentsContent() {
               />
 
               {loadingProductDetail && (
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center gap-2 text-xs text-slate-500">
-                  <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                <div className="p-3 bg-muted/40 border border-border rounded-lg flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
                   Cargando información y lotes del insumo...
                 </div>
               )}
 
               {/* Ficha Visual Ampliada del Producto Seleccionado */}
               {selectedProductDetail && !loadingProductDetail && (
-                <div className="p-4 bg-blue-50/40 border border-blue-200 rounded-xl space-y-3">
+                <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Package className="w-4 h-4 text-blue-600 shrink-0" />
-                        <span className="font-bold text-slate-900 text-sm">
+                        <Package className="w-4 h-4 text-primary shrink-0" />
+                        <span className="font-bold text-foreground text-sm">
                           {selectedProductDetail.name}
                         </span>
-                        <span className="font-mono text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-semibold border border-blue-200">
+                        <span className="font-mono text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded font-semibold border border-primary/20">
                           SKU: {selectedProductDetail.sku}
                         </span>
                         {selectedProductDetail.isReagent && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20">
                             <Thermometer className="w-3 h-3" /> Reactivo Clínico
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
+                      <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
                         <span>
                           Categoría:{" "}
-                          <strong className="text-slate-700">
+                          <strong className="text-foreground/90">
                             {selectedProductDetail.category?.name ||
                               "Sin categoría"}
                           </strong>
@@ -725,7 +731,7 @@ function AdjustmentsContent() {
                         <span>·</span>
                         <span>
                           Unidad Base:{" "}
-                          <strong className="text-slate-700">
+                          <strong className="text-foreground/90">
                             {unitLabel}
                           </strong>
                         </span>
@@ -734,7 +740,7 @@ function AdjustmentsContent() {
                             <span>·</span>
                             <span>
                               Presentación de compra:{" "}
-                              <strong className="text-slate-700">
+                              <strong className="text-foreground/90">
                                 {selectedProductDetail.purchaseUnit.name} (x
                                 {selectedProductDetail.conversionFactor || 1})
                               </strong>
@@ -745,12 +751,12 @@ function AdjustmentsContent() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <div className="bg-white border border-blue-200 px-3 py-1.5 rounded-lg shadow-2xs text-right">
-                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+                      <div className="bg-card border border-border px-3 py-1.5 rounded-lg shadow-2xs text-right">
+                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
                           Stock Total en Sistema
                         </span>
-                        <span className="text-base font-bold font-mono text-blue-900 flex items-center justify-end gap-1.5">
-                          <Layers className="w-3.5 h-3.5 text-blue-600" />
+                        <span className="text-base font-bold font-mono text-primary flex items-center justify-end gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-primary" />
                           {selectedProductDetail.totalStock ?? 0} {unitLabel}
                         </span>
                       </div>
@@ -763,7 +769,7 @@ function AdjustmentsContent() {
                           setSelectedBatchId("");
                           setQuantity("");
                         }}
-                        className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-white border border-transparent hover:border-slate-200 transition-colors cursor-pointer"
+                        className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted border border-transparent hover:border-border transition-colors cursor-pointer"
                         title="Cambiar producto"
                       >
                         <X className="w-4 h-4" />
@@ -776,13 +782,13 @@ function AdjustmentsContent() {
 
             {/* 3. Selección o Creación de Lote */}
             {selectedProductDetail && !loadingProductDetail && (
-              <div className="space-y-4 pt-2 border-t border-slate-100">
+              <div className="space-y-4 pt-2 border-t border-border">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                    <label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
                       3. Lote y Ubicación Física *
                     </label>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-[11px] text-muted-foreground">
                       {isIncrement
                         ? "Seleccione un lote existente o registre un nuevo lote para este ingreso"
                         : "Indique el lote específico del que se descontará la existencia"}
@@ -791,14 +797,14 @@ function AdjustmentsContent() {
 
                   {/* Switch entre Usar Lote Existente vs Crear Nuevo Lote (Solo en Entradas) */}
                   {isIncrement && productBatches.length > 0 && (
-                    <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 self-start sm:self-auto">
+                    <div className="flex items-center bg-muted p-0.5 rounded-lg border border-border self-start sm:self-auto">
                       <button
                         type="button"
                         onClick={() => setEntryBatchMode("EXISTING")}
                         className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
                           entryBatchMode === "EXISTING"
-                            ? "bg-white text-blue-700 shadow-2xs font-bold"
-                            : "text-slate-600 hover:text-slate-800"
+                            ? "bg-background text-foreground shadow-2xs font-bold"
+                            : "text-muted-foreground hover:text-foreground"
                         }`}
                       >
                         Lote Existente
@@ -808,8 +814,8 @@ function AdjustmentsContent() {
                         onClick={() => setEntryBatchMode("NEW")}
                         className={`px-3 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1 cursor-pointer ${
                           entryBatchMode === "NEW"
-                            ? "bg-blue-600 text-white shadow-2xs font-bold"
-                            : "text-slate-600 hover:text-slate-800"
+                            ? "bg-primary text-primary-foreground shadow-2xs font-bold"
+                            : "text-muted-foreground hover:text-foreground"
                         }`}
                       >
                         <Plus className="w-3 h-3" />
@@ -821,8 +827,8 @@ function AdjustmentsContent() {
 
                 {/* Subcaso A: ENTRADA - Producto sin ningún lote previo */}
                 {isIncrement && productBatches.length === 0 && (
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2.5 text-xs text-amber-800">
-                    <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-start gap-2.5 text-xs text-amber-700 dark:text-amber-300">
+                    <Sparkles className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                     <div>
                       <span className="font-bold">
                         Primer ingreso sin lote previo:
@@ -835,8 +841,8 @@ function AdjustmentsContent() {
 
                 {/* Subcaso B: SALIDA/MERMA - Producto sin stock en ningún lote */}
                 {!isIncrement && activeBatchesWithStock.length === 0 && (
-                  <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-3 text-xs text-rose-800">
-                    <AlertOctagon className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl flex items-start gap-3 text-xs text-destructive">
+                    <AlertOctagon className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
                     <div className="space-y-1">
                       <strong className="block text-sm font-bold">
                         Sin existencia disponible para descuento
@@ -858,7 +864,7 @@ function AdjustmentsContent() {
                       <select
                         value={selectedBatchId}
                         onChange={(e) => setSelectedBatchId(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+                        className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground font-mono focus:ring-2 focus:ring-ring outline-none cursor-pointer"
                         disabled={
                           !isIncrement && activeBatchesWithStock.length === 0
                         }
@@ -883,22 +889,22 @@ function AdjustmentsContent() {
 
                       {/* Tarjeta resumen del lote seleccionado */}
                       {activeBatch && (
-                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="p-3 bg-muted/40 border border-border rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <Boxes className="w-4 h-4 text-blue-600" />
-                            <span className="font-mono font-bold text-slate-900">
+                            <Boxes className="w-4 h-4 text-primary" />
+                            <span className="font-mono font-bold text-foreground">
                               Lote #{activeBatch.lotNumber}
                             </span>
-                            <span className="text-slate-300">·</span>
-                            <span className="text-slate-600">
+                            <span className="text-muted-foreground">·</span>
+                            <span className="text-muted-foreground">
                               Ubicación:{" "}
-                              <strong>
+                              <strong className="text-foreground">
                                 {activeBatch.location?.name ||
                                   "Almacén Central"}
                               </strong>
                             </span>
-                            <span className="text-slate-300">·</span>
-                            <span className="text-slate-500 font-mono flex items-center gap-1">
+                            <span className="text-muted-foreground">·</span>
+                            <span className="text-muted-foreground font-mono flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
                               {activeBatch.expirationDate
                                 ? new Date(
@@ -909,10 +915,10 @@ function AdjustmentsContent() {
                           </div>
 
                           <div className="font-mono text-xs">
-                            <span className="text-slate-500">
+                            <span className="text-muted-foreground">
                               Saldo del lote:
                             </span>{" "}
-                            <strong className="text-blue-900">
+                            <strong className="text-primary font-bold">
                               {activeBatch.currentQuantity} {unitLabel}
                             </strong>
                           </div>
@@ -923,16 +929,16 @@ function AdjustmentsContent() {
 
                 {/* Formulario Inline: Crear Lote Nuevo (Solo en Entrada cuando entryBatchMode === 'NEW') */}
                 {isIncrement && entryBatchMode === "NEW" && (
-                  <div className="p-4 bg-slate-50 border border-blue-200 rounded-xl space-y-4">
-                    <div className="flex items-center gap-2 text-xs font-bold text-blue-900 border-b border-slate-200 pb-2">
-                      <Sparkles className="w-4 h-4 text-blue-600" />
+                  <div className="p-4 bg-muted/30 border border-border rounded-xl space-y-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-foreground border-b border-border pb-2">
+                      <Sparkles className="w-4 h-4 text-primary" />
                       Datos del Nuevo Lote
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {/* Número de Lote */}
                       <div>
-                        <label className="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                        <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
                           N° de Lote *
                         </label>
                         <input
@@ -942,27 +948,27 @@ function AdjustmentsContent() {
                             setNewLotNumber(e.target.value.toUpperCase())
                           }
                           placeholder="Ej: LOT-2026-001"
-                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                          className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground font-mono font-bold focus:ring-2 focus:ring-ring outline-none"
                           required
                         />
                       </div>
 
                       {/* Fecha de Vencimiento */}
                       <div>
-                        <label className="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                        <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
                           Fecha de Vencimiento
                         </label>
                         <input
                           type="date"
                           value={newExpirationDate}
                           onChange={(e) => setNewExpirationDate(e.target.value)}
-                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono focus:ring-2 focus:ring-blue-500 outline-none"
+                          className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground font-mono focus:ring-2 focus:ring-ring outline-none"
                         />
                       </div>
 
                       {/* Ubicación / Depósito */}
                       <div>
-                        <label className="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                        <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
                           Ubicación Física *
                         </label>
                         <select
@@ -970,7 +976,7 @@ function AdjustmentsContent() {
                           onChange={(e) =>
                             setNewLocationId(Number(e.target.value))
                           }
-                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+                          className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-ring outline-none cursor-pointer"
                           required
                         >
                           <option value="">-- Seleccionar Ubicación --</option>
@@ -984,7 +990,7 @@ function AdjustmentsContent() {
 
                       {/* Costo Unitario Estimado */}
                       <div>
-                        <label className="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                        <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
                           Costo Unitario ($ USD)
                         </label>
                         <input
@@ -1000,19 +1006,19 @@ function AdjustmentsContent() {
                             )
                           }
                           placeholder="0.00"
-                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono focus:ring-2 focus:ring-blue-500 outline-none"
+                          className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground font-mono focus:ring-2 focus:ring-ring outline-none"
                         />
                       </div>
 
                       {/* Origen del Lote */}
                       <div className="sm:col-span-2">
-                        <label className="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                        <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
                           Origen del Lote / Causa de Ingreso *
                         </label>
                         <select
                           value={newOrigin}
                           onChange={(e) => setNewOrigin(e.target.value)}
-                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+                          className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground font-semibold focus:ring-2 focus:ring-ring outline-none cursor-pointer"
                           required
                         >
                           {ORIGIN_OPTIONS.map((opt) => (
@@ -1030,33 +1036,33 @@ function AdjustmentsContent() {
 
             {/* 4. Cantidad y Referencia */}
             {selectedProductDetail && !loadingProductDetail && (
-              <div className="space-y-4 pt-2 border-t border-slate-100">
+              <div className="space-y-4 pt-2 border-t border-border">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Cantidad a Ajustar */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                      <label className="text-xs font-semibold text-foreground uppercase tracking-wider">
                         Cantidad a Operar *
                       </label>
                       {numQuantity > 0 &&
                         (isIncrement
                           ? entryBatchMode === "NEW" || activeBatch
                           : activeBatch) && (
-                          <span className="text-[11px] font-mono flex items-center gap-1 text-slate-600">
+                          <span className="text-[11px] font-mono flex items-center gap-1 text-muted-foreground">
                             <span>Saldo lote:</span>
-                            <span className="font-semibold text-slate-800">
+                            <span className="font-semibold text-foreground">
                               {isIncrement && entryBatchMode === "NEW"
                                 ? 0
                                 : currentLotStock}
                             </span>
-                            <ArrowRight className="w-3 h-3 text-slate-400" />
+                            <ArrowRight className="w-3 h-3 text-muted-foreground" />
                             <span
                               className={`font-bold ${
                                 isIncrement
-                                  ? "text-emerald-600"
+                                  ? "text-emerald-600 dark:text-emerald-400"
                                   : projectedStock === 0
-                                    ? "text-red-600"
-                                    : "text-blue-600"
+                                    ? "text-red-600 dark:text-red-400"
+                                    : "text-blue-600 dark:text-blue-400"
                               }`}
                             >
                               {projectedStock} {unitLabel}
@@ -1079,13 +1085,13 @@ function AdjustmentsContent() {
                           )
                         }
                         placeholder="Ej: 10"
-                        className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-3 pr-14 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 font-mono font-bold"
+                        className="w-full bg-background border border-input rounded-lg pl-3 pr-14 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring text-foreground font-mono font-bold"
                         required
                         disabled={
                           !isIncrement && activeBatchesWithStock.length === 0
                         }
                       />
-                      <span className="absolute inset-y-0 right-3 flex items-center text-[10px] font-semibold text-slate-400 pointer-events-none">
+                      <span className="absolute inset-y-0 right-3 flex items-center text-[10px] font-semibold text-muted-foreground pointer-events-none">
                         {unitLabel}
                       </span>
                     </div>
@@ -1094,7 +1100,7 @@ function AdjustmentsContent() {
                     {!isIncrement &&
                       activeBatch &&
                       numQuantity > currentLotStock && (
-                        <p className="text-[11px] text-red-600 font-medium mt-1 flex items-center gap-1">
+                        <p className="text-[11px] text-destructive font-medium mt-1 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3 shrink-0" />
                           La cantidad supera el stock del lote ({currentLotStock}{" "}
                           {unitLabel})
@@ -1104,7 +1110,7 @@ function AdjustmentsContent() {
 
                   {/* Documento o N° Acta */}
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-1.5">
                       Documento o N° Acta (Opcional)
                     </label>
                     <input
@@ -1112,14 +1118,14 @@ function AdjustmentsContent() {
                       value={referenceDoc}
                       onChange={(e) => setReferenceDoc(e.target.value)}
                       placeholder="Ej: ACTA-MERMA-2026-04 o DONACION-OPS-01"
-                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
+                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
                     />
                   </div>
                 </div>
 
                 {/* Motivo / Justificación */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-1.5">
                     Motivo / Justificación Técnica *
                   </label>
                   <textarea
@@ -1132,14 +1138,14 @@ function AdjustmentsContent() {
                         ? "Describa detalladamente el motivo del descarte o merma (mínimo 5 caracteres)..."
                         : "Describa la causa del ajuste físico, conteo o procedencia de la donación..."
                     }
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
+                    className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
                     required
                   />
                 </div>
 
                 {/* Botón Guardar */}
-                <div className="flex justify-end pt-2 border-t border-slate-100">
-                  <button
+                <div className="flex justify-end pt-2 border-t border-border">
+                  <Button
                     type="submit"
                     disabled={
                       Boolean(
@@ -1152,7 +1158,7 @@ function AdjustmentsContent() {
                             numQuantity > currentLotStock)
                       )
                     }
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-5 py-2.5 rounded-lg transition-colors shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    className="gap-2"
                   >
                     {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     {submitting
@@ -1162,11 +1168,13 @@ function AdjustmentsContent() {
                           ? "Dar de Alta Lote e Ingresar Stock"
                           : "Confirmar Ajuste Positivo"
                         : "Confirmar y Aplicar Baja de Stock"}
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
-          </form>
+              </form>
+            </CardContent>
+          </Card>
         </>
       )}
     </div>

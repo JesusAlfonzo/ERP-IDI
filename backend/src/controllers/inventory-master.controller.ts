@@ -449,4 +449,182 @@ export class InventoryMasterController {
       });
     }
   }
+
+  // --- MÉTODOS DE PAGO ---
+  static async getPaymentMethods(req: Request, res: Response): Promise<void> {
+    try {
+      const activeOnly = req.query.activeOnly === 'true';
+      const items = await InventoryMasterService.listPaymentMethods(activeOnly);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ message: 'Error al obtener métodos de pago', error });
+    }
+  }
+
+  static async createPaymentMethod(req: Request, res: Response): Promise<void> {
+    try {
+      if (!InventoryMasterController.checkAdmin(req, res)) return;
+      const { code, name, description, isActive } = req.body;
+      if (!name || typeof name !== 'string' || name.trim().length < 2) {
+        res.status(400).json({
+          status: 'BAD_REQUEST',
+          message: 'El nombre del método de pago debe tener al menos 2 caracteres',
+        });
+        return;
+      }
+      if (!code || typeof code !== 'string' || code.trim().length < 2) {
+        res.status(400).json({
+          status: 'BAD_REQUEST',
+          message: 'El código del método de pago debe tener al menos 2 caracteres',
+        });
+        return;
+      }
+
+      const item = await InventoryMasterService.createPaymentMethod({
+        code,
+        name,
+        description,
+        isActive,
+      });
+      res.status(201).json(item);
+    } catch (error: any) {
+      if (error.code === 'P2002') {
+        res.status(400).json({
+          status: 'BAD_REQUEST',
+          message: 'Ya existe un método de pago con este código',
+        });
+        return;
+      }
+      res.status(500).json({ message: 'Error al registrar método de pago', error });
+    }
+  }
+
+  static async updatePaymentMethod(req: Request, res: Response): Promise<void> {
+    try {
+      if (!InventoryMasterController.checkAdmin(req, res)) return;
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ status: 'BAD_REQUEST', message: 'ID no válido' });
+        return;
+      }
+
+      const item = await InventoryMasterService.updatePaymentMethod(id, req.body);
+      res.json(item);
+    } catch (error: any) {
+      if (error.code === 'P2002') {
+        res.status(400).json({
+          status: 'BAD_REQUEST',
+          message: 'Ya existe un método de pago con este código',
+        });
+        return;
+      }
+      res.status(500).json({ message: 'Error al actualizar método de pago', error });
+    }
+  }
+
+  static async deletePaymentMethod(req: Request, res: Response): Promise<void> {
+    try {
+      if (!InventoryMasterController.checkAdmin(req, res)) return;
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ status: 'BAD_REQUEST', message: 'ID no válido' });
+        return;
+      }
+
+      await InventoryMasterService.deletePaymentMethod(id);
+      res.json({ status: 'SUCCESS', message: 'Método de pago eliminado exitosamente' });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al eliminar método de pago', error });
+    }
+  }
+
+  // --- CONCEPTOS DE JUSTIFICACIÓN Y PROTOCOLOS ---
+  static async getJustificationConcepts(req: Request, res: Response): Promise<void> {
+    try {
+      const activeOnly = req.query.activeOnly === 'true';
+      const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+      const items = await InventoryMasterService.listJustificationConcepts(category, activeOnly);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ message: 'Error al obtener conceptos de justificación', error });
+    }
+  }
+
+  static async createJustificationConcept(req: Request, res: Response): Promise<void> {
+    try {
+      if (!InventoryMasterController.checkAdmin(req, res)) return;
+      const { code, title, description, category, isActive } = req.body;
+      if (!title || typeof title !== 'string' || title.trim().length < 2) {
+        res.status(400).json({
+          status: 'BAD_REQUEST',
+          message: 'El título del concepto o protocolo debe tener al menos 2 caracteres',
+        });
+        return;
+      }
+      if (!code || typeof code !== 'string' || code.trim().length < 2) {
+        res.status(400).json({
+          status: 'BAD_REQUEST',
+          message: 'El código identificador debe tener al menos 2 caracteres',
+        });
+        return;
+      }
+
+      const item = await InventoryMasterService.createJustificationConcept({
+        code,
+        title,
+        description,
+        category,
+        isActive,
+      });
+      res.status(201).json(item);
+    } catch (error: any) {
+      if (error.code === 'P2002') {
+        res.status(400).json({
+          status: 'BAD_REQUEST',
+          message: 'Ya existe un concepto o protocolo con este código',
+        });
+        return;
+      }
+      res.status(500).json({ message: 'Error al registrar concepto de justificación', error });
+    }
+  }
+
+  static async updateJustificationConcept(req: Request, res: Response): Promise<void> {
+    try {
+      if (!InventoryMasterController.checkAdmin(req, res)) return;
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ status: 'BAD_REQUEST', message: 'ID no válido' });
+        return;
+      }
+
+      const item = await InventoryMasterService.updateJustificationConcept(id, req.body);
+      res.json(item);
+    } catch (error: any) {
+      if (error.code === 'P2002') {
+        res.status(400).json({
+          status: 'BAD_REQUEST',
+          message: 'Ya existe un concepto o protocolo con este código',
+        });
+        return;
+      }
+      res.status(500).json({ message: 'Error al actualizar concepto de justificación', error });
+    }
+  }
+
+  static async deleteJustificationConcept(req: Request, res: Response): Promise<void> {
+    try {
+      if (!InventoryMasterController.checkAdmin(req, res)) return;
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ status: 'BAD_REQUEST', message: 'ID no válido' });
+        return;
+      }
+
+      await InventoryMasterService.deleteJustificationConcept(id);
+      res.json({ status: 'SUCCESS', message: 'Concepto de justificación eliminado exitosamente' });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al eliminar concepto de justificación', error });
+    }
+  }
 }

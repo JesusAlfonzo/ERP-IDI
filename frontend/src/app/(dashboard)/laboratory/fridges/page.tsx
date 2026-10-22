@@ -37,26 +37,46 @@ import {
   PlusCircle,
 } from "lucide-react";
 
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+
 const FRIDGE_STATUS_CONFIG: Record<
   FridgeStatus,
-  { label: string; className: string }
+  {
+    label: string;
+    variant:
+      | "default"
+      | "secondary"
+      | "destructive"
+      | "outline"
+      | "success"
+      | "warning"
+      | "info"
+      | "purple";
+  }
 > = {
-  OPERATIVO: {
-    label: "Operativo",
-    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  },
-  MANTENIMIENTO: {
-    label: "En Mantenimiento",
-    className: "bg-amber-50 text-amber-700 border-amber-200",
-  },
-  DEFECTUOSO: {
-    label: "Falla Térmica / Defectuoso",
-    className: "bg-rose-50 text-rose-700 border-rose-200",
-  },
-  FUERA_DE_SERVICIO: {
-    label: "Fuera de Servicio",
-    className: "bg-slate-100 text-slate-700 border-slate-200",
-  },
+  OPERATIVO: { label: "Operativo", variant: "success" },
+  MANTENIMIENTO: { label: "En Mantenimiento", variant: "warning" },
+  DEFECTUOSO: { label: "Falla Térmica / Defectuoso", variant: "destructive" },
+  FUERA_DE_SERVICIO: { label: "Fuera de Servicio", variant: "secondary" },
 };
 
 export default function FridgesPage() {
@@ -65,7 +85,7 @@ export default function FridgesPage() {
   const userRoles = currentUser?.roles || [];
   const isLabStaff =
     userRoles.includes("ADMINISTRADOR") ||
-    userRoles.includes("ANALISTA_LABORATORIO");
+    userRoles.includes("LABORATORIO");
 
   const [fridges, setFridges] = useState<LabFridge[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -355,91 +375,89 @@ export default function FridgesPage() {
       {/* Encabezado */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <Snowflake className="w-6 h-6 text-sky-600" />
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <Snowflake className="w-6 h-6 text-primary" />
             Cadena de Frío & Equipos de Laboratorio
           </h1>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted-foreground">
             Monitoreo térmico, cavas y trazabilidad de reactivos termosensibles
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="icon"
             onClick={() => void loadData()}
-            className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs cursor-pointer"
             title="Actualizar listado"
           >
             <RefreshCw
-              className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
+              className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
             />
-          </button>
+          </Button>
           {isLabStaff && (
-            <button
+            <Button
               type="button"
               onClick={() => {
                 setIsCreateModalOpen(true);
                 setFeedback(null);
               }}
-              className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              className="gap-1.5"
             >
               <Plus className="w-4 h-4" />
               Registrar Nevera / Cava
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
       {!isLabStaff && (
-        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-2.5 text-xs text-slate-600">
-          <AlertCircle className="w-4 h-4 shrink-0 text-slate-400" />
-          <span>
+        <Alert>
+          <AlertCircle className="w-4 h-4 text-muted-foreground" />
+          <AlertDescription>
             Modo de consulta (solo lectura): El registro de neveras, ingreso de reactivos, apertura de frascos y traslados son competencia exclusiva del personal de <strong>Laboratorio Clínico</strong> o <strong>Administración</strong>.
-          </span>
-        </div>
+          </AlertDescription>
+        </Alert>
       )}
 
       {feedback && (
-        <div
-          className={`p-3 rounded-lg text-xs flex items-center gap-2 border ${
-            feedback.status === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : "bg-red-50 border-red-200 text-red-800"
-          }`}
+        <Alert
+          variant={feedback.status === "success" ? "default" : "destructive"}
+          className={feedback.status === "success" ? "border-emerald-300 bg-emerald-50 text-emerald-900" : ""}
         >
           {feedback.status === "success" ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           ) : (
-            <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
+            <AlertTriangle className="w-4 h-4" />
           )}
-          <span>{feedback.message}</span>
-        </div>
+          <AlertDescription>{feedback.message}</AlertDescription>
+        </Alert>
       )}
 
       {/* Grid de Equipos de Frío */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {loading ? (
-          <div className="col-span-3 py-16 text-center text-slate-400">
-            <Loader2 className="w-6 h-6 animate-spin mx-auto text-sky-600 mb-2" />
+          <div className="col-span-3 py-16 text-center text-muted-foreground">
+            <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
             Cargando estado de la cadena de frío...
           </div>
         ) : fridges.length === 0 ? (
-          <div className="col-span-3 p-8 bg-white border border-slate-200 rounded-xl text-center space-y-2">
-            <Snowflake className="w-8 h-8 text-slate-300 mx-auto" />
-            <h3 className="font-bold text-slate-700 text-sm">
+          <Card className="col-span-3 p-8 text-center space-y-2">
+            <Snowflake className="w-8 h-8 text-muted-foreground mx-auto" />
+            <h3 className="font-bold text-foreground text-sm">
               No hay neveras o cavas registradas
             </h3>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Registre las neveras o congeladores donde se almacenan los
               reactivos de laboratorio.
             </p>
-          </div>
+          </Card>
         ) : (
           fridges.map((fridge) => {
             const statusConfig = FRIDGE_STATUS_CONFIG[fridge.status] || {
               label: fridge.status,
-              className: "bg-slate-100 text-slate-700",
+              variant: "secondary" as const,
             };
             const temp =
               fridge.targetTempCelsius !== null
@@ -448,40 +466,38 @@ export default function FridgesPage() {
             const isFreezer = temp !== null && temp < 0;
 
             return (
-              <div
+              <Card
                 key={fridge.id}
-                className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3 flex flex-col justify-between hover:border-sky-300 transition-colors"
+                className="p-4 space-y-3 flex flex-col justify-between hover:border-primary/50 transition-colors"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200">
+                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
                       {fridge.code}
                     </span>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusConfig.className}`}
-                    >
+                    <Badge variant={statusConfig.variant}>
                       {statusConfig.label}
-                    </span>
+                    </Badge>
                   </div>
 
                   <div>
-                    <h3 className="font-bold text-slate-900 text-sm">
+                    <h3 className="font-bold text-foreground text-sm">
                       {fridge.name}
                     </h3>
-                    <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                      <Building className="w-3.5 h-3.5 text-slate-400" />
+                    <div className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                      <Building className="w-3.5 h-3.5 text-muted-foreground" />
                       {fridge.location?.name ?? "Laboratorio"}
                     </div>
                   </div>
 
                   {fridge.description && (
-                    <p className="text-xs text-slate-600 line-clamp-2">
+                    <p className="text-xs text-muted-foreground line-clamp-2">
                       {fridge.description}
                     </p>
                   )}
                 </div>
 
-                <div className="space-y-3 pt-3 border-t border-slate-100">
+                <div className="space-y-3 pt-3 border-t border-border">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <Thermometer
@@ -489,107 +505,107 @@ export default function FridgesPage() {
                           isFreezer ? "text-indigo-600" : "text-sky-600"
                         }`}
                       />
-                      <span className="font-mono font-bold text-slate-800 text-sm">
+                      <span className="font-mono font-bold text-foreground text-sm">
                         {temp !== null ? `${temp}°C` : "N/D"}
                       </span>
                     </div>
 
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="sm"
                       onClick={() => handleOpenFridgeContents(fridge.id)}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-sky-600 hover:text-sky-800 cursor-pointer"
+                      className="h-7 text-xs font-semibold gap-1 text-primary"
                     >
                       <Package className="w-3.5 h-3.5" />
                       <span>{fridge._count?.labReagentUnits ?? 0} frascos</span>
-                    </button>
+                    </Button>
                   </div>
 
                   {/* Acciones principales de la Nevera */}
                   <div
-                    className={`grid gap-2 pt-1 border-t border-slate-100 ${
+                    className={`grid gap-2 pt-1 border-t border-border ${
                       isLabStaff ? "grid-cols-2" : "grid-cols-1"
                     }`}
                   >
                     {isLabStaff && (
-                      <button
+                      <Button
                         type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={() => {
                           setAssignFridgeTarget(fridge);
                           setSelectedBatchId("");
                           setReagentCategoryFilter("");
                         }}
-                        className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 py-1.5 px-2 rounded-lg transition-colors cursor-pointer"
+                        className="h-7 text-[11px] font-semibold gap-1"
                       >
                         <PlusCircle className="w-3.5 h-3.5" />
                         Ingresar Lote
-                      </button>
+                      </Button>
                     )}
 
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
+                      size="sm"
                       onClick={() =>
                         router.push(`/laboratory/fridges/${fridge.id}`)
                       }
-                      className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 py-1.5 px-2 rounded-lg transition-colors cursor-pointer"
+                      className="h-7 text-[11px] font-semibold gap-1"
                     >
                       <Eye className="w-3.5 h-3.5" />
                       Ver Ficha
-                    </button>
+                    </Button>
                   </div>
                 </div>
-              </div>
+              </Card>
             );
           })
         )}
       </div>
 
       {/* Modal Ingresar Lote de Reactivo a la Nevera */}
-      {assignFridgeTarget && isLabStaff && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-2xs">
-          <form
-            onSubmit={handleAssignBatchToFridge}
-            className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150"
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Snowflake className="w-5 h-5 text-sky-600" />
-                <h3 className="font-bold text-slate-800 text-sm">
-                  Ingresar Lote a {assignFridgeTarget.name}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setAssignFridgeTarget(null);
-                  setSelectedBatchId("");
-                  setReagentCategoryFilter("");
-                }}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                ✕
-              </button>
+      <Dialog
+        open={Boolean(assignFridgeTarget && isLabStaff)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAssignFridgeTarget(null);
+            setSelectedBatchId("");
+            setReagentCategoryFilter("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <Snowflake className="w-5 h-5 text-primary" />
+              <DialogTitle className="text-sm font-bold text-foreground">
+                Ingresar Lote a {assignFridgeTarget?.name}
+              </DialogTitle>
             </div>
-
-            <p className="text-xs text-slate-600">
+            <DialogDescription className="text-xs text-muted-foreground">
               Seleccione el reactivo disponible. El sistema generará los frascos
               físicos con sus códigos correlativos y los alojará en esta nevera
               (
-              {assignFridgeTarget.targetTempCelsius !== null
+              {assignFridgeTarget?.targetTempCelsius !== null && assignFridgeTarget?.targetTempCelsius !== undefined
                 ? `${Number(assignFridgeTarget.targetTempCelsius)}°C`
                 : "Ambiente"}
               ).
-            </p>
+            </DialogDescription>
+          </DialogHeader>
 
-            {/* Filtro por Categoría (discreto, fuera del buscador) */}
+          <form onSubmit={handleAssignBatchToFridge} className="space-y-4">
+            {/* Filtro por Categoría */}
             {availableReagentCategories.length > 0 && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
                   Filtrar por Categoría
-                </label>
+                </Label>
                 <select
                   value={reagentCategoryFilter}
                   onChange={(e) => setReagentCategoryFilter(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full bg-background border border-input rounded-md p-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="">Todas las categorías</option>
                   {availableReagentCategories.map((cat) => (
@@ -601,10 +617,10 @@ export default function FridgesPage() {
               </div>
             )}
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+            <div className="space-y-1.5">
+              <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
                 Reactivo / Lote Disponible *
-              </label>
+              </Label>
               <SearchableSelect
                 options={reagentOptions}
                 value={selectedBatchId}
@@ -616,375 +632,362 @@ export default function FridgesPage() {
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
+            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
+              <Button
                 type="button"
+                variant="outline"
                 onClick={() => {
                   setAssignFridgeTarget(null);
                   setSelectedBatchId("");
                   setReagentCategoryFilter("");
                 }}
-                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
               >
                 Cancelar
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
                 disabled={assigningBatch || !selectedBatchId}
-                className="px-4 py-2 text-xs bg-purple-700 hover:bg-purple-800 text-white font-semibold rounded-lg flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                className="gap-1.5"
               >
                 {assigningBatch && (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 )}
                 Ingresar Frascos a Nevera
-              </button>
-            </div>
+              </Button>
+            </DialogFooter>
           </form>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
-      {/* Modal Lateral / Inspección de Contenido de la Nevera */}
-      {selectedFridge && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-2xs">
-          <div className="w-full max-w-2xl bg-white h-full shadow-2xl p-6 flex flex-col justify-between overflow-y-auto animate-in slide-in-from-right duration-200">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-                <div className="flex items-center gap-2">
-                  <Snowflake className="w-5 h-5 text-sky-600" />
-                  <div>
-                    <h3 className="font-bold text-slate-800 text-base">
-                      {selectedFridge.name} ({selectedFridge.code})
-                    </h3>
-                    <span className="text-[11px] text-slate-500">
-                      Temperatura consigna:{" "}
-                      <b className="text-slate-800 font-mono">
-                        {selectedFridge.targetTempCelsius !== null &&
-                        selectedFridge.targetTempCelsius !== undefined
-                          ? `${Number(selectedFridge.targetTempCelsius)}°C`
-                          : "Ambiente"}
-                      </b>
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedFridge(null)}
-                  className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+      {/* Modal / Inspección de Contenido de la Nevera */}
+      <Dialog
+        open={Boolean(selectedFridge)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedFridge(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <Snowflake className="w-5 h-5 text-primary" />
+              <div>
+                <DialogTitle className="text-base font-bold text-foreground">
+                  {selectedFridge?.name} ({selectedFridge?.code})
+                </DialogTitle>
+                <DialogDescription className="text-[11px] text-muted-foreground">
+                  Temperatura consigna:{" "}
+                  <b className="text-foreground font-mono">
+                    {selectedFridge?.targetTempCelsius !== null &&
+                    selectedFridge?.targetTempCelsius !== undefined
+                      ? `${Number(selectedFridge.targetTempCelsius)}°C`
+                      : "Ambiente"}
+                  </b>
+                </DialogDescription>
               </div>
+            </div>
+          </DialogHeader>
 
-              {loadingContents ? (
-                <div className="py-12 text-center text-slate-400">
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-sky-600 mb-2" />
-                  Cargando frascos alojados...
-                </div>
-              ) : selectedFridge.labReagentUnits.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 space-y-2 bg-slate-50 rounded-xl">
-                  <Package className="w-8 h-8 mx-auto text-slate-300" />
-                  <p className="text-xs">
-                    Esta nevera no tiene frascos de reactivos asignados en este
-                    momento.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider block">
-                    Frascos y Reactivos Almacenados (
-                    {selectedFridge.labReagentUnits.length})
-                  </span>
+          <div className="space-y-4 py-2">
+            {loadingContents ? (
+              <div className="py-12 text-center text-muted-foreground">
+                <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
+                Cargando frascos alojados...
+              </div>
+            ) : !selectedFridge || selectedFridge.labReagentUnits.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground space-y-2 bg-muted/40 rounded-xl">
+                <Package className="w-8 h-8 mx-auto text-muted-foreground/60" />
+                <p className="text-xs">
+                  Esta nevera no tiene frascos de reactivos asignados en este momento.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <span className="text-xs font-semibold text-foreground uppercase tracking-wider block">
+                  Frascos y Reactivos Almacenados ({selectedFridge.labReagentUnits.length})
+                </span>
 
-                  <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-                    {selectedFridge.labReagentUnits.map(
-                      (unit: ReagentInFridge) => {
-                        const initialVol = Number(unit.initialVolume);
-                        const currentVol = Number(unit.currentVolume);
-                        const percent =
-                          initialVol > 0
-                            ? Math.round((currentVol / initialVol) * 100)
-                            : 0;
+                <div className="divide-y divide-border border border-border rounded-xl overflow-hidden">
+                  {selectedFridge.labReagentUnits.map((unit: ReagentInFridge) => {
+                    const initialVol = Number(unit.initialVolume);
+                    const currentVol = Number(unit.currentVolume);
+                    const percent =
+                      initialVol > 0
+                        ? Math.round((currentVol / initialVol) * 100)
+                        : 0;
 
-                        return (
-                          <div
-                            key={String(unit.id)}
-                            className="p-3.5 bg-white hover:bg-slate-50/70 transition-colors space-y-2"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <span className="font-bold text-xs text-slate-900 block">
-                                  {unit.product?.name ?? "Reactivo"}
-                                </span>
-                                <span className="font-mono text-[10px] text-slate-400">
-                                  Código Frasco: {unit.unitCode} | Lote: #
-                                  {unit.batch?.lotNumber ?? "N/D"}
-                                </span>
-                              </div>
-                              <span
-                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                  unit.status === "SELLADO"
-                                    ? "bg-slate-50 text-slate-700 border-slate-200"
-                                    : unit.status === "EN_USO"
-                                      ? "bg-sky-50 text-sky-700 border-sky-200"
-                                      : "bg-red-50 text-red-700 border-red-200"
-                                }`}
-                              >
-                                {unit.status}
-                              </span>
-                            </div>
-
-                            {/* Barra de Volumen Disponible */}
-                            <div className="space-y-1">
-                              <div className="flex justify-between text-[11px] font-mono">
-                                <span className="text-slate-500">
-                                  Volumen disponible:
-                                </span>
-                                <span className="font-bold text-slate-800">
-                                  {currentVol} / {initialVol}{" "}
-                                  {unit.product?.baseUnit?.abbreviation ?? "ml"}{" "}
-                                  ({percent}%)
-                                </span>
-                              </div>
-                              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full ${
-                                    percent > 40
-                                      ? "bg-sky-600"
-                                      : percent > 15
-                                        ? "bg-amber-500"
-                                        : "bg-red-500"
-                                  }`}
-                                  style={{
-                                    width: `${Math.min(percent, 100)}%`,
-                                  }}
-                                />
-                              </div>
-                            </div>
-
-                            <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
-                              <span className="flex items-center gap-1 font-mono">
-                                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                                Vence:{" "}
-                                {unit.expirationDate
-                                  ? new Date(
-                                      unit.expirationDate,
-                                    ).toLocaleDateString()
-                                  : "N/D"}
-                              </span>
-
-                              <div className="flex items-center gap-2">
-                                {isLabStaff ? (
-                                  <>
-                                    {unit.status === "SELLADO" && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleOpenUnit(unit.id)}
-                                        className="text-xs text-sky-600 hover:text-sky-800 font-semibold cursor-pointer"
-                                      >
-                                        Abrir frasco
-                                      </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setTransferUnit(unit);
-                                        setTargetFridgeId("");
-                                      }}
-                                      className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-blue-600 cursor-pointer"
-                                      title="Mover a otra nevera"
-                                    >
-                                      <ArrowRightLeft className="w-3 h-3" />
-                                      Mover
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDiscardUnit(unit)}
-                                      className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-600 cursor-pointer"
-                                      title="Descartar frasco"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
-                                  </>
-                                ) : (
-                                  <span className="text-[10px] text-slate-400 italic">
-                                    Solo lectura
-                                  </span>
-                                )}
-                              </div>
-                            </div>
+                    return (
+                      <div
+                        key={String(unit.id)}
+                        className="p-3.5 bg-card hover:bg-muted/50 transition-colors space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-bold text-xs text-foreground block">
+                              {unit.product?.name ?? "Reactivo"}
+                            </span>
+                            <span className="font-mono text-[10px] text-muted-foreground">
+                              Código Frasco: {unit.unitCode} | Lote: #{unit.batch?.lotNumber ?? "N/D"}
+                            </span>
                           </div>
-                        );
-                      },
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+                          <Badge
+                            variant={
+                              unit.status === "SELLADO"
+                                ? "secondary"
+                                : unit.status === "EN_USO"
+                                  ? "info"
+                                  : "destructive"
+                            }
+                            className="text-[10px]"
+                          >
+                            {unit.status}
+                          </Badge>
+                        </div>
 
-            <div className="pt-4 border-t border-slate-200 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setSelectedFridge(null)}
-                className="px-4 py-2 text-xs bg-slate-900 text-white rounded-lg cursor-pointer"
-              >
-                Cerrar Panel
-              </button>
-            </div>
+                        {/* Barra de Volumen Disponible */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[11px] font-mono">
+                            <span className="text-muted-foreground">
+                              Volumen disponible:
+                            </span>
+                            <span className="font-bold text-foreground">
+                              {currentVol} / {initialVol}{" "}
+                              {unit.product?.baseUnit?.abbreviation ?? "ml"}{" "}
+                              ({percent}%)
+                            </span>
+                          </div>
+                          <div className="w-full bg-muted h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${
+                                percent > 40
+                                  ? "bg-primary"
+                                  : percent > 15
+                                    ? "bg-amber-500"
+                                    : "bg-destructive"
+                              }`}
+                              style={{
+                                width: `${Math.min(percent, 100)}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1 text-[11px] text-muted-foreground">
+                          <span className="flex items-center gap-1 font-mono">
+                            <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                            Vence:{" "}
+                            {unit.expirationDate
+                              ? new Date(unit.expirationDate).toLocaleDateString()
+                              : "N/D"}
+                          </span>
+
+                          <div className="flex items-center gap-2">
+                            {isLabStaff ? (
+                              <>
+                                {unit.status === "SELLADO" && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleOpenUnit(unit.id)}
+                                    className="h-6 text-xs text-primary font-semibold"
+                                  >
+                                    Abrir frasco
+                                  </Button>
+                                )}
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setTransferUnit(unit);
+                                    setTargetFridgeId("");
+                                  }}
+                                  className="h-6 text-xs gap-1"
+                                  title="Mover a otra nevera"
+                                >
+                                  <ArrowRightLeft className="w-3 h-3" />
+                                  Mover
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDiscardUnit(unit)}
+                                  className="h-6 text-xs gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  title="Descartar frasco"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground italic">
+                                Solo lectura
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+
+          <DialogFooter className="pt-2 border-t border-border">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setSelectedFridge(null)}
+            >
+              Cerrar Panel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Transferir Frasco entre Neveras */}
-      {transferUnit && isLabStaff && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-2xs">
-          <form
-            onSubmit={handleExecuteTransfer}
-            className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4"
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                <ArrowRightLeft className="w-4 h-4 text-sky-600" />
-                Mover Reactivo de Nevera
-              </h3>
-              <button
-                type="button"
-                onClick={() => setTransferUnit(null)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
+      <Dialog
+        open={Boolean(transferUnit && isLabStaff)}
+        onOpenChange={(open) => {
+          if (!open) setTransferUnit(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold text-foreground flex items-center gap-1.5">
+              <ArrowRightLeft className="w-4 h-4 text-primary" />
+              Mover Reactivo de Nevera
+            </DialogTitle>
+          </DialogHeader>
 
-            <div className="p-3 bg-slate-50 rounded-xl text-xs space-y-1">
-              <div className="font-bold text-slate-900">
-                {transferUnit.product?.name ?? "Reactivo"}
+          {transferUnit && (
+            <form onSubmit={handleExecuteTransfer} className="space-y-4">
+              <div className="p-3 bg-muted/50 rounded-xl text-xs space-y-1">
+                <div className="font-bold text-foreground">
+                  {transferUnit.product?.name ?? "Reactivo"}
+                </div>
+                <div className="text-muted-foreground font-mono text-[11px]">
+                  Código: {transferUnit.unitCode} | Vol: {transferUnit.currentVolume}
+                </div>
               </div>
-              <div className="text-slate-500 font-mono text-[11px]">
-                Código: {transferUnit.unitCode} | Vol:{" "}
-                {transferUnit.currentVolume}
+
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                  Nevera o Cava Destino *
+                </Label>
+                <select
+                  value={targetFridgeId}
+                  onChange={(e) => setTargetFridgeId(Number(e.target.value))}
+                  className="w-full bg-background border border-input rounded-md p-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring"
+                  required
+                >
+                  <option value="">-- Seleccionar equipo destino --</option>
+                  {fridges
+                    .filter((f) => f.id !== selectedFridge?.id)
+                    .map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name} ({f.code}) -{" "}
+                        {f.targetTempCelsius !== null
+                          ? `${Number(f.targetTempCelsius)}°C`
+                          : "Ambiente"}
+                      </option>
+                    ))}
+                </select>
               </div>
-            </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                Nevera o Cava Destino *
-              </label>
-              <select
-                value={targetFridgeId}
-                onChange={(e) => setTargetFridgeId(Number(e.target.value))}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-sky-500"
-                required
-              >
-                <option value="">-- Seleccionar equipo destino --</option>
-                {fridges
-                  .filter((f) => f.id !== selectedFridge?.id)
-                  .map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name} ({f.code}) -{" "}
-                      {f.targetTempCelsius !== null
-                        ? `${Number(f.targetTempCelsius)}°C`
-                        : "Ambiente"}
-                    </option>
-                  ))}
-              </select>
-            </div>
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                  Motivo del Traslado
+                </Label>
+                <Input
+                  type="text"
+                  value={transferReason}
+                  onChange={(e) => setTransferReason(e.target.value)}
+                  placeholder="Ej. Reorganización de anticuerpos monoclonales"
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                Motivo del Traslado
-              </label>
-              <input
-                type="text"
-                value={transferReason}
-                onChange={(e) => setTransferReason(e.target.value)}
-                placeholder="Ej. Reorganización de anticuerpos monoclonales"
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-sky-500"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setTransferUnit(null)}
-                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={transferring}
-                className="px-4 py-2 text-xs bg-sky-600 hover:bg-sky-700 text-white font-semibold rounded-lg flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
-              >
-                {transferring && (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                )}
-                Confirmar Traslado
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+              <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setTransferUnit(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={transferring}
+                  className="gap-1.5"
+                >
+                  {transferring && (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  )}
+                  Confirmar Traslado
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Registrar Nueva Nevera */}
-      {isCreateModalOpen && isLabStaff && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-2xs">
-          <form
-            onSubmit={handleCreateFridge}
-            className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-6 space-y-4"
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
-                <Snowflake className="w-5 h-5 text-sky-600" />
+      <Dialog
+        open={Boolean(isCreateModalOpen && isLabStaff)}
+        onOpenChange={(open) => {
+          if (!open) setIsCreateModalOpen(false);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <Snowflake className="w-5 h-5 text-primary" />
+              <DialogTitle className="text-base font-bold text-foreground">
                 Registrar Equipo de Refrigeración
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsCreateModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                ✕
-              </button>
+              </DialogTitle>
             </div>
+          </DialogHeader>
 
+          <form onSubmit={handleCreateFridge} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
                   Código Interno *
-                </label>
-                <input
+                </Label>
+                <Input
                   type="text"
                   required
                   placeholder="Ej. NEV-01, CAVA-A"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  className="w-full font-mono uppercase bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-sky-500"
+                  className="font-mono uppercase"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
                   Nombre del Equipo *
-                </label>
-                <input
+                </Label>
+                <Input
                   type="text"
                   required
                   placeholder="Ej. Nevera Principal Inmunología"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-sky-500"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
                   Ubicación Física *
-                </label>
+                </Label>
                 <select
                   value={locationId}
                   onChange={(e) => setLocationId(Number(e.target.value))}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-sky-500"
+                  className="w-full bg-background border border-input rounded-md p-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring"
                   required
                 >
                   {locations.map((loc) => (
@@ -995,11 +998,11 @@ export default function FridgesPage() {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
                   Temperatura Consigna (°C)
-                </label>
-                <input
+                </Label>
+                <Input
                   type="number"
                   step="0.1"
                   placeholder="Ej. 4, -20, -80"
@@ -1009,19 +1012,19 @@ export default function FridgesPage() {
                       e.target.value === "" ? "" : Number(e.target.value),
                     )
                   }
-                  className="w-full font-mono bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-sky-500"
+                  className="font-mono"
                 />
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+            <div className="space-y-1.5">
+              <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
                 Estado Operativo
-              </label>
+              </Label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as FridgeStatus)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-sky-500"
+                className="w-full bg-background border border-input rounded-md p-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="OPERATIVO">Operativo</option>
                 <option value="MANTENIMIENTO">En Mantenimiento</option>
@@ -1030,41 +1033,41 @@ export default function FridgesPage() {
               </select>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+            <div className="space-y-1.5">
+              <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
                 Descripción / Notas Técnicas
-              </label>
-              <textarea
+              </Label>
+              <Textarea
                 rows={2}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Marca, modelo, gas refrigerante, observaciones..."
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-sky-500"
+                className="resize-none"
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
+            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
+              <Button
                 type="button"
+                variant="outline"
                 onClick={() => setIsCreateModalOpen(false)}
-                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
               >
                 Cancelar
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
                 disabled={submittingFridge}
-                className="px-4 py-2 text-xs bg-sky-600 hover:bg-sky-700 text-white font-semibold rounded-lg flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
+                className="gap-1.5"
               >
                 {submittingFridge && (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 )}
                 Registrar Equipo
-              </button>
-            </div>
+              </Button>
+            </DialogFooter>
           </form>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

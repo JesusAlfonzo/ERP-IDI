@@ -402,6 +402,7 @@ CREATE TABLE "stock_batches" (
     "cost_price" DECIMAL(18,4) NOT NULL,
     "expiration_date" DATE,
     "status" "BatchStatus" NOT NULL DEFAULT 'DISPONIBLE',
+    "origin" TEXT DEFAULT 'ORDEN_COMPRA',
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -539,6 +540,33 @@ CREATE TABLE "request_window_configs" (
     CONSTRAINT "request_window_configs_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "payment_methods_catalog" (
+    "id" SERIAL NOT NULL,
+    "code" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "payment_methods_catalog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "justification_concepts" (
+    "id" SERIAL NOT NULL,
+    "code" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "description" TEXT,
+    "category" TEXT NOT NULL DEFAULT 'COMPRA',
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "justification_concepts_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "users_username_key" ON "users"("username");
 
@@ -604,6 +632,12 @@ CREATE UNIQUE INDEX "lab_reagent_units_unit_code_key" ON "lab_reagent_units"("un
 
 -- CreateIndex
 CREATE UNIQUE INDEX "requests_request_number_key" ON "requests"("request_number");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "payment_methods_catalog_code_key" ON "payment_methods_catalog"("code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "justification_concepts_code_key" ON "justification_concepts"("code");
 
 -- AddForeignKey
 ALTER TABLE "role_permissions" ADD CONSTRAINT "role_permissions_role_id_fkey" FOREIGN KEY ("role_id") REFERENCES "roles"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useTransition, useCallback } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { AuthService } from "@/services/auth.service";
 import { CurrencyService, CurrencyItem } from "@/services/currency.service";
@@ -27,11 +28,35 @@ import {
   Info,
   X,
   CheckCheck,
+  PanelLeft,
+  PanelLeftOpen,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 interface NavbarProps {
   user: AuthUser | null;
   onOpenSidebar: () => void;
+  isSidebarCollapsed?: boolean;
+  onToggleSidebarCollapse?: () => void;
 }
 
 interface LiveRateInfo {
@@ -43,7 +68,12 @@ interface LiveRateInfo {
   error: boolean;
 }
 
-export function Navbar({ user, onOpenSidebar }: NavbarProps) {
+export function Navbar({
+  user,
+  onOpenSidebar,
+  isSidebarCollapsed = false,
+  onToggleSidebarCollapse,
+}: NavbarProps) {
   const router = useRouter();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -416,7 +446,7 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
     switch (role) {
       case "ADMINISTRADOR":
         return "bg-purple-50 text-purple-700 border-purple-200";
-      case "ANALISTA_LABORATORIO":
+      case "LABORATORIO":
         return "bg-indigo-50 text-indigo-700 border-indigo-200";
       case "ALMACENISTA":
         return "bg-amber-50 text-amber-700 border-amber-200";
@@ -452,25 +482,53 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
 
   return (
     <>
-      <header className="h-16 bg-white border-b border-slate-200/80 px-4 lg:px-8 flex items-center justify-between sticky top-0 z-30 shadow-xs">
+      <header className="h-16 bg-card/85 backdrop-blur-md border-b border-border px-4 lg:px-8 flex items-center justify-between sticky top-0 z-30 shadow-xs">
         <div className="flex items-center gap-3">
           <button
-            onClick={onOpenSidebar}
-            className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 lg:hidden transition-colors cursor-pointer"
-            aria-label="Abrir menú"
+            type="button"
+            onClick={() => {
+              if (typeof window !== "undefined" && window.innerWidth < 1024) {
+                onOpenSidebar();
+              } else if (onToggleSidebarCollapse) {
+                onToggleSidebarCollapse();
+              } else {
+                onOpenSidebar();
+              }
+            }}
+            className="p-2 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+            aria-label={
+              isSidebarCollapsed
+                ? "Expandir barra lateral"
+                : "Guardar barra lateral"
+            }
+            title={
+              isSidebarCollapsed
+                ? "Expandir barra lateral"
+                : "Guardar barra lateral (Contraer)"
+            }
           >
-            <Menu className="w-5 h-5" />
+            {isSidebarCollapsed ? (
+              <PanelLeftOpen className="w-5 h-5" />
+            ) : (
+              <PanelLeft className="w-5 h-5" />
+            )}
           </button>
 
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:flex w-7 h-7 rounded-md bg-slate-100 items-center justify-center text-slate-600 border border-slate-200">
-              <Building className="w-3.5 h-3.5 text-slate-700" />
+          <div className="flex items-center gap-2.5">
+            <div className="hidden sm:flex w-8 h-8 rounded-lg bg-white border border-border p-1 items-center justify-center shadow-2xs shrink-0">
+              <Image
+                src="/logo-icon.svg"
+                alt="Logo IDI"
+                width={24}
+                height={24}
+                className="w-full h-full object-contain"
+              />
             </div>
             <div className="flex flex-col">
-              <span className="text-xs font-bold text-slate-900 leading-tight">
+              <span className="text-xs font-bold text-foreground leading-tight">
                 Instituto de Inmunología
               </span>
-              <span className="text-[11px] text-slate-500 hidden sm:inline leading-tight">
+              <span className="text-[11px] text-muted-foreground hidden sm:inline leading-tight">
                 Dr. Nicolás E. Bianco Colmenares &bull; UCV
               </span>
             </div>
@@ -480,38 +538,38 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
         <div className="flex items-center gap-2.5">
           {/* Widget Multimoneda */}
           <div
-            className="hidden sm:flex items-center gap-2 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+            className="hidden sm:flex items-center gap-2 px-2.5 py-1 bg-muted/40 border border-border rounded-lg text-xs"
             title={
               liveRates.effectiveDate
                 ? `Tasa oficial BCV vigente al: ${liveRates.effectiveDate}`
                 : "Tasas oficiales de cambio"
             }
           >
-            <Coins className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <Coins className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
 
             <div className="flex items-center gap-1 font-mono">
-              <span className="text-slate-400 font-sans font-medium text-[11px]">
+              <span className="text-muted-foreground font-sans font-medium text-[11px]">
                 BCV:
               </span>
-              <span className="font-bold text-slate-800">
+              <span className="font-bold text-foreground">
                 {vesRate ? `${vesRate.toFixed(2)} Bs.` : "---"}
               </span>
             </div>
 
-            <span className="text-slate-300">|</span>
+            <span className="text-border">|</span>
 
             <div className="flex items-center gap-1 font-mono">
-              <span className="text-slate-400 font-sans font-medium text-[11px]">
+              <span className="text-muted-foreground font-sans font-medium text-[11px]">
                 EUR:
               </span>
-              <span className="font-bold text-slate-800">
+              <span className="font-bold text-foreground">
                 {eurRate ? `${eurRate.toFixed(2)}` : "---"}
               </span>
             </div>
 
             {liveRates.effectiveDate && (
               <span
-                className="hidden xl:inline text-[10px] text-slate-400 font-mono ml-0.5"
+                className="hidden xl:inline text-[10px] text-muted-foreground font-mono ml-0.5"
                 title={`Fecha valor BCV: ${liveRates.effectiveDate}`}
               >
                 ({liveRates.effectiveDate})
@@ -522,11 +580,11 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
               type="button"
               onClick={handleManualRefresh}
               disabled={refreshingRates}
-              className="ml-0.5 p-0.5 text-slate-400 hover:text-blue-600 rounded transition-colors cursor-pointer disabled:opacity-50"
+              className="ml-0.5 p-0.5 text-muted-foreground hover:text-primary rounded transition-colors cursor-pointer disabled:opacity-50"
               title="Refrescar tasas en vivo"
             >
               <RefreshCw
-                className={`w-3 h-3 ${refreshingRates ? "animate-spin text-blue-600" : ""}`}
+                className={`w-3 h-3 ${refreshingRates ? "animate-spin text-primary" : ""}`}
               />
             </button>
 
@@ -534,7 +592,7 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
               <button
                 type="button"
                 onClick={handleOpenRateModal}
-                className="p-0.5 text-slate-400 hover:text-emerald-600 rounded transition-colors cursor-pointer"
+                className="p-0.5 text-muted-foreground hover:text-emerald-600 rounded transition-colors cursor-pointer"
                 title="Ajustar tasa oficial manualmente"
               >
                 <Coins className="w-3 h-3" />
@@ -556,7 +614,7 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
             <button
               type="button"
               onClick={() => setNotificationsOpen((prev) => !prev)}
-              className="relative p-2 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-800 transition-colors cursor-pointer"
+              className="relative p-2 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
               title="Notificaciones y Alertas"
             >
               <Bell className="w-4 h-4" />
@@ -569,15 +627,15 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
             </button>
 
             {notificationsOpen && (
-              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-xl border border-slate-200 z-50 overflow-hidden flex flex-col">
+              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-card rounded-2xl shadow-xl border border-border z-50 overflow-hidden flex flex-col">
                 {/* Cabecera del Panel */}
-                <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+                <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-muted/40">
                   <div className="flex items-center gap-2">
-                    <Bell className="w-4 h-4 text-blue-600" />
-                    <span className="text-xs font-bold text-slate-800">
+                    <Bell className="w-4 h-4 text-primary" />
+                    <span className="text-xs font-bold text-foreground">
                       Notificaciones & Alertas
                     </span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800 font-bold">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold">
                       {notifications.length}
                     </span>
                   </div>
@@ -586,7 +644,7 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
                     <button
                       type="button"
                       onClick={handleDismissAll}
-                      className="text-[11px] text-slate-500 hover:text-blue-600 flex items-center gap-1 transition-colors cursor-pointer"
+                      className="text-[11px] text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors cursor-pointer"
                       title="Marcar todas como leídas"
                     >
                       <CheckCheck className="w-3.5 h-3.5" />
@@ -596,14 +654,14 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
                 </div>
 
                 {/* Lista con Scroll Completo */}
-                <div className="max-h-95 overflow-y-auto divide-y divide-slate-100 overscroll-contain">
+                <div className="max-h-95 overflow-y-auto divide-y divide-border overscroll-contain">
                   {notifications.length === 0 ? (
-                    <div className="p-8 text-center text-xs text-slate-400 space-y-1.5">
+                    <div className="p-8 text-center text-xs text-muted-foreground space-y-1.5">
                       <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto opacity-80" />
-                      <p className="font-semibold text-slate-700">
+                      <p className="font-semibold text-foreground">
                         ¡Bandeja al día!
                       </p>
-                      <p className="text-[11px] text-slate-400">
+                      <p className="text-[11px] text-muted-foreground">
                         No tienes avisos ni notificaciones pendientes.
                       </p>
                     </div>
@@ -612,15 +670,15 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
                       <div
                         key={notif.id}
                         onClick={() => handleSelectNotification(notif)}
-                        className="group relative w-full text-left p-3.5 hover:bg-slate-50 transition-colors flex items-start gap-3 cursor-pointer"
+                        className="group relative w-full text-left p-3.5 hover:bg-muted/50 transition-colors flex items-start gap-3 cursor-pointer"
                       >
                         {getNotifIcon(notif.type)}
 
                         <div className="flex-1 min-w-0 pr-6">
-                          <p className="text-xs font-bold text-slate-800 truncate">
+                          <p className="text-xs font-bold text-foreground truncate">
                             {notif.title}
                           </p>
-                          <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5 leading-snug">
+                          <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5 leading-snug">
                             {notif.message}
                           </p>
                         </div>
@@ -631,7 +689,7 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
                           onClick={(e) =>
                             handleDismissNotification(notif.id, e)
                           }
-                          className="absolute right-3 top-3 p-1 text-slate-300 hover:text-slate-600 rounded-md hover:bg-slate-200/60 transition-colors cursor-pointer"
+                          className="absolute right-3 top-3 p-1 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
                           title="Descartar"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -644,138 +702,137 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
             )}
           </div>
 
-          <div className="hidden md:block w-px h-6 bg-slate-200" />
+          
+          <div className="hidden md:block w-px h-6 bg-border" />
 
-          {/* Dropdown de usuario */}
-          <div className="relative" ref={dropdownRef}>
-            <button
-              onClick={() => setDropdownOpen((prev) => !prev)}
-              className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-200 transition-all text-left cursor-pointer"
-            >
-              <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">
-                {user?.fullName?.charAt(0) || user?.username?.charAt(0) || "U"}
-              </div>
-              <div className="hidden sm:flex flex-col leading-tight pr-1">
-                <span className="text-xs font-semibold text-slate-800 truncate max-w-32.5">
-                  {user?.fullName || user?.username}
-                </span>
-                <span className="text-[10px] text-slate-400 truncate max-w-32.5">
-                  {user?.department ?? "Personal IDI"}
-                </span>
-              </div>
-              <ChevronDown
-                className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${
-                  dropdownOpen ? "rotate-180" : ""
-                }`}
-              />
-            </button>
-
-            {dropdownOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-200/80 py-1.5 z-50">
-                <div className="px-4 py-2 border-b border-slate-100">
-                  <p className="text-xs font-semibold text-slate-900 truncate">
+          {/* Dropdown de usuario (shadcn) */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-accent/80 border-0 outline-none focus:outline-none focus-visible:outline-none ring-0 transition-all text-left cursor-pointer"
+              >
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
+                    {user?.fullName?.charAt(0) || user?.username?.charAt(0) || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="hidden sm:flex flex-col leading-tight pr-1">
+                  <span className="text-xs font-semibold text-foreground truncate max-w-32.5">
                     {user?.fullName || user?.username}
-                  </p>
-                  <p className="text-[11px] text-slate-500 truncate">
-                    {user?.email}
-                  </p>
+                  </span>
+                  <span className="text-[10px] text-muted-foreground truncate max-w-32.5">
+                    {user?.department ?? "Personal IDI"}
+                  </span>
                 </div>
-
-                <div className="py-1">
-                  <div className="px-4 py-1.5 flex items-center gap-2 text-xs text-slate-600">
-                    <User className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Dpto: {user?.department ?? "Sin asignar"}</span>
-                  </div>
-                </div>
-
-                <div className="border-t border-slate-100 pt-1">
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-2 px-4 py-2 text-xs text-red-600 hover:bg-red-50 font-medium transition-colors text-left cursor-pointer"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Cerrar Sesión</span>
-                  </button>
-                </div>
+                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              sideOffset={8}
+              className="w-60 border-0 border-none shadow-xl shadow-slate-900/10 bg-white rounded-2xl p-2 outline-none focus:outline-none focus-visible:outline-none ring-0"
+            >
+              <DropdownMenuLabel className="font-normal px-2.5 py-2">
+                <p className="text-xs font-bold text-slate-900 truncate">
+                  {user?.fullName || user?.username}
+                </p>
+                <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                  {user?.email}
+                </p>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator className="bg-slate-100 my-1" />
+              <div className="px-2.5 py-1.5 flex items-center gap-2 text-xs text-slate-600">
+                <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="truncate">Dpto: {user?.department ?? "Sin asignar"}</span>
               </div>
-            )}
-          </div>
+              <DropdownMenuSeparator className="bg-slate-100 my-1" />
+              <DropdownMenuItem
+                onClick={handleLogout}
+                className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 focus:text-rose-700 focus:bg-rose-50 font-semibold cursor-pointer rounded-xl px-2.5 py-2 transition-colors outline-none border-0 ring-0"
+              >
+                <LogOut className="w-3.5 h-3.5 mr-2 shrink-0" />
+                <span>Cerrar Sesión</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
-      {/* Modal para actualizar tasa de cambio */}
-      {showRateModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-sm w-full p-5 shadow-xl space-y-4">
-            <div className="flex items-center gap-2 text-slate-900 font-bold text-base">
+      {/* Modal para actualizar tasa de cambio (shadcn) */}
+      <Dialog open={showRateModal} onOpenChange={setShowRateModal}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-900">
               <Coins className="w-5 h-5 text-emerald-600" />
               <span>Ajustar Tasa Oficial de Cambio</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Selecciona la divisa a actualizar contra el Dólar Estadounidense ($1 USD base).
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSaveRate} className="space-y-3 pt-2">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Moneda a Actualizar
+              </label>
+              <select
+                value={selectedCurrencyId}
+                onChange={(e) =>
+                  handleCurrencySelectionChange(Number(e.target.value))
+                }
+                className="w-full text-xs border border-input rounded-lg p-2.5 focus:ring-2 focus:ring-primary outline-none text-slate-800 bg-background"
+              >
+                {currencies
+                  .filter((c) => !c.isDefault && c.code !== "USD")
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.code} - {c.symbol})
+                    </option>
+                  ))}
+              </select>
             </div>
-            <p className="text-xs text-slate-500">
-              Selecciona la divisa a actualizar contra el Dólar Estadounidense
-              ($1 USD base).
-            </p>
 
-            <form onSubmit={handleSaveRate} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Moneda a Actualizar
-                </label>
-                <select
-                  value={selectedCurrencyId}
-                  onChange={(e) =>
-                    handleCurrencySelectionChange(Number(e.target.value))
-                  }
-                  className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-600 outline-none text-slate-700 bg-white"
-                >
-                  {currencies
-                    .filter((c) => !c.isDefault && c.code !== "USD")
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.code} - {c.symbol})
-                      </option>
-                    ))}
-                </select>
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Tasa de Cambio (Valor de 1 USD en esta divisa)
+              </label>
+              <Input
+                type="number"
+                step="0.0001"
+                required
+                placeholder="Ej: 75.0000"
+                value={newRate}
+                onChange={(e) => setNewRate(e.target.value)}
+                className="font-mono text-xs"
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Tasa de Cambio (Valor de 1 USD en esta divisa)
-                </label>
-                <input
-                  type="number"
-                  step="0.0001"
-                  required
-                  placeholder="Ej: 45.2500"
-                  value={newRate}
-                  onChange={(e) => setNewRate(e.target.value)}
-                  className="w-full text-sm font-mono border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-600 outline-none text-slate-800"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowRateModal(false)}
-                  className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingRate}
-                  className="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg flex items-center gap-1.5 shadow-xs cursor-pointer"
-                >
-                  {submittingRate && (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  )}
-                  Guardar Tasa
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowRateModal(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                variant="success"
+                size="sm"
+                disabled={submittingRate}
+              >
+                {submittingRate && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                )}
+                <span>Guardar Tasa</span>
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

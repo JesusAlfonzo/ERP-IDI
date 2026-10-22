@@ -41,7 +41,7 @@ export function DocumentHeader({
   badge,
   status,
   date,
-  logoSrc = "/logo-iac.png",
+  logoSrc = "/logo-full.svg",
   institutionName = "INMUNOLOGIA ASOCIACION CIVIL",
   rif = "J-30710739-1",
   additionalInfo,

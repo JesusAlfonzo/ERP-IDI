@@ -120,7 +120,7 @@ export const createRequest = async (
       userRoles.includes('SOLICITANTE') ||
       userRoles.includes('ADMINISTRADOR') ||
       userRoles.includes('ALMACENISTA') ||
-      userRoles.includes('ANALISTA_LABORATORIO') ||
+      userRoles.includes('LABORATORIO') ||
       userRoles.includes('COMPRAS');
 
     if (!canCreate) {

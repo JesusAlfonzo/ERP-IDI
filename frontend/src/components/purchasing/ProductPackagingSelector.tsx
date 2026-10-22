@@ -149,7 +149,7 @@ export function ProductPackagingSelector({
       {/* Selector de Empaque (Unidad Base vs Empaque si aplica) */}
       {selectedProduct && availableUnits.length > 1 && (
         <div className="flex items-center gap-2 pt-0.5">
-          <span className="text-[11px] font-semibold text-slate-500 shrink-0">
+          <span className="text-[11px] font-semibold text-muted-foreground shrink-0">
             Presentación de Compra:
           </span>
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -163,8 +163,8 @@ export function ProductPackagingSelector({
                   onClick={() => onChange(selectedProductId, u.id)}
                   className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
                     isActive
-                      ? "bg-blue-600 text-white border-blue-600 shadow-2xs"
-                      : "bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200"
+                      ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                      : "bg-muted text-foreground hover:bg-muted/80 border-border"
                   }`}
                 >
                   <span>{u.name}</span>
@@ -172,8 +172,8 @@ export function ProductPackagingSelector({
                     <span
                       className={`text-[10px] px-1 py-0.2 rounded ${
                         isActive
-                          ? "bg-blue-700 text-blue-100"
-                          : "bg-white text-slate-600 border border-slate-200"
+                          ? "bg-primary-foreground/20 text-primary-foreground"
+                          : "bg-card text-muted-foreground border border-border"
                       }`}
                     >
                       x{u.factor}

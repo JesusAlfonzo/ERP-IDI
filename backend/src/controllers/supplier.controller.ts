@@ -81,28 +81,75 @@ export const registerSupplierPayment = async (
       return;
     }
 
-    const { amountUsd, paymentMethod, referenceNumber, paymentDate, notes } =
-      req.body;
-    if (
-      !amountUsd ||
-      Number(amountUsd) <= 0 ||
-      !paymentMethod ||
-      !Object.values(PaymentMethod).includes(paymentMethod)
-    ) {
+    const {
+      amount,
+      amountPaid,
+      amountUsd,
+      method,
+      paymentMethod,
+      sourceAccountId,
+      currencyId,
+      transactionCurrency,
+      exchangeRate,
+      bankName,
+      referenceNumber,
+      paymentDate,
+      notes,
+      receiptImageUrl,
+      reviewedBy,
+      authorizedBy,
+      approvedBy,
+    } = req.body;
+
+    const rawAmount =
+      amountPaid !== undefined && amountPaid !== null
+        ? Number(amountPaid)
+        : amount !== undefined && amount !== null
+          ? Number(amount)
+          : Number(amountUsd || 0);
+
+    if (!rawAmount || isNaN(rawAmount) || rawAmount <= 0) {
       res.status(400).json({
         status: 'BAD_REQUEST',
-        message: `amountUsd y paymentMethod son obligatorios. Métodos: ${Object.values(PaymentMethod).join(', ')}`,
+        message: 'Debe especificar un monto a pagar (amountPaid o amountUsd) mayor a 0',
+      });
+      return;
+    }
+
+    const finalMethod = (method || paymentMethod || 'TRANSFERENCIA').toString().toUpperCase();
+
+    const resolvedSupplierId = Number(
+      req.params.id && req.params.id !== 'payments'
+        ? req.params.id
+        : req.body.supplierId
+    );
+
+    if (!resolvedSupplierId || isNaN(resolvedSupplierId)) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'ID de proveedor requerido para registrar el pago',
       });
       return;
     }
 
     const payment = await SupplierService.registerPayment({
-      supplierId: Number(req.params.id),
-      amountUsd: Number(amountUsd),
-      paymentMethod,
+      supplierId: resolvedSupplierId,
+      amount: rawAmount,
+      amountPaid: rawAmount,
+      amountUsd: rawAmount,
+      method: finalMethod,
+      paymentMethod: paymentMethod as PaymentMethod | undefined,
+      sourceAccountId: sourceAccountId ? Number(sourceAccountId) : null,
+      transactionCurrency: transactionCurrency ? String(transactionCurrency) : 'USD',
+      exchangeRate: exchangeRate ? Number(exchangeRate) : null,
+      bankName: bankName ? String(bankName) : null,
       referenceNumber: referenceNumber ? String(referenceNumber) : null,
       paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
       notes: notes ? String(notes) : null,
+      receiptImageUrl: receiptImageUrl ? String(receiptImageUrl) : null,
+      reviewedBy: reviewedBy ? String(reviewedBy) : null,
+      authorizedBy: authorizedBy ? String(authorizedBy) : null,
+      approvedBy: approvedBy ? String(approvedBy) : null,
       registeredById: req.user.id,
     });
 

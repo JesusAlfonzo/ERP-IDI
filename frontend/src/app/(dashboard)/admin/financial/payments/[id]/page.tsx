@@ -21,6 +21,8 @@ import {
   Receipt,
   Coins,
 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export default function DirectPaymentDetailPage() {
   const params = useParams();
@@ -62,22 +64,25 @@ export default function DirectPaymentDetailPage() {
 
   if (!payment) {
     return (
-      <div className="p-8 text-center space-y-4">
-        <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
-          <Receipt className="w-6 h-6" />
-        </div>
-        <h2 className="text-base font-bold text-slate-900">
-          Comprobante no encontrado
-        </h2>
-        <p className="text-xs text-slate-500 max-w-sm mx-auto">
-          El egreso solicitado no existe o fue eliminado previamente del sistema.
-        </p>
-        <Link
-          href="/admin/financial/payments"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" /> Volver al Historial de Egresos
-        </Link>
+      <div className="p-8 text-center space-y-4 max-w-md mx-auto">
+        <Card className="shadow-xs p-6 space-y-4">
+          <CardContent className="space-y-4 p-0">
+            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+              <Receipt className="w-6 h-6" />
+            </div>
+            <h2 className="text-base font-bold text-slate-900">
+              Comprobante no encontrado
+            </h2>
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+              El egreso solicitado no existe o fue eliminado previamente del sistema.
+            </p>
+            <Button asChild size="sm" className="gap-2 cursor-pointer">
+              <Link href="/admin/financial/payments">
+                <ArrowLeft className="w-4 h-4" /> Volver al Historial de Egresos
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -117,12 +122,11 @@ export default function DirectPaymentDetailPage() {
     <div className="max-w-4xl mx-auto space-y-6 pb-12 print:p-0 print:m-0 print:max-w-none">
       {/* Barra Superior de Navegación y Acciones (Oculta al imprimir) */}
       <div className="no-print print:hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <Link
-          href="/admin/financial/payments"
-          className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-3.5 py-2 rounded-lg hover:bg-slate-50 transition-colors shadow-2xs"
-        >
-          <ArrowLeft className="w-4 h-4" /> Volver al Historial
-        </Link>
+        <Button asChild variant="outline" size="sm" className="gap-2 shadow-xs cursor-pointer">
+          <Link href="/admin/financial/payments">
+            <ArrowLeft className="w-4 h-4" /> Volver al Historial
+          </Link>
+        </Button>
 
         <PrintActionButton label="Imprimir Comprobante" />
       </div>

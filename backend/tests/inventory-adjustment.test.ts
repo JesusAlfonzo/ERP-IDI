@@ -236,8 +236,8 @@ describe('Integración: Ajustes de Inventario y Validación Zod', () => {
       expect(res.body.status).toBe('FORBIDDEN');
     });
 
-    it('Debe rechazar con 403 Forbidden a ANALISTA_LABORATORIO en /batches/:id/status', async () => {
-      const labToken = getAuthTokenForRoles(['ANALISTA_LABORATORIO']);
+    it('Debe rechazar con 403 Forbidden a LABORATORIO en /batches/:id/status', async () => {
+      const labToken = getAuthTokenForRoles(['LABORATORIO']);
       const res = await request(app)
         .patch('/api/inventory/batches/1/status')
         .set('Authorization', `Bearer ${labToken}`)

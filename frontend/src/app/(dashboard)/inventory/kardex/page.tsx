@@ -6,6 +6,7 @@ import Link from "next/link";
 import { InventoryClientService } from "@/services/inventory.service";
 import { downloadCsv } from "@/lib/csv";
 import { AuthService } from "@/services/auth.service";
+import { cn } from "@/lib/utils";
 import type { KardexItem, MovementType } from "@/types/kardex";
 import type { PaginationMeta } from "@/types/api";
 import {
@@ -22,25 +23,213 @@ import {
   Boxes,
   Layers,
   Wallet,
+  SlidersHorizontal,
+  ShieldAlert,
+  ShoppingCart,
+  FlaskConical,
+  ClipboardList,
+  History,
 } from "lucide-react";
+import { CustomReportBuilder } from "@/components/reports/CustomReportBuilder";
 
-type KardexCategoryTab = "ALL" | "PHYSICAL" | "FINANCIAL";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-const MOVEMENT_LABELS: Record<MovementType, { label: string; color: string }> =
+export type KardexSubmodule =
+  | "ALL"
+  | "ALMACEN"
+  | "COMPRAS"
+  | "LABORATORIO"
+  | "SOLICITUDES"
+  | "TESORERIA";
+
+const SUBMODULE_CONFIG: Record<
+  KardexSubmodule,
   {
-    ENTRADA_COMPRA: { label: "Entrada por Compra", color: "emerald" },
-    TRASLADO_A_LABORATORIO: { label: "Salida a Laboratorio", color: "purple" },
-    DESPACHO_SOLICITUD: { label: "Salida a Sala", color: "purple" },
-    AJUSTE_INVENTARIO: { label: "Ajuste de Inventario", color: "blue" },
-    DESCARTE_MERMA: { label: "Merma", color: "red" },
-    PAGO_ORDEN: { label: "Pago de Orden (Tesorería)", color: "amber" },
-    EGRESO_DIRECTO: { label: "Egreso Directo (Tesorería)", color: "rose" },
-  };
+    label: string;
+    description: string;
+    icon: React.ComponentType<{ className?: string }>;
+    types: MovementType[];
+    badgeClass: string;
+  }
+> = {
+  ALL: {
+    label: "Todos los Módulos",
+    description: "Trazabilidad completa en todo el sistema",
+    icon: Boxes,
+    types: [],
+    badgeClass: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border-border",
+  },
+  ALMACEN: {
+    label: "Almacén",
+    description: "Ajustes físicos, conteos y mermas",
+    icon: Layers,
+    types: ["AJUSTE_INVENTARIO", "DESCARTE_MERMA"],
+    badgeClass: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300",
+  },
+  COMPRAS: {
+    label: "Compras",
+    description: "Entradas por recepción a proveedores",
+    icon: ShoppingCart,
+    types: ["ENTRADA_COMPRA"],
+    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300",
+  },
+  LABORATORIO: {
+    label: "Laboratorio",
+    description: "Traslados a cavas, neveras y reactivos",
+    icon: FlaskConical,
+    types: ["TRASLADO_A_LABORATORIO"],
+    badgeClass: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300",
+  },
+  SOLICITUDES: {
+    label: "Solicitudes",
+    description: "Despachos a salas y departamentos clínicos",
+    icon: ClipboardList,
+    types: ["DESPACHO_SOLICITUD"],
+    badgeClass: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300",
+  },
+  TESORERIA: {
+    label: "Tesorería",
+    description: "Pagos de órdenes y egresos directos",
+    icon: Wallet,
+    types: ["PAGO_ORDEN", "EGRESO_DIRECTO"],
+    badgeClass: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300",
+  },
+};
+
+const getMovementSubmodule = (
+  type: MovementType,
+): {
+  name: string;
+  badgeClass: string;
+  Icon: React.ComponentType<{ className?: string }>;
+} => {
+  switch (type) {
+    case "AJUSTE_INVENTARIO":
+    case "DESCARTE_MERMA":
+      return {
+        name: "Almacén",
+        badgeClass:
+          "bg-blue-50 text-blue-700 border-blue-200/80 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800/40",
+        Icon: Layers,
+      };
+    case "ENTRADA_COMPRA":
+      return {
+        name: "Compras",
+        badgeClass:
+          "bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/40",
+        Icon: ShoppingCart,
+      };
+    case "TRASLADO_A_LABORATORIO":
+      return {
+        name: "Laboratorio",
+        badgeClass:
+          "bg-purple-50 text-purple-700 border-purple-200/80 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800/40",
+        Icon: FlaskConical,
+      };
+    case "DESPACHO_SOLICITUD":
+      return {
+        name: "Solicitudes",
+        badgeClass:
+          "bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800/40",
+        Icon: ClipboardList,
+      };
+    case "PAGO_ORDEN":
+    case "EGRESO_DIRECTO":
+      return {
+        name: "Tesorería",
+        badgeClass:
+          "bg-rose-50 text-rose-700 border-rose-200/80 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800/40",
+        Icon: Wallet,
+      };
+    default:
+      return {
+        name: "General",
+        badgeClass: "bg-slate-50 text-slate-700 border-slate-200",
+        Icon: Boxes,
+      };
+  }
+};
+
+const MOVEMENT_LABELS: Record<
+  MovementType,
+  {
+    label: string;
+    shortLabel: string;
+    badgeClass: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }
+> = {
+  ENTRADA_COMPRA: {
+    label: "Entrada por Compra",
+    shortLabel: "Entrada Compra",
+    badgeClass:
+      "bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40",
+    icon: ArrowDownLeft,
+  },
+  TRASLADO_A_LABORATORIO: {
+    label: "Salida a Laboratorio",
+    shortLabel: "Salida Laboratorio",
+    badgeClass:
+      "bg-purple-50 text-purple-700 border-purple-200/80 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800/40",
+    icon: ArrowUpRight,
+  },
+  DESPACHO_SOLICITUD: {
+    label: "Despacho a Sala",
+    shortLabel: "Despacho Sala",
+    badgeClass:
+      "bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/40",
+    icon: ArrowUpRight,
+  },
+  AJUSTE_INVENTARIO: {
+    label: "Ajuste de Inventario",
+    shortLabel: "Ajuste Stock",
+    badgeClass:
+      "bg-blue-50 text-blue-700 border-blue-200/80 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800/40",
+    icon: SlidersHorizontal,
+  },
+  DESCARTE_MERMA: {
+    label: "Merma / Descarte",
+    shortLabel: "Merma / Baja",
+    badgeClass:
+      "bg-rose-50 text-rose-700 border-rose-200/80 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/40",
+    icon: ShieldAlert,
+  },
+  PAGO_ORDEN: {
+    label: "Pago de Orden de Compra",
+    shortLabel: "Pago de Orden",
+    badgeClass:
+      "bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/40",
+    icon: Wallet,
+  },
+  EGRESO_DIRECTO: {
+    label: "Egreso Directo Institucional",
+    shortLabel: "Egreso Directo",
+    badgeClass:
+      "bg-rose-50 text-rose-700 border-rose-200/80 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/40",
+    icon: Wallet,
+  },
+};
 
 export default function KardexPage() {
   const router = useRouter();
+  const [currentUser] = useState(() => AuthService.getCurrentUser());
+  const isAdmin = currentUser?.roles?.includes("ADMINISTRADOR");
+
+  const [mainView, setMainView] = useState<"TIMELINE" | "REPORTS">("TIMELINE");
   const [items, setItems] = useState<KardexItem[]>([]);
-  const [categoryTab, setCategoryTab] = useState<KardexCategoryTab>("ALL");
+  const [submoduleTab, setSubmoduleTab] = useState<KardexSubmodule>("ALL");
   const [meta, setMeta] = useState<PaginationMeta>({
     currentPage: 1,
     itemsPerPage: 15,
@@ -85,17 +274,21 @@ export default function KardexPage() {
         router.replace("/login");
         return;
       }
+      if (!isAdmin) {
+        router.replace("/dashboard");
+        return;
+      }
       await loadKardex();
     };
     init();
-  }, [router, loadKardex]);
+  }, [router, isAdmin, loadKardex]);
 
   const handleExportCSV = async () => {
     setDownloading(true);
     try {
       const today = new Date().toISOString().slice(0, 10);
       downloadCsv(
-        `kardex_inventario_${today}.csv`,
+        `historial_movimientos_${today}.csv`,
         [
           "Fecha",
           "Tipo",
@@ -131,349 +324,497 @@ export default function KardexPage() {
   };
 
   const displayedItems = items.filter((row) => {
-    if (categoryTab === "PHYSICAL") {
-      return row.type !== "PAGO_ORDEN" && row.type !== "EGRESO_DIRECTO";
-    }
-    if (categoryTab === "FINANCIAL") {
-      return row.type === "PAGO_ORDEN" || row.type === "EGRESO_DIRECTO";
-    }
-    return true;
+    if (submoduleTab === "ALL") return true;
+    const allowed = SUBMODULE_CONFIG[submoduleTab]?.types || [];
+    return allowed.includes(row.type);
   });
 
+  if (!isAdmin) {
+    return (
+      <div className="p-8 text-center bg-card rounded-2xl border border-border space-y-3 max-w-md mx-auto my-12 shadow-xs">
+        <ShieldAlert className="w-10 h-10 text-rose-500 mx-auto" />
+        <h2 className="text-base font-bold text-foreground">Acceso Administrativo Exclusivo</h2>
+        <p className="text-xs text-muted-foreground">
+          El módulo de historial y movimientos integrales se encuentra restringido exclusivamente para el perfil de Administración Empresarial.
+        </p>
+        <Button onClick={() => router.push("/dashboard")} variant="outline" size="sm">
+          Volver al Inicio
+        </Button>
+      </div>
+    );
+  }
+
+  if (mainView === "REPORTS") {
+    return (
+      <div className="space-y-6">
+        {/* Selector de Vistas Superior */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border no-print print:hidden">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+              <History className="w-6 h-6 text-primary" />
+              Historial de Movimientos & Reportes
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              Módulo integral de auditoría, trazabilidad física y reportes institucionales personalizados
+            </p>
+          </div>
+
+          <div className="flex bg-muted p-1 rounded-xl border border-border self-start sm:self-auto shrink-0 shadow-2xs gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setMainView("TIMELINE")}
+              className="gap-1.5 h-8 text-xs font-semibold cursor-pointer"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>Movimientos</span>
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              onClick={() => setMainView("REPORTS")}
+              className="gap-1.5 h-8 text-xs font-semibold cursor-pointer"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Reportes Personalizados</span>
+            </Button>
+          </div>
+        </div>
+
+        <CustomReportBuilder />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Encabezado de la vista */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-5">
+      {/* Encabezado de la vista con selector de módulo */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <FileText className="w-6 h-6 text-blue-600" />
-            Kardex de Movimientos
-          </h1>
-          <p className="text-xs text-slate-500">
-            Auditoría cronológica y trazabilidad de entradas, salidas, mermas y pagos
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+              <History className="w-6 h-6 text-primary" />
+              Historial de Movimientos
+            </h1>
+            <Badge variant="purple" className="text-[10px] font-mono">
+              Auditoría & Trazabilidad
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Registro unificado y cronológico de entradas, salidas y despachos en todas las áreas del instituto
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleExportCSV}
-          disabled={downloading}
-          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors disabled:opacity-50 self-start sm:self-auto cursor-pointer"
-        >
-          <FileSpreadsheet className="w-4 h-4" />
-          {downloading ? "Generando..." : "Exportar CSV"}
-        </button>
-      </div>
-
-      {/* Selector de Pestañas: Todos | Físicos | Financieros */}
-      <div className="flex border-b border-slate-200 gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            setCategoryTab("ALL");
-          }}
-          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-semibold text-xs transition-colors cursor-pointer ${
-            categoryTab === "ALL"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          <Boxes className="w-4 h-4" />
-          <span>Todos los Asientos ({items.length})</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setCategoryTab("PHYSICAL");
-          }}
-          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-semibold text-xs transition-colors cursor-pointer ${
-            categoryTab === "PHYSICAL"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          <Layers className="w-4 h-4" />
-          <span>Físicos (Consumos / Recepciones)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setCategoryTab("FINANCIAL");
-          }}
-          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-semibold text-xs transition-colors cursor-pointer ${
-            categoryTab === "FINANCIAL"
-              ? "border-amber-600 text-amber-600 font-bold"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          <Wallet className="w-4 h-4" />
-          <span>Financieros (Pagos / Egresos)</span>
-        </button>
-      </div>
-
-      {/* Panel de Filtros */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap gap-4 items-center justify-between">
-        <form onSubmit={handleSearchSubmit} className="relative w-full sm:w-72">
-          <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-            <Search className="w-4 h-4" />
-          </span>
-          <input
-            type="text"
-            placeholder="Buscar SKU, producto o lote..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900"
-          />
-        </form>
-
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-          {/* Tipo de Movimiento */}
-          <select
-            value={selectedType}
-            onChange={(e) => {
-              setSelectedType(e.target.value as MovementType | "");
-              setPage(1);
-            }}
-            className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700"
-          >
-            <option value="">Todos los movimientos</option>
-            {Object.entries(MOVEMENT_LABELS).map(([key, item]) => (
-              <option key={key} value={key}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-
-          {/* Rango de Fechas */}
-          <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setPage(1);
-              }}
-              className="bg-transparent focus:outline-none text-slate-700"
-            />
-            <span className="text-slate-400">-</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => {
-                setEndDate(e.target.value);
-                setPage(1);
-              }}
-              className="bg-transparent focus:outline-none text-slate-700"
-            />
+        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+          {/* Selector de Vistas Movimientos vs Reportes */}
+          <div className="flex bg-muted p-1 rounded-xl border border-border shadow-2xs gap-1">
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              onClick={() => setMainView("TIMELINE")}
+              className="gap-1.5 h-8 text-xs font-semibold cursor-pointer"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>Movimientos</span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setMainView("REPORTS")}
+              className="gap-1.5 h-8 text-xs font-semibold cursor-pointer"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Reportes Personalizados</span>
+            </Button>
           </div>
 
-          <button
+          <Button
             type="button"
-            onClick={() => loadKardex()}
-            className="p-2 border border-slate-300 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs cursor-pointer"
-            title="Recargar tabla"
+            variant="default"
+            onClick={handleExportCSV}
+            disabled={downloading}
+            className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs font-semibold cursor-pointer"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          </button>
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>{downloading ? "Exportando..." : "Exportar CSV"}</span>
+          </Button>
         </div>
       </div>
 
-      {/* Tabla de Movimientos */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+      {/* Selector de Submódulos del Sistema */}
+      <Tabs
+        value={submoduleTab}
+        onValueChange={(val) => setSubmoduleTab(val as KardexSubmodule)}
+        className="w-full"
+      >
+        <TabsList className="w-full justify-start overflow-x-auto h-auto p-1 bg-muted/60 flex-wrap gap-1 rounded-xl border border-border/60">
+          {Object.entries(SUBMODULE_CONFIG).map(([key, config]) => {
+            const Icon = config.icon;
+            const count =
+              key === "ALL"
+                ? items.length
+                : items.filter((it) => config.types.includes(it.type)).length;
+            return (
+              <TabsTrigger
+                key={key}
+                value={key}
+                className="gap-1.5 py-1.5 px-3 text-xs cursor-pointer font-medium rounded-lg"
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>
+                  {config.label} ({count})
+                </span>
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+      </Tabs>
+
+      {/* Panel de Filtros */}
+      <Card className="border border-border/80 shadow-2xs">
+        <CardContent className="p-3.5 flex flex-wrap gap-3 items-center justify-between">
+          <form onSubmit={handleSearchSubmit} className="relative w-full sm:w-80">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Buscar insumo, SKU, lote o documento..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 text-xs h-9"
+            />
+          </form>
+
+          <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+            {/* Tipo de Operación */}
+            <select
+              value={selectedType}
+              onChange={(e) => {
+                setSelectedType(e.target.value as MovementType | "");
+                setPage(1);
+              }}
+              className="bg-background border border-input rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 text-foreground h-9 cursor-pointer"
+            >
+              <option value="">Todas las operaciones</option>
+              {Object.entries(MOVEMENT_LABELS).map(([key, item]) => (
+                <option key={key} value={key}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+
+            {/* Rango de Fechas */}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-background border border-input rounded-lg px-2.5 h-9">
+              <Calendar className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  setPage(1);
+                }}
+                className="bg-transparent focus:outline-none text-foreground text-xs cursor-pointer"
+                title="Fecha inicial"
+              />
+              <span className="text-muted-foreground">-</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => {
+                  setEndDate(e.target.value);
+                  setPage(1);
+                }}
+                className="bg-transparent focus:outline-none text-foreground text-xs cursor-pointer"
+                title="Fecha final"
+              />
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => loadKardex()}
+              title="Recargar tabla"
+              className="h-9 w-9 shrink-0 cursor-pointer"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabla de Movimientos Reestructurada */}
+      <Card className="overflow-hidden border border-border/80 shadow-xs">
         <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-              <tr>
-                <th className="py-3 px-4">Fecha / Hora</th>
-                <th className="py-3 px-4">Tipo Movimiento</th>
-                <th className="py-3 px-4">Producto & SKU</th>
-                <th className="py-3 px-4">Lote</th>
-                <th className="py-3 px-4 text-right">Cantidad</th>
-                <th className="py-3 px-4 text-right">Saldo Tras Mov.</th>
-                <th className="py-3 px-4">Responsable</th>
-                <th className="py-3 px-4">Observación</th>
-                <th className="py-3 px-4 text-center">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
+          <Table className="w-full">
+            <TableHeader className="bg-slate-50/80 dark:bg-slate-900/60 border-b border-border">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-32 py-3 px-3 text-left font-bold text-xs text-slate-700 dark:text-slate-300">
+                  Fecha & Hora
+                </TableHead>
+                <TableHead className="w-28 py-3 px-3 text-center font-bold text-xs text-slate-700 dark:text-slate-300">
+                  Módulo
+                </TableHead>
+                <TableHead className="w-40 py-3 px-3 text-left font-bold text-xs text-slate-700 dark:text-slate-300">
+                  Operación
+                </TableHead>
+                <TableHead className="min-w-[200px] py-3 px-3 text-left font-bold text-xs text-slate-700 dark:text-slate-300">
+                  Insumo / Concepto
+                </TableHead>
+                <TableHead className="w-28 py-3 px-3 text-center font-bold text-xs text-slate-700 dark:text-slate-300">
+                  Lote
+                </TableHead>
+                <TableHead className="w-28 py-3 px-3 text-right font-bold text-xs text-slate-700 dark:text-slate-300">
+                  Cantidad
+                </TableHead>
+                <TableHead className="w-28 py-3 px-3 text-right font-bold text-xs text-slate-700 dark:text-slate-300">
+                  Saldo Stock
+                </TableHead>
+                <TableHead className="w-36 py-3 px-3 text-left font-bold text-xs text-slate-700 dark:text-slate-300">
+                  Responsable
+                </TableHead>
+                <TableHead className="min-w-[150px] max-w-[200px] py-3 px-3 text-left font-bold text-xs text-slate-700 dark:text-slate-300">
+                  Observación
+                </TableHead>
+                <TableHead className="w-20 py-3 px-3 text-center font-bold text-xs text-slate-700 dark:text-slate-300">
+                  Detalle
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {loading ? (
-                <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2" />
-                    Cargando movimientos...
-                  </td>
-                </tr>
+                <TableRow>
+                  <TableCell colSpan={10} className="py-14 text-center text-muted-foreground">
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
+                    <span className="text-xs font-medium">Cargando historial de movimientos...</span>
+                  </TableCell>
+                </TableRow>
               ) : displayedItems.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
-                    No se registraron movimientos{" "}
-                    {categoryTab === "PHYSICAL"
-                      ? "físicos "
-                      : categoryTab === "FINANCIAL"
-                        ? "financieros "
-                        : ""}
-                    con los filtros aplicados.
-                  </td>
-                </tr>
+                <TableRow>
+                  <TableCell colSpan={10} className="py-14 text-center text-muted-foreground">
+                    <FileText className="w-8 h-8 text-slate-300 dark:text-slate-700 mx-auto mb-2" />
+                    <p className="text-xs font-semibold text-foreground">Sin registros coincidentes</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      No se encontraron movimientos con los filtros aplicados en este submódulo.
+                    </p>
+                  </TableCell>
+                </TableRow>
               ) : (
                 displayedItems.map((row, index) => {
                   const movement = MOVEMENT_LABELS[row.type];
+                  const submod = getMovementSubmodule(row.type);
                   const isFinancial =
                     row.type === "PAGO_ORDEN" || row.type === "EGRESO_DIRECTO";
                   const isPositive = row.quantity >= 0;
+                  const MoveIcon = movement?.icon || ArrowUpRight;
+                  const SubmodIcon = submod.Icon;
+
                   return (
-                    <tr
-                      key={`${row.id ?? 'mov'}-${row.batchId ?? ''}-${index}`}
-                      className="hover:bg-slate-50/60 transition-colors"
+                    <TableRow
+                      key={`${row.id ?? "mov"}-${row.batchId ?? ""}-${index}`}
+                      className="hover:bg-muted/40 transition-colors"
                     >
-                      <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
-                        {new Date(row.createdAt).toLocaleString("es-VE", {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        })}
-                      </td>
-                      <td className="py-3 px-4">
+                      {/* 1. Fecha & Hora (Centrada en dos líneas legibles) */}
+                      <TableCell className="py-2.5 px-3 text-left whitespace-nowrap">
+                        <div className="text-xs font-semibold text-foreground">
+                          {new Date(row.createdAt).toLocaleDateString("es-VE", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "numeric",
+                          })}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground font-mono">
+                          {new Date(row.createdAt).toLocaleTimeString("es-VE", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </div>
+                      </TableCell>
+
+                      {/* 2. Submódulo (Pill centrado y compacto) */}
+                      <TableCell className="py-2.5 px-3 text-center whitespace-nowrap">
                         <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold text-[10px] ${
-                            movement?.color === "emerald"
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              : movement?.color === "purple"
-                                ? "bg-purple-50 text-purple-700 border border-purple-200"
-                                : movement?.color === "red"
-                                  ? "bg-red-50 text-red-700 border border-red-200"
-                                  : movement?.color === "amber"
-                                    ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                    : movement?.color === "rose"
-                                      ? "bg-rose-50 text-rose-700 border border-rose-200"
-                                      : "bg-blue-50 text-blue-700 border border-blue-200"
-                          }`}
-                        >
-                          {isFinancial ? (
-                            <Wallet className="w-3 h-3" />
-                          ) : isPositive ? (
-                            <ArrowDownLeft className="w-3 h-3" />
-                          ) : (
-                            <ArrowUpRight className="w-3 h-3" />
+                          className={cn(
+                            "inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border shadow-2xs",
+                            submod.badgeClass
                           )}
-                          {movement?.label || row.type}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        {row.batch ? (
-                          <>
-                            <div className="font-semibold text-slate-800">
-                              {row.batch.product.name}
-                            </div>
-                            <div className="font-mono text-[10px] text-slate-400">
-                              {row.batch.product.sku}
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="font-semibold text-slate-900">
-                              {row.type === "PAGO_ORDEN"
-                                ? "Abono / Pago de Orden"
-                                : "Egreso Directo Institucional"}
-                            </div>
-                            <div className="font-mono text-[10px] text-amber-600 font-semibold">
-                              {row.referenceDoc || "ASIENTO-FINANCIERO"}
-                            </div>
-                          </>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 font-mono text-slate-600">
-                        {row.batch ? (
-                          `#${row.batch.lotNumber}`
-                        ) : (
-                          <span className="text-slate-400 italic text-[11px]">
-                            N/A (Financiero)
-                          </span>
-                        )}
-                      </td>
-                      <td
-                        className={`py-3 px-4 text-right font-bold ${
-                          isFinancial
-                            ? "text-slate-700"
-                            : isPositive
-                              ? "text-emerald-600"
-                              : "text-red-600"
-                        }`}
-                      >
-                        {isFinancial ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                            Asiento Financiero
-                          </span>
-                        ) : (
-                          <>
-                            {row.quantity > 0 ? `+${row.quantity}` : row.quantity}
-                            <span className="text-[10px] font-normal text-slate-500 ml-1">
-                              {row.batch?.product.unitOfMeasure}
-                            </span>
-                          </>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right font-semibold text-slate-700">
-                        {row.balanceAfter !== null ? row.balanceAfter : "-"}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600">
-                        {row.performedBy?.fullName ||
-                          row.performedBy?.username ||
-                          "Sistema"}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600 max-w-xs truncate" title={row.reason || ""}>
-                        {row.reason || "-"}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <Link
-                          href={`/inventory/kardex/${row.id}`}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 text-slate-600 hover:text-blue-700 text-xs font-semibold transition-all shadow-2xs"
-                          title="Ver comprobante de asiento"
                         >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Auditar</span>
-                        </Link>
-                      </td>
-                    </tr>
+                          <SubmodIcon className="w-3 h-3 shrink-0" />
+                          <span>{submod.name}</span>
+                        </span>
+                      </TableCell>
+
+                      {/* 3. Operación / Tipo Movimiento (Insignia compacta) */}
+                      <TableCell className="py-2.5 px-3 text-left whitespace-nowrap">
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md border",
+                            movement?.badgeClass || "bg-slate-100 text-slate-700 border-slate-200"
+                          )}
+                          title={movement?.label || row.type}
+                        >
+                          <MoveIcon className="w-3 h-3 shrink-0" />
+                          <span>{movement?.shortLabel || row.type}</span>
+                        </span>
+                      </TableCell>
+
+                      {/* 4. Insumo / Concepto */}
+                      <TableCell className="py-2.5 px-3 text-left">
+                        {row.batch ? (
+                          <div className="flex flex-col min-w-0">
+                            <span
+                              className="font-semibold text-xs text-foreground truncate max-w-[240px]"
+                              title={row.batch.product.name}
+                            >
+                              {row.batch.product.name}
+                            </span>
+                            <span className="font-mono text-[10px] text-muted-foreground">
+                              SKU: {row.batch.product.sku}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-semibold text-xs text-foreground truncate max-w-[240px]">
+                              {row.type === "PAGO_ORDEN"
+                                ? "Pago de Orden de Compra"
+                                : "Egreso Directo Institucional"}
+                            </span>
+                            <span className="font-mono text-[10px] text-amber-600 font-semibold">
+                              Ref: {row.referenceDoc || "ASIENTO-FINANCIERO"}
+                            </span>
+                          </div>
+                        )}
+                      </TableCell>
+
+                      {/* 5. Lote (Centrado en cápsula monospace) */}
+                      <TableCell className="py-2.5 px-3 text-center whitespace-nowrap">
+                        {row.batch ? (
+                          <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-semibold border border-slate-200/60 dark:border-slate-700/60 shadow-2xs">
+                            #{row.batch.lotNumber}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-xs font-mono">—</span>
+                        )}
+                      </TableCell>
+
+                      {/* 6. Cantidad (Alineada a la derecha con signo claro) */}
+                      <TableCell className="py-2.5 px-3 text-right whitespace-nowrap">
+                        {isFinancial ? (
+                          <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300">
+                            Financiero
+                          </span>
+                        ) : (
+                          <div className="flex items-center justify-end gap-1 font-mono">
+                            <span
+                              className={cn(
+                                "text-xs font-bold",
+                                isPositive ? "text-emerald-600" : "text-rose-600"
+                              )}
+                            >
+                              {isPositive ? `+${row.quantity}` : row.quantity}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground font-normal">
+                              {row.batch?.product.unitOfMeasure || "UND"}
+                            </span>
+                          </div>
+                        )}
+                      </TableCell>
+
+                      {/* 7. Saldo Stock Tras Movimiento */}
+                      <TableCell className="py-2.5 px-3 text-right whitespace-nowrap font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
+                        {row.balanceAfter !== null ? (
+                          <span>{Number(row.balanceAfter).toLocaleString("es-VE")}</span>
+                        ) : (
+                          <span className="text-slate-400 font-normal">—</span>
+                        )}
+                      </TableCell>
+
+                      {/* 8. Responsable */}
+                      <TableCell className="py-2.5 px-3 text-left">
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs font-medium text-foreground truncate max-w-[130px]">
+                            {row.performedBy?.fullName ||
+                              row.performedBy?.username ||
+                              "Sistema"}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground truncate">
+                            {row.performedBy?.department ?? "IDI"}
+                          </span>
+                        </div>
+                      </TableCell>
+
+                      {/* 9. Observación */}
+                      <TableCell className="py-2.5 px-3 text-left">
+                        <span
+                          className="text-xs text-muted-foreground block truncate max-w-[190px]"
+                          title={row.reason || "Sin observación"}
+                        >
+                          {row.reason || "—"}
+                        </span>
+                      </TableCell>
+
+                      {/* 10. Detalle / Acción (Centrado) */}
+                      <TableCell className="py-2.5 px-3 text-center whitespace-nowrap">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          asChild
+                          className="h-7 px-2.5 text-[11px] font-semibold gap-1 rounded-lg hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer"
+                        >
+                          <Link
+                            href={`/inventory/kardex/${row.id}`}
+                            title="Ver comprobante de asiento"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>Ver</span>
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
                   );
                 })
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
 
         {/* Paginación */}
-        <div className="bg-slate-50 px-4 py-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+        <div className="bg-muted/30 px-4 py-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
           <div>
             Mostrando página{" "}
-            <span className="font-semibold">{meta.currentPage}</span> de{" "}
-            <span className="font-semibold">{meta.totalPages || 1}</span> (
-            {meta.totalItems} registros)
+            <span className="font-semibold text-foreground">{meta.currentPage}</span> de{" "}
+            <span className="font-semibold text-foreground">{meta.totalPages || 1}</span> (
+            <span className="font-semibold text-foreground">{meta.totalItems}</span> registros registrados)
           </div>
           <div className="flex items-center gap-2">
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="icon"
               disabled={page <= 1 || loading}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="p-1.5 border border-slate-200 rounded-md bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              className="h-8 w-8 cursor-pointer"
               title="Página anterior"
             >
               <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
+              size="icon"
               disabled={page >= meta.totalPages || loading}
               onClick={() => setPage((p) => p + 1)}
-              className="p-1.5 border border-slate-200 rounded-md bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              className="h-8 w-8 cursor-pointer"
               title="Página siguiente"
             >
               <ChevronRight className="w-4 h-4" />
-            </button>
+            </Button>
           </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

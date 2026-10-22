@@ -49,5 +49,19 @@ router.put('/locations/:id', adminOnly, InventoryMasterController.updateLocation
 router.patch('/locations/:id', adminOnly, InventoryMasterController.updateLocation);
 router.delete('/locations/:id', adminOnly, InventoryMasterController.deleteLocation);
 
+// Métodos de Pago
+router.get('/payment-methods', InventoryMasterController.getPaymentMethods);
+router.post('/payment-methods', adminOnly, InventoryMasterController.createPaymentMethod);
+router.put('/payment-methods/:id', adminOnly, InventoryMasterController.updatePaymentMethod);
+router.patch('/payment-methods/:id', adminOnly, InventoryMasterController.updatePaymentMethod);
+router.delete('/payment-methods/:id', adminOnly, InventoryMasterController.deletePaymentMethod);
+
+// Conceptos de Justificación y Protocolos
+router.get('/justification-concepts', InventoryMasterController.getJustificationConcepts);
+router.post('/justification-concepts', adminOnly, InventoryMasterController.createJustificationConcept);
+router.put('/justification-concepts/:id', adminOnly, InventoryMasterController.updateJustificationConcept);
+router.patch('/justification-concepts/:id', adminOnly, InventoryMasterController.updateJustificationConcept);
+router.delete('/justification-concepts/:id', adminOnly, InventoryMasterController.deleteJustificationConcept);
+
 export default router;
 

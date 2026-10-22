@@ -28,6 +28,11 @@ router.get(
   getSupplierStatement
 );
 router.post(
+  '/payments',
+  requireRoles(['ADMINISTRADOR', 'COMPRAS']),
+  registerSupplierPayment
+);
+router.post(
   '/:id/payments',
   requireRoles(['ADMINISTRADOR', 'COMPRAS']),
   registerSupplierPayment

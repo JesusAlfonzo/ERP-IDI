@@ -153,16 +153,21 @@ export type UpdateProviderPayload = UpdateSupplierPayload;
 
 export interface RegisterPaymentPayload {
   supplierId: number;
-  amountUsd: number;
-  paymentMethod:
-    | "TRANSFERENCIA_USD"
-    | "TRANSFERENCIA_BS"
-    | "EFECTIVO_USD"
-    | "EFECTIVO_BS"
-    | "PAGO_MOVIL";
+  amountUsd?: number;
+  amountPaid?: number;
+  amount?: number;
+  method?: "TRANSFERENCIA" | "PAGO_MOVIL" | "EFECTIVO" | "ZELLE" | string;
+  paymentMethod?: string;
+  sourceAccountId?: number | null;
+  transactionCurrency?: "USD" | "EUR" | "VED" | string;
+  exchangeRate?: number | null;
+  bankName?: string | null;
   referenceNumber: string;
   paymentDate?: string;
   notes?: string;
+  reviewedBy?: string | null;
+  authorizedBy?: string | null;
+  approvedBy?: string | null;
 }
 
 export interface SupplierDebt {

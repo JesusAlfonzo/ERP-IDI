@@ -37,7 +37,7 @@ export class DashboardService {
       user.roles.includes('ADMINISTRADOR') || user.roles.includes('COMPRAS');
     const isLabStaff =
       user.roles.includes('ADMINISTRADOR') ||
-      user.roles.includes('ANALISTA_LABORATORIO');
+      user.roles.includes('LABORATORIO');
 
     // 1. Notificaciones personales de Solicitante
     if (isRequester) {
@@ -260,7 +260,7 @@ export class DashboardService {
     const isPurchasing =
       roles.includes('ADMINISTRADOR') || roles.includes('COMPRAS');
     const isLabStaff =
-      roles.includes('ADMINISTRADOR') || roles.includes('ANALISTA_LABORATORIO');
+      roles.includes('ADMINISTRADOR') || roles.includes('LABORATORIO');
     const isAdmin = roles.includes('ADMINISTRADOR');
 
     const result: Record<string, unknown> = {};

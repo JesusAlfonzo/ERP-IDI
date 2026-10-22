@@ -3,6 +3,7 @@ import {
   ProductService,
   type ProductFilterDTO,
   type CreateProductDTO,
+  type UpdateProductDTO,
 } from '../services/product.service.js';
 import { serializeBigInt } from '../utils/serializer.js';
 
@@ -165,6 +166,76 @@ export const createProduct = async (
     res.status(201).json({
       status: 'SUCCESS',
       data: serializeBigInt(product),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateProduct = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!id) {
+      res
+        .status(400)
+        .json({ status: 'BAD_REQUEST', message: 'ID no proporcionado' });
+      return;
+    }
+
+    const {
+      name,
+      categoryId,
+      baseUnitId,
+      purchaseUnitId,
+      conversionFactor,
+      brandId,
+      barcode,
+      description,
+      isTaxExempt,
+      minStockAlert,
+      isReagent,
+    } = req.body;
+
+    const updateData: UpdateProductDTO = {};
+    if (name !== undefined) updateData.name = String(name).trim();
+    if (categoryId !== undefined) updateData.categoryId = Number(categoryId);
+    if (baseUnitId !== undefined) updateData.baseUnitId = Number(baseUnitId);
+    if (purchaseUnitId !== undefined) {
+      updateData.purchaseUnitId = purchaseUnitId ? Number(purchaseUnitId) : null;
+    }
+    if (conversionFactor !== undefined) {
+      updateData.conversionFactor = Number(conversionFactor) || 1;
+    }
+    if (brandId !== undefined) {
+      updateData.brandId = brandId ? Number(brandId) : null;
+    }
+    if (barcode !== undefined) {
+      updateData.barcode = barcode ? String(barcode).trim() : null;
+    }
+    if (description !== undefined) {
+      updateData.description = description ? String(description).trim() : null;
+    }
+    if (isTaxExempt !== undefined) {
+      updateData.isTaxExempt = Boolean(isTaxExempt);
+    }
+    if (minStockAlert !== undefined) {
+      updateData.minStockAlert = Number(minStockAlert) || 0;
+    }
+    if (isReagent !== undefined) {
+      updateData.isReagent = Boolean(isReagent);
+    }
+
+    const updated = await ProductService.updateProduct(BigInt(id), updateData);
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Insumo actualizado exitosamente',
+      data: serializeBigInt(updated),
     });
   } catch (error) {
     next(error);

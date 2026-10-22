@@ -27,6 +27,10 @@ export interface ProductDetail {
   isReagent: boolean;
   isActive: boolean;
   totalStock: number;
+  categoryId?: number;
+  brandId?: number | null;
+  baseUnitId?: number;
+  purchaseUnitId?: number | null;
   category?: { id: number; name: string };
   brand?: { id: number; name: string };
   baseUnit?: { id: number; name: string; abbreviation: string };
@@ -35,12 +39,31 @@ export interface ProductDetail {
   batches?: BatchItem[];
 }
 
-// Dentro del objeto ProductService exportado:
-export const ProductService = {
-  // ... métodos existentes ...
+export interface UpdateProductPayload {
+  name?: string;
+  categoryId?: number;
+  brandId?: number | null;
+  baseUnitId?: number;
+  purchaseUnitId?: number | null;
+  conversionFactor?: number;
+  barcode?: string | null;
+  description?: string | null;
+  minStockAlert?: number;
+  isReagent?: boolean;
+  isTaxExempt?: boolean;
+}
 
+export const ProductService = {
   getProductById: async (id: string | number): Promise<ProductDetail> => {
     const res = await apiClient.get(`/products/${id}`);
+    return res.data?.data ?? res.data;
+  },
+
+  updateProduct: async (
+    id: string | number,
+    payload: UpdateProductPayload
+  ): Promise<ProductDetail> => {
+    const res = await apiClient.put(`/products/${id}`, payload);
     return res.data?.data ?? res.data;
   },
 };

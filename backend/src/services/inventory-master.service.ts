@@ -273,4 +273,145 @@ export class InventoryMasterService {
       where: { id },
     });
   }
+
+  // ==================== MÉTODOS DE PAGO ====================
+  static async listPaymentMethods(activeOnly = false) {
+    const count = await prisma.paymentMethodCatalog.count();
+    if (count === 0) {
+      // Sembrar valores iniciales basados en enum PaymentMethod
+      const defaults = [
+        { code: 'TRANSFERENCIA_NACIONAL', name: 'Transferencia Bancaria Nacional (Bs.)', description: 'Transferencia electrónica bancaria en moneda de curso legal (Bs.)' },
+        { code: 'TRANSFERENCIA_USD', name: 'Transferencia Internacional / Divisas', description: 'Transferencia bancaria internacional o en cuentas en moneda extranjera' },
+        { code: 'PAGO_MOVIL', name: 'Pago Móvil Interbancario (Bs.)', description: 'Liquidación inmediata P2P / C2P en bolívares' },
+        { code: 'EFECTIVO_USD', name: 'Efectivo Dólares (USD)', description: 'Pago directo en efectivo físico en divisas (Caja / Custodia)' },
+        { code: 'EFECTIVO_BS', name: 'Efectivo Bolívares (Bs.)', description: 'Pago de caja chica en efectivo nacional' },
+        { code: 'ZELLE', name: 'Zelle Directo', description: 'Transferencia directa vía Zelle / ACH estadounidense' },
+      ];
+      await prisma.paymentMethodCatalog.createMany({
+        data: defaults,
+        skipDuplicates: true,
+      });
+    }
+
+    return prisma.paymentMethodCatalog.findMany({
+      where: activeOnly ? { isActive: true } : undefined,
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  static async createPaymentMethod(data: {
+    code: string;
+    name: string;
+    description?: string;
+    isActive?: boolean;
+  }) {
+    return prisma.paymentMethodCatalog.create({
+      data: {
+        code: data.code.trim().toUpperCase(),
+        name: data.name.trim(),
+        description: data.description?.trim() || null,
+        isActive: data.isActive !== undefined ? data.isActive : true,
+      },
+    });
+  }
+
+  static async updatePaymentMethod(
+    id: number,
+    data: { code?: string; name?: string; description?: string; isActive?: boolean }
+  ) {
+    return prisma.paymentMethodCatalog.update({
+      where: { id },
+      data: {
+        ...(data.code !== undefined ? { code: data.code.trim().toUpperCase() } : {}),
+        ...(data.name !== undefined ? { name: data.name.trim() } : {}),
+        ...(data.description !== undefined
+          ? { description: data.description.trim() || null }
+          : {}),
+        ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+      },
+    });
+  }
+
+  static async deletePaymentMethod(id: number) {
+    return prisma.paymentMethodCatalog.delete({
+      where: { id },
+    });
+  }
+
+  // ==================== CONCEPTOS DE JUSTIFICACIÓN Y PROTOCOLOS ====================
+  static async listJustificationConcepts(category?: string, activeOnly = false) {
+    const count = await prisma.justificationConcept.count();
+    if (count === 0) {
+      // Sembrar conceptos estándar
+      const defaults = [
+        { code: 'REP_STOCK', title: 'Reposición de Stock Operativo', description: 'Reposición rutinaria de insumos y reactivos por alcanzar punto de reorden en almacén', category: 'COMPRA' },
+        { code: 'URG_CLINICA', title: 'Urgencia Clínica / Diagnóstica', description: 'Requerimiento prioritario para pruebas diagnósticas y atención inmediata de pacientes', category: 'SOLICITUD' },
+        { code: 'INV_PROTOCOLO', title: 'Proyecto de Investigación o Protocolo Clínico', description: 'Materiales requeridos para ejecución de protocolos y líneas de investigación aprobadas', category: 'GENERAL' },
+        { code: 'MANT_CALIBRA', title: 'Mantenimiento y Calibración de Equipos', description: 'Consumibles, kits de calibración y limpieza de instrumentos de laboratorio', category: 'GENERAL' },
+        { code: 'DOT_PERIODICA', title: 'Dotación Regular Departamental', description: 'Suministro regular programado de consumibles, papelería o descartables a secciones', category: 'SOLICITUD' },
+      ];
+      await prisma.justificationConcept.createMany({
+        data: defaults,
+        skipDuplicates: true,
+      });
+    }
+
+    return prisma.justificationConcept.findMany({
+      where: {
+        ...(activeOnly ? { isActive: true } : {}),
+        ...(category ? { category } : {}),
+      },
+      orderBy: { title: 'asc' },
+    });
+  }
+
+  static async createJustificationConcept(data: {
+    code: string;
+    title: string;
+    description?: string;
+    category?: string;
+    isActive?: boolean;
+  }) {
+    return prisma.justificationConcept.create({
+      data: {
+        code: data.code.trim().toUpperCase(),
+        title: data.title.trim(),
+        description: data.description?.trim() || null,
+        category: data.category?.trim().toUpperCase() || 'COMPRA',
+        isActive: data.isActive !== undefined ? data.isActive : true,
+      },
+    });
+  }
+
+  static async updateJustificationConcept(
+    id: number,
+    data: {
+      code?: string;
+      title?: string;
+      description?: string;
+      category?: string;
+      isActive?: boolean;
+    }
+  ) {
+    return prisma.justificationConcept.update({
+      where: { id },
+      data: {
+        ...(data.code !== undefined ? { code: data.code.trim().toUpperCase() } : {}),
+        ...(data.title !== undefined ? { title: data.title.trim() } : {}),
+        ...(data.description !== undefined
+          ? { description: data.description.trim() || null }
+          : {}),
+        ...(data.category !== undefined
+          ? { category: data.category.trim().toUpperCase() }
+          : {}),
+        ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+      },
+    });
+  }
+
+  static async deleteJustificationConcept(id: number) {
+    return prisma.justificationConcept.delete({
+      where: { id },
+    });
+  }
 }

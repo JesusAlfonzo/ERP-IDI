@@ -15,6 +15,20 @@ export interface CreateProductDTO {
   isReagent?: boolean;
 }
 
+export interface UpdateProductDTO {
+  name?: string;
+  categoryId?: number;
+  baseUnitId?: number;
+  purchaseUnitId?: number | null;
+  conversionFactor?: number;
+  brandId?: number | null;
+  barcode?: string | null;
+  description?: string | null;
+  isTaxExempt?: boolean;
+  minStockAlert?: number;
+  isReagent?: boolean;
+}
+
 export interface ProductFilterDTO {
   search?: string;
   categoryId?: number;
@@ -153,6 +167,48 @@ export class ProductService {
         isTaxExempt: data.isTaxExempt ?? false,
         minStockAlert: data.minStockAlert ?? 0,
         isReagent: data.isReagent ?? false,
+      },
+      include: {
+        category: true,
+        brand: true,
+        baseUnit: true,
+        purchaseUnit: true,
+      },
+    });
+  }
+
+  static async updateProduct(id: bigint, data: UpdateProductDTO) {
+    const existing = await prisma.product.findUnique({ where: { id } });
+    if (!existing) {
+      const error: any = new Error('Producto no encontrado');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    return prisma.product.update({
+      where: { id },
+      data: {
+        ...(data.name ? { name: data.name } : {}),
+        ...(data.categoryId ? { categoryId: data.categoryId } : {}),
+        ...(data.baseUnitId ? { baseUnitId: data.baseUnitId } : {}),
+        ...(data.purchaseUnitId !== undefined
+          ? { purchaseUnitId: data.purchaseUnitId }
+          : {}),
+        ...(data.conversionFactor !== undefined
+          ? { conversionFactor: data.conversionFactor }
+          : {}),
+        ...(data.brandId !== undefined ? { brandId: data.brandId } : {}),
+        ...(data.barcode !== undefined ? { barcode: data.barcode } : {}),
+        ...(data.description !== undefined
+          ? { description: data.description }
+          : {}),
+        ...(data.isTaxExempt !== undefined
+          ? { isTaxExempt: data.isTaxExempt }
+          : {}),
+        ...(data.minStockAlert !== undefined
+          ? { minStockAlert: data.minStockAlert }
+          : {}),
+        ...(data.isReagent !== undefined ? { isReagent: data.isReagent } : {}),
       },
       include: {
         category: true,

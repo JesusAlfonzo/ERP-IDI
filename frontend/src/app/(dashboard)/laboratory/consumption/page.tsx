@@ -29,6 +29,20 @@ import {
   ShieldAlert,
 } from "lucide-react";
 
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+
 const COMMON_PROTOCOLS = [
   "ELISA Diagnóstica",
   "Citometría de Flujo",
@@ -53,7 +67,7 @@ export default function ReagentConsumptionPage() {
   const userRoles = currentUser?.roles || [];
   const isLabStaff =
     userRoles.includes("ADMINISTRADOR") ||
-    userRoles.includes("ANALISTA_LABORATORIO");
+    userRoles.includes("LABORATORIO");
 
   const [units, setUnits] = useState<LabReagentUnitItem[]>([]);
   const [history, setHistory] = useState<ReagentConsumptionRecord[]>([]);
@@ -170,7 +184,6 @@ export default function ReagentConsumptionPage() {
       return;
     }
 
-    // Captura exacta del código del frasco antes de limpiar
     const unitCodeToDisplay = selectedUnit?.unitCode || "desconocido";
 
     setSubmitting(true);
@@ -190,7 +203,6 @@ export default function ReagentConsumptionPage() {
         message: `Consumo registrado exitosamente. Se descontó del frasco #${unitCodeToDisplay} en la nevera.`,
       });
 
-      // Limpiar campos para el siguiente descargo
       setSelectedUnitId("");
       setSelectedUnit(null);
       setUnitSearch("");
@@ -214,348 +226,345 @@ export default function ReagentConsumptionPage() {
     <div className="space-y-8 max-w-6xl mx-auto">
       {/* Encabezado */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-          <FlaskConical className="w-6 h-6 text-purple-600" />
+        <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+          <FlaskConical className="w-6 h-6 text-primary" />
           Registro de Consumo en Laboratorio
         </h1>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           Descargo volumétrico directo de frascos alojados en cadena de frío
         </p>
       </div>
 
       {!isLabStaff ? (
-        <div className="bg-white border border-amber-200 rounded-xl p-8 text-center space-y-4 shadow-xs">
+        <Card className="border-amber-200 p-8 text-center space-y-4">
           <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
             <ShieldAlert className="w-6 h-6" />
           </div>
           <div className="space-y-1">
-            <h2 className="text-base font-bold text-slate-800">
+            <h2 className="text-base font-bold text-foreground">
               Acceso Restringido a Consumo de Reactivos
             </h2>
-            <p className="text-xs text-slate-500 max-w-md mx-auto">
+            <p className="text-xs text-muted-foreground max-w-md mx-auto">
               El registro de consumos volumétricos y la apertura de reactivos en sala analítica son competencia exclusiva del personal de <strong>Laboratorio Clínico</strong> o <strong>Administración</strong>.
             </p>
           </div>
           <div className="pt-2">
-            <button
+            <Button
               type="button"
               onClick={() => router.push("/dashboard")}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition-colors cursor-pointer"
             >
               Volver al Dashboard
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
       ) : (
         <>
           {feedback && (
-            <div
-              className={`p-4 rounded-xl text-xs flex items-center gap-2.5 border ${
-                feedback.status === "success"
-                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                  : "bg-red-50 border-red-200 text-red-800"
-              }`}
+            <Alert
+              variant={feedback.status === "success" ? "default" : "destructive"}
+              className={feedback.status === "success" ? "border-emerald-300 bg-emerald-50 text-emerald-900" : ""}
             >
               {feedback.status === "success" ? (
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
               ) : (
-                <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                <AlertCircle className="w-4 h-4" />
               )}
-              <span>{feedback.message}</span>
-            </div>
+              <AlertDescription>{feedback.message}</AlertDescription>
+            </Alert>
           )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Formulario de Registro */}
-        <div className="lg:col-span-7">
-          <form
-            onSubmit={handleSubmit}
-            className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-5"
-          >
-            <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <TestTube className="w-4 h-4 text-purple-600" />
-              Selección de Frasco y Ensayo
-            </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* Formulario de Registro */}
+            <div className="lg:col-span-7">
+              <Card>
+                <CardHeader className="pb-3 border-b border-border">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <TestTube className="w-4 h-4 text-primary" />
+                    Selección de Frasco y Ensayo
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-5">
+                  <form onSubmit={handleSubmit} className="space-y-5">
+                    {/* Filtro rápido de Nevera */}
+                    <div className="space-y-1.5">
+                      <Label className="flex items-center gap-1 text-xs font-semibold text-foreground uppercase tracking-wider">
+                        <Filter className="w-3.5 h-3.5 text-muted-foreground" />
+                        Filtrar por Nevera (Opcional)
+                      </Label>
+                      <select
+                        value={filterFridgeId}
+                        onChange={(e) => {
+                          setFilterFridgeId(e.target.value);
+                          setSelectedUnitId("");
+                          setSelectedUnit(null);
+                        }}
+                        className="w-full bg-background border border-input rounded-md px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
+                      >
+                        <option value="">Todas las neveras / cavas</option>
+                        {fridges.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.name} ({f.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-            {/* Filtro rápido de Nevera */}
-            <div>
-              <label className="flex items-center gap-1 text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                <Filter className="w-3.5 h-3.5 text-slate-400" />
-                Filtrar por Nevera (Opcional)
-              </label>
-              <select
-                value={filterFridgeId}
-                onChange={(e) => {
-                  setFilterFridgeId(e.target.value);
-                  setSelectedUnitId("");
-                  setSelectedUnit(null);
-                }}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800"
-              >
-                <option value="">Todas las neveras / cavas</option>
-                {fridges.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name} ({f.code})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Buscador de Frascos */}
-            <div ref={dropdownRef}>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                Frasco de Reactivo en Frío *
-              </label>
-              <div className="relative">
-                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                <input
-                  value={unitSearch}
-                  onFocus={() => setIsDropdownOpen(true)}
-                  onChange={(e) => {
-                    setUnitSearch(e.target.value);
-                    setSelectedUnitId("");
-                    setSelectedUnit(null);
-                    setIsDropdownOpen(true);
-                  }}
-                  placeholder="Buscar por reactivo, código de frasco (#LOT-F01) o lote..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800"
-                  required={!selectedUnitId}
-                />
-
-                {isDropdownOpen && !selectedUnitId && (
-                  <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg">
-                    {loadingData ? (
-                      <div className="p-3 text-xs text-slate-500 flex items-center gap-2">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600" />
-                        Buscando frascos en nevera...
-                      </div>
-                    ) : units.length === 0 ? (
-                      <div className="p-3 text-xs text-slate-500">
-                        No hay frascos disponibles en las neveras.
-                      </div>
-                    ) : (
-                      units.map((unit) => (
-                        <button
-                          key={String(unit.id)}
-                          type="button"
-                          onClick={() => {
-                            setSelectedUnitId(String(unit.id));
-                            setSelectedUnit(unit);
-                            setUnitSearch(
-                              `${unit.product.name} · ${unit.unitCode}`,
-                            );
-                            setIsDropdownOpen(false);
+                    {/* Buscador de Frascos */}
+                    <div ref={dropdownRef} className="space-y-1.5">
+                      <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                        Frasco de Reactivo en Frío *
+                      </Label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          value={unitSearch}
+                          onFocus={() => setIsDropdownOpen(true)}
+                          onChange={(e) => {
+                            setUnitSearch(e.target.value);
+                            setSelectedUnitId("");
+                            setSelectedUnit(null);
+                            setIsDropdownOpen(true);
                           }}
-                          className="w-full text-left px-3 py-2.5 border-b border-slate-100 hover:bg-purple-50 transition-colors cursor-pointer"
+                          placeholder="Buscar por reactivo, código de frasco (#LOT-F01) o lote..."
+                          className="pl-9 text-xs"
+                          required={!selectedUnitId}
+                        />
+
+                        {isDropdownOpen && !selectedUnitId && (
+                          <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-popover border border-border rounded-md shadow-lg">
+                            {loadingData ? (
+                              <div className="p-3 text-xs text-muted-foreground flex items-center gap-2">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                                Buscando frascos en nevera...
+                              </div>
+                            ) : units.length === 0 ? (
+                              <div className="p-3 text-xs text-muted-foreground">
+                                No hay frascos disponibles en las neveras.
+                              </div>
+                            ) : (
+                              units.map((unit) => (
+                                <button
+                                  key={String(unit.id)}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedUnitId(String(unit.id));
+                                    setSelectedUnit(unit);
+                                    setUnitSearch(
+                                      `${unit.product.name} · ${unit.unitCode}`,
+                                    );
+                                    setIsDropdownOpen(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2.5 border-b border-border hover:bg-accent transition-colors cursor-pointer"
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <strong className="text-xs text-foreground truncate">
+                                      {unit.product.name}
+                                    </strong>
+                                    <Badge variant="purple" className="font-mono text-[10px]">
+                                      {unit.unitCode}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex items-center justify-between mt-1 text-[10px] text-muted-foreground">
+                                    <span>Lote: #{unit.batch?.lotNumber ?? "N/D"}</span>
+                                    <span className="font-semibold text-emerald-700">
+                                      Volumen: {Number(unit.currentVolume)} /{" "}
+                                      {Number(unit.initialVolume)}{" "}
+                                      {unit.product.baseUnit?.abbreviation ?? "ml"}
+                                    </span>
+                                    <Badge
+                                      variant={unit.status === "EN_USO" ? "info" : "secondary"}
+                                      className="text-[9px]"
+                                    >
+                                      {unit.status}
+                                    </Badge>
+                                  </div>
+                                  <div className="mt-1 text-[10px] font-medium text-muted-foreground flex items-center gap-1">
+                                    <Snowflake className="w-3 h-3 text-sky-600" />
+                                    Nevera: {unit.fridge?.name ?? "Laboratorio"}
+                                  </div>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Ficha rápida del frasco elegido */}
+                      {selectedUnit && (
+                        <div className="mt-2.5 p-3 bg-muted/60 border border-border rounded-lg flex items-center justify-between text-xs text-foreground">
+                          <div className="flex items-center gap-2">
+                            <Package className="w-4 h-4 text-primary" />
+                            <span>
+                              Código: <b>{selectedUnit.unitCode}</b> (
+                              {selectedUnit.status})
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono text-[11px] text-muted-foreground">
+                              Nevera: {selectedUnit.fridge?.name ?? "General"}
+                            </span>
+                            <span className="font-bold font-mono text-primary">
+                              Saldo: {Number(selectedUnit.currentVolume)}{" "}
+                              {selectedUnit.product.baseUnit?.abbreviation ?? "ml"}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Protocolo y Cantidad */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                          Protocolo / Ensayo *
+                        </Label>
+                        <Input
+                          type="text"
+                          list="protocol-suggestions"
+                          value={diagnosticProtocol}
+                          onChange={(e) => setDiagnosticProtocol(e.target.value)}
+                          placeholder="Ej: ELISA Diagnóstica"
+                          required
+                        />
+                        <datalist id="protocol-suggestions">
+                          {COMMON_PROTOCOLS.map((p) => (
+                            <option key={p} value={p} />
+                          ))}
+                        </datalist>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                          Cantidad / Volumen a Deducir *
+                        </Label>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            step="any"
+                            min="0.01"
+                            value={quantity}
+                            onChange={(e) =>
+                              setQuantity(
+                                e.target.value === "" ? "" : Number(e.target.value),
+                              )
+                            }
+                            placeholder="Ej: 0.5"
+                            className="pr-12"
+                            required
+                          />
+                          <span className="absolute inset-y-0 right-3 flex items-center text-[10px] font-semibold text-muted-foreground">
+                            {selectedUnit?.product.baseUnit?.abbreviation ?? "ml"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sección o Unidad Solicitante */}
+                    <div className="space-y-1.5">
+                      <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                        Sección / Unidad Solicitante
+                      </Label>
+                      <select
+                        value={departmentSection}
+                        onChange={(e) => setDepartmentSection(e.target.value)}
+                        className="w-full bg-background border border-input rounded-md px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
+                      >
+                        {SECTIONS.map((sec) => (
+                          <option key={sec} value={sec}>
+                            {sec}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Observaciones */}
+                    <div className="space-y-1.5">
+                      <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                        Observaciones / Muestras procesadas (Opcional)
+                      </Label>
+                      <Textarea
+                        rows={2}
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Identificador de corrida analítica o incidencias de pipeteo..."
+                        className="resize-none"
+                      />
+                    </div>
+
+                    <div className="pt-2 border-t border-border flex justify-end">
+                      <Button
+                        type="submit"
+                        disabled={submitting}
+                        className="gap-2"
+                      >
+                        {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {submitting ? "Procesando descargo..." : "Deducir de Nevera"}
+                      </Button>
+                    </div>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Historial Reciente de Consumo */}
+            <div className="lg:col-span-5 space-y-4">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <History className="w-4 h-4 text-muted-foreground" />
+                    Últimos Consumos Registrados
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loadingData ? (
+                    <div className="py-8 text-center text-xs text-muted-foreground">
+                      <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
+                      Cargando historial...
+                    </div>
+                  ) : history.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-6 italic">
+                      No hay consumos recientes anotados en laboratorio.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {history.map((record) => (
+                        <div
+                          key={record.id}
+                          className="p-3 bg-muted/40 border border-border rounded-lg text-xs space-y-1"
                         >
-                          <div className="flex items-center justify-between gap-3">
-                            <strong className="text-xs text-slate-800 truncate">
-                              {unit.product.name}
-                            </strong>
-                            <span className="text-[10px] font-mono font-bold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded">
-                              {unit.unitCode}
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-foreground">
+                              {record.batch.product.name}
+                            </span>
+                            <span className="font-mono text-primary font-bold">
+                              -{record.quantity} {record.batch.product.unitOfMeasure}
                             </span>
                           </div>
-                          <div className="flex items-center justify-between mt-1 text-[10px] text-slate-500">
-                            <span>Lote: #{unit.batch?.lotNumber ?? "N/D"}</span>
-                            <span className="font-semibold text-emerald-700">
-                              Volumen: {Number(unit.currentVolume)} /{" "}
-                              {Number(unit.initialVolume)}{" "}
-                              {unit.product.baseUnit?.abbreviation ?? "ml"}
-                            </span>
-                            <span
-                              className={`font-bold px-1.5 py-0.5 rounded ${
-                                unit.status === "EN_USO"
-                                  ? "text-sky-700 bg-sky-50"
-                                  : "text-slate-600 bg-slate-100"
-                              }`}
-                            >
-                              {unit.status}
+
+                          <div className="text-muted-foreground flex items-center justify-between text-[11px]">
+                            <span>{record.diagnosticProtocol}</span>
+                            <span className="font-mono text-[10px]">
+                              Lote #{record.batch.lotNumber}
                             </span>
                           </div>
-                          <div className="mt-1 text-[10px] font-medium text-slate-500 flex items-center gap-1">
-                            <Snowflake className="w-3 h-3 text-sky-600" />
-                            Nevera: {unit.fridge?.name ?? "Laboratorio"}
+
+                          <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-border">
+                            <span>
+                              {record.analyst.fullName || record.analyst.username}
+                            </span>
+                            <span className="flex items-center gap-1 font-mono">
+                              <Clock className="w-3 h-3" />
+                              {new Date(record.createdAt).toLocaleDateString()}
+                            </span>
                           </div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Ficha rápida del frasco elegido */}
-              {selectedUnit && (
-                <div className="mt-2.5 p-3 bg-purple-50/60 border border-purple-200 rounded-lg flex items-center justify-between text-xs text-purple-900">
-                  <div className="flex items-center gap-2">
-                    <Package className="w-4 h-4 text-purple-600" />
-                    <span>
-                      Código: <b>{selectedUnit.unitCode}</b> (
-                      {selectedUnit.status})
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-[11px]">
-                      Nevera: {selectedUnit.fridge?.name ?? "General"}
-                    </span>
-                    <span className="font-bold font-mono">
-                      Saldo: {Number(selectedUnit.currentVolume)}{" "}
-                      {selectedUnit.product.baseUnit?.abbreviation ?? "ml"}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Protocolo y Cantidad */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Protocolo / Ensayo *
-                </label>
-                <input
-                  type="text"
-                  list="protocol-suggestions"
-                  value={diagnosticProtocol}
-                  onChange={(e) => setDiagnosticProtocol(e.target.value)}
-                  placeholder="Ej: ELISA Diagnóstica"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800"
-                  required
-                />
-                <datalist id="protocol-suggestions">
-                  {COMMON_PROTOCOLS.map((p) => (
-                    <option key={p} value={p} />
-                  ))}
-                </datalist>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Cantidad / Volumen a Deducir *
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="any"
-                    min="0.01"
-                    value={quantity}
-                    onChange={(e) =>
-                      setQuantity(
-                        e.target.value === "" ? "" : Number(e.target.value),
-                      )
-                    }
-                    placeholder="Ej: 0.5"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-3 pr-12 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800"
-                    required
-                  />
-                  <span className="absolute inset-y-0 right-3 flex items-center text-[10px] font-semibold text-slate-400">
-                    {selectedUnit?.product.baseUnit?.abbreviation ?? "ml"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Sección o Unidad Solicitante */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                Sección / Unidad Solicitante
-              </label>
-              <select
-                value={departmentSection}
-                onChange={(e) => setDepartmentSection(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800"
-              >
-                {SECTIONS.map((sec) => (
-                  <option key={sec} value={sec}>
-                    {sec}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Observaciones */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                Observaciones / Muestras procesadas (Opcional)
-              </label>
-              <textarea
-                rows={2}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Identificador de corrida analítica o incidencias de pipeteo..."
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800"
-              />
-            </div>
-
-            <div className="pt-2 border-t border-slate-100 flex justify-end">
-              <button
-                type="submit"
-                disabled={submitting}
-                className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {submitting ? "Procesando descargo..." : "Deducir de Nevera"}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Historial Reciente de Consumo */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-            <h2 className="text-xs font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-4">
-              <History className="w-4 h-4 text-slate-400" />
-              Últimos Consumos Registrados
-            </h2>
-
-            {loadingData ? (
-              <div className="py-8 text-center text-xs text-slate-400">
-                <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-purple-600" />
-                Cargando historial...
-              </div>
-            ) : history.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-6 italic">
-                No hay consumos recientes anotados en laboratorio.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {history.map((record) => (
-                  <div
-                    key={record.id}
-                    className="p-3 bg-slate-50 border border-slate-100 rounded-lg text-xs space-y-1"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-800">
-                        {record.batch.product.name}
-                      </span>
-                      <span className="font-mono text-purple-700 font-bold">
-                        -{record.quantity} {record.batch.product.unitOfMeasure}
-                      </span>
+                        </div>
+                      ))}
                     </div>
-
-                    <div className="text-slate-500 flex items-center justify-between text-[11px]">
-                      <span>{record.diagnosticProtocol}</span>
-                      <span className="text-slate-400 font-mono">
-                        Lote #{record.batch.lotNumber}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-200/60">
-                      <span>
-                        {record.analyst.fullName || record.analyst.username}
-                      </span>
-                      <span className="flex items-center gap-1 font-mono">
-                        <Clock className="w-3 h-3" />
-                        {new Date(record.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </div>
-        </div>
-      </div>
         </>
       )}
     </div>

@@ -16,8 +16,10 @@ import { InventoryClientService } from "@/services/inventory.service";
 import {
   InventoryMasterService,
   type DepartmentItem,
+  type JustificationConceptItem,
 } from "@/services/inventory-master.service";
 import { AuthService } from "@/services/auth.service";
+import { toast } from "@/utils/toast";
 import { ProductCombobox } from "@/components/requests/ProductCombobox";
 import { RequestWindowAdminCard } from "@/components/requests/RequestWindowAdminCard";
 import type {
@@ -51,32 +53,54 @@ import {
   Sliders,
 } from "lucide-react";
 
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+
 const STATUS_CONFIG: Record<
   RequestStatus,
-  { label: string; className: string }
+  { label: string; variant: "warning" | "info" | "purple" | "success" | "destructive" }
 > = {
   PENDIENTE: {
     label: "Pendiente",
-    className: "bg-amber-50 text-amber-700 border-amber-200",
+    variant: "warning",
   },
   APROBADA: {
-    label: "Aprobada (En espera / Standby)",
-    className: "bg-blue-50 text-blue-700 border-blue-200",
+    label: "Aprobada (Standby)",
+    variant: "info",
   },
   DESPACHADA_PARCIAL: {
     label: "Despacho parcial",
-    className: "bg-purple-50 text-purple-700 border-purple-200",
+    variant: "purple",
   },
   COMPLETADA: {
     label: "Completada",
-    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    variant: "success",
   },
   RECHAZADA: {
     label: "Rechazada",
-    className: "bg-red-50 text-red-700 border-red-200",
+    variant: "destructive",
   },
 };
-
 
 interface FormItem {
   productId: number;
@@ -126,7 +150,7 @@ function RequestsContent() {
     userRoles.includes("SOLICITANTE") ||
     userRoles.includes("ADMINISTRADOR") ||
     userRoles.includes("ALMACENISTA") ||
-    userRoles.includes("ANALISTA_LABORATORIO") ||
+    userRoles.includes("LABORATORIO") ||
     userRoles.includes("COMPRAS");
 
   // Validación de ventana y cupo para creación
@@ -135,6 +159,7 @@ function RequestsContent() {
 
   // Modal Nueva Solicitud
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [justificationConcepts, setJustificationConcepts] = useState<JustificationConceptItem[]>([]);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | "">("");
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [departmentSection, setDepartmentSection] = useState("");
@@ -247,7 +272,7 @@ function RequestsContent() {
   const refreshData = async () => {
     setLoading(true);
     try {
-      const [reqs, prods, batches, cats, wStatus, deps] = await Promise.all([
+      const [reqs, prods, batches, cats, wStatus, deps, concepts] = await Promise.all([
         RequestClientService.getRequests(statusFilter || undefined).catch(
           () => []
         ),
@@ -258,6 +283,7 @@ function RequestsContent() {
         InventoryClientService.getCategories().catch(() => []),
         RequestClientService.getWindowStatus().catch(() => null),
         InventoryMasterService.getDepartments(true).catch(() => []),
+        InventoryMasterService.getJustificationConcepts(undefined, true).catch(() => []),
       ]);
       setRequests(reqs);
       setProducts(prods);
@@ -265,6 +291,7 @@ function RequestsContent() {
       setCategories(cats);
       setWindowStatus(wStatus);
       setDepartments(deps);
+      setJustificationConcepts(concepts);
       if (deps.length > 0) {
         setSelectedDepartmentId((prev) => (prev !== "" ? prev : deps[0].id));
         setDepartmentSection((prev) => (prev ? prev : deps[0].name));
@@ -285,7 +312,7 @@ function RequestsContent() {
     startTransition(() => {
       void (async () => {
         try {
-          const [reqs, prods, batches, cats, wStatus, deps] = await Promise.all([
+          const [reqs, prods, batches, cats, wStatus, deps, concepts] = await Promise.all([
             RequestClientService.getRequests(statusFilter || undefined).catch(
               () => []
             ),
@@ -296,6 +323,7 @@ function RequestsContent() {
             InventoryClientService.getCategories().catch(() => []),
             RequestClientService.getWindowStatus().catch(() => null),
             InventoryMasterService.getDepartments(true).catch(() => []),
+            InventoryMasterService.getJustificationConcepts(undefined, true).catch(() => []),
           ]);
           if (isMounted) {
             setRequests(reqs);
@@ -304,6 +332,7 @@ function RequestsContent() {
             setCategories(cats);
             setWindowStatus(wStatus);
             setDepartments(deps);
+            setJustificationConcepts(concepts);
             if (deps.length > 0) {
               setSelectedDepartmentId((prev) => (prev !== "" ? prev : deps[0].id));
               setDepartmentSection((prev) => (prev ? prev : deps[0].name));
@@ -431,22 +460,26 @@ function RequestsContent() {
         items: formItems,
       });
 
+      const successMsg = "Solicitud enviada a almacén exitosamente.";
       setFeedback({
         status: "success",
-        message: "Solicitud enviada a almacén exitosamente.",
+        message: successMsg,
       });
+      toast.success(successMsg);
       setIsNewModalOpen(false);
       setJustification("");
       setFormItems([{ productId: 0, requestedQuantity: 1 }]);
       await refreshData();
     } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error
+          ? err.message
+          : "Error al crear la requisición";
       setFeedback({
         status: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "Error al registrar la solicitud.",
+        message: errorMsg,
       });
+      toast.error(errorMsg);
     } finally {
       setSubmitting(false);
     }
@@ -457,29 +490,37 @@ function RequestsContent() {
     setApprovingId(req.id);
     setFeedback(null);
     try {
-      const itemsToApprove = req.items.map((it) => {
-        const qty = Number(
-          it.quantityRequested ?? it.requestedQuantity ?? 1
-        );
-
-        return {
+      const itemsPayload = (req.items || [])
+        .filter((it) => it && (it.id !== undefined && it.id !== null))
+        .map((it) => ({
           itemId: Number(it.id),
-          quantityApproved: qty,
-        };
-      });
+          quantityApproved: Number(
+            it.quantityRequested ?? it.requestedQuantity ?? 1,
+          ),
+        }));
 
-      await RequestClientService.approveRequest(req.id, itemsToApprove);
+      if (itemsPayload.length === 0) {
+        throw new Error("La solicitud no contiene renglones válidos para ser aprobados.");
+      }
+
+      await RequestClientService.approveRequest(req.id, itemsPayload);
+      const successMsg = `Solicitud #${req.requestNumber} aprobada exitosamente y puesta en espera para retiro.`;
       setFeedback({
         status: "success",
-        message: `Solicitud #${req.requestNumber} aprobada con éxito. Lista para despacho.`,
+        message: successMsg,
       });
+      toast.success(successMsg);
       await refreshData();
     } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error
+          ? err.message
+          : "Error al aprobar la requisición.";
       setFeedback({
         status: "error",
-        message:
-          err instanceof Error ? err.message : "Error al aprobar la solicitud.",
+        message: errorMsg,
       });
+      toast.error(errorMsg);
     } finally {
       setApprovingId(null);
     }
@@ -490,10 +531,7 @@ function RequestsContent() {
       const current = prev[itemId] || [];
       return {
         ...prev,
-        [itemId]: [
-          ...current.map((r) => ({ ...r })),
-          { batchId: 0, quantity: "" },
-        ],
+        [itemId]: [...current, { batchId: 0, quantity: "" }],
       };
     });
   };
@@ -501,12 +539,9 @@ function RequestsContent() {
   const handleRemoveBatchRow = (itemId: number, index: number) => {
     setDispatchItemAllocations((prev) => {
       const current = prev[itemId] || [];
-      if (current.length <= 1) return prev;
       return {
         ...prev,
-        [itemId]: current
-          .filter((_, i) => i !== index)
-          .map((r) => ({ ...r })),
+        [itemId]: current.filter((_, i) => i !== index),
       };
     });
   };
@@ -519,12 +554,11 @@ function RequestsContent() {
   ) => {
     setDispatchItemAllocations((prev) => {
       const current = prev[itemId] || [];
-      const updated = current.map((row, i) => {
-        if (i === index) {
-          return { ...row, [field]: value };
-        }
-        return { ...row };
-      });
+      const updated = [...current];
+      updated[index] = {
+        ...updated[index],
+        [field]: value,
+      };
       return {
         ...prev,
         [itemId]: updated,
@@ -534,21 +568,56 @@ function RequestsContent() {
 
   const handleConfirmDispatch = async (e: FormEvent) => {
     e.preventDefault();
-    if (!selectedForDispatch || !isWarehouseStaff) return;
-    setDispatchFeedback(null);
+    if (!selectedForDispatch) return;
 
+    setDispatchFeedback(null);
     const allocationsPayload: DispatchRequestItemPayload[] = [];
 
-    for (const [itemIdStr, allocs] of Object.entries(dispatchItemAllocations)) {
-      const itemId = Number(itemIdStr);
-      const validAllocs = allocs
-        .filter((a) => a.batchId > 0 && Number(a.quantity) > 0)
-        .map((a) => ({ batchId: Number(a.batchId), quantity: Number(a.quantity) }));
+    for (const item of selectedForDispatch.items) {
+      const itId = item.id;
+      if (!itId) continue;
+      const rows = dispatchItemAllocations[itId] || [];
 
-      if (validAllocs.length > 0) {
+      const qtyApproved = Number(
+        item.quantityApproved && item.quantityApproved > 0
+          ? item.quantityApproved
+          : item.quantityRequested ?? item.requestedQuantity ?? 0
+      );
+      const qtyDispatched = Number(
+        item.quantityDispatched ?? item.dispatchedQuantity ?? 0
+      );
+      const pendingQuantity = Math.max(0, qtyApproved - qtyDispatched);
+
+      let itemTotalAllocated = 0;
+      const batchEntries: { batchId: number; quantity: number }[] = [];
+
+      for (const row of rows) {
+        const qtyNum = Number(row.quantity) || 0;
+        if (qtyNum > 0) {
+          if (!row.batchId || row.batchId === 0) {
+            setDispatchFeedback({
+              status: "error",
+              message: `Debe seleccionar un lote válido para "${item.product?.name}".`,
+            });
+            return;
+          }
+          itemTotalAllocated += qtyNum;
+          batchEntries.push({ batchId: row.batchId, quantity: qtyNum });
+        }
+      }
+
+      if (itemTotalAllocated > pendingQuantity) {
+        setDispatchFeedback({
+          status: "error",
+          message: `La cantidad a despachar para "${item.product?.name}" (${itemTotalAllocated}) excede el saldo pendiente (${pendingQuantity}).`,
+        });
+        return;
+      }
+
+      if (batchEntries.length > 0) {
         allocationsPayload.push({
-          itemId,
-          allocations: validAllocs,
+          itemId: itId,
+          allocations: batchEntries,
         });
       }
     }
@@ -557,35 +626,9 @@ function RequestsContent() {
       setDispatchFeedback({
         status: "error",
         message:
-          "Indique al menos una cantidad mayor a 0 para despachar, o cierre el modal para mantener la solicitud en espera.",
+          "Debe asignar cantidad mayor a cero en al menos un renglón para efectuar un despacho.",
       });
       return;
-    }
-
-    // Validar que ninguna asignación supere el saldo pendiente del renglón
-    for (const itemAlloc of allocationsPayload) {
-      const it = selectedForDispatch.items.find((i) => i.id === itemAlloc.itemId);
-      if (!it) continue;
-      const qtyApproved = Number(
-        it.quantityApproved && it.quantityApproved > 0
-          ? it.quantityApproved
-          : it.quantityRequested ?? it.requestedQuantity ?? 0
-      );
-      const qtyDispatched = Number(
-        it.quantityDispatched ?? it.dispatchedQuantity ?? 0
-      );
-      const pendingQuantity = Math.max(0, qtyApproved - qtyDispatched);
-      const sessionAllocSum = (itemAlloc.allocations || []).reduce(
-        (sum, a) => sum + a.quantity,
-        0
-      );
-      if (sessionAllocSum > pendingQuantity) {
-        setDispatchFeedback({
-          status: "error",
-          message: `La cantidad asignada (${sessionAllocSum}) excede el saldo pendiente (${pendingQuantity}) para el producto ${it.product?.name || ""}.`,
-        });
-        return;
-      }
     }
 
     setDispatching(true);
@@ -596,20 +639,24 @@ function RequestsContent() {
         dispatchNotes: dispatchNotes.trim() || undefined,
       });
 
+      const successMsg = "Insumos despachados y rebajados del inventario correctamente.";
       setFeedback({
         status: "success",
-        message: "Insumos despachados y rebajados del inventario correctamente.",
+        message: successMsg,
       });
+      toast.success(successMsg);
       handleCloseDispatchModal();
       await refreshData();
     } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error
+          ? err.message
+          : "Error al despachar los insumos.";
       setDispatchFeedback({
         status: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "Error al despachar los insumos.",
+        message: errorMsg,
       });
+      toast.error(errorMsg);
     } finally {
       setDispatching(false);
     }
@@ -621,10 +668,12 @@ function RequestsContent() {
       !isWarehouseStaff ||
       rejectReason.trim().length < 5
     ) {
+      const valMsg = "El motivo de rechazo debe tener al menos 5 caracteres.";
       setFeedback({
         status: "error",
-        message: "El motivo de rechazo debe tener al menos 5 caracteres.",
+        message: valMsg,
       });
+      toast.error(valMsg);
       return;
     }
     setRejecting(true);
@@ -633,18 +682,22 @@ function RequestsContent() {
         requestToReject.id,
         rejectReason.trim()
       );
+      const successMsg = `Solicitud #${requestToReject.requestNumber} rechazada.`;
       setFeedback({
         status: "success",
-        message: `Solicitud #${requestToReject.requestNumber} rechazada.`,
+        message: successMsg,
       });
+      toast.success(successMsg);
       setRequestToReject(null);
       setRejectReason("");
       await refreshData();
     } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : "Error al rechazar";
       setFeedback({
         status: "error",
-        message: err instanceof Error ? err.message : "Error al rechazar",
+        message: errorMsg,
       });
+      toast.error(errorMsg);
     } finally {
       setRejecting(false);
     }
@@ -653,13 +706,13 @@ function RequestsContent() {
   return (
     <div className="space-y-6">
       {/* Encabezado */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <ClipboardList className="w-6 h-6 text-blue-600" />
-            Solicitudes Internas de Material y Reactivos
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <ClipboardList className="w-6 h-6 text-primary" />
+            Solicitudes Internas
           </h1>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted-foreground">
             {isWarehouseStaff
               ? "Gestión, aprobación y despacho de requisiciones institucionales"
               : "Mis requisiciones de material e insumos de laboratorio"}
@@ -668,20 +721,20 @@ function RequestsContent() {
 
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
           {currentUser?.roles.includes("ADMINISTRADOR") && (
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setShowAdminConfig((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer"
+              className="gap-1.5"
               title="Configurar ventana operativa semanal (Solo Administrador)"
             >
-              <Sliders className="w-4 h-4 text-blue-600" />
+              <Sliders className="w-4 h-4 text-primary" />
               {showAdminConfig ? "Ocultar Config. Ventana" : "Configurar Ventana"}
-            </button>
+            </Button>
           )}
 
           {canCreateRole && (
-            <button
-              type="button"
+            <Button
               disabled={!canCreate}
               onClick={() => {
                 setIsNewModalOpen(true);
@@ -692,15 +745,11 @@ function RequestsContent() {
                   ? windowStatus?.message || "Ventana cerrada o cupo agotado"
                   : "Crear una nueva requisición"
               }
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer ${
-                canCreate
-                  ? "bg-blue-600 hover:bg-blue-700 text-white"
-                  : "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300"
-              }`}
+              className="gap-2"
             >
               <Plus className="w-4 h-4" />
               Nueva Solicitud
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -712,22 +761,23 @@ function RequestsContent() {
 
       {/* Banner Informativo de Ventana Operativa Semanal */}
       {windowStatus && (
-        <div
-          className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition-all ${
+        <Alert
+          variant={
             windowStatus.isSuspended
-              ? "bg-red-50 border-red-200 text-red-800"
+              ? "destructive"
               : windowStatus.isOpen
-                ? "bg-emerald-50 border-emerald-200 text-emerald-900"
-                : "bg-amber-50 border-amber-200 text-amber-900"
-          }`}
+                ? "success"
+                : "warning"
+          }
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
         >
           <div className="flex items-center gap-2.5">
             {windowStatus.isSuspended ? (
-              <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
+              <ShieldAlert className="w-5 h-5 shrink-0" />
             ) : windowStatus.isOpen ? (
-              <Clock className="w-5 h-5 text-emerald-600 shrink-0" />
+              <Clock className="w-5 h-5 shrink-0" />
             ) : (
-              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+              <AlertCircle className="w-5 h-5 shrink-0" />
             )}
             <div>
               <span className="font-bold">
@@ -743,14 +793,14 @@ function RequestsContent() {
                   Política institucional: 1 solicitud por semana por usuario
                   (Lunes 05:00 AM - Miércoles 04:00 PM).{" "}
                   {windowStatus.hasQuota ? (
-                    <span className="font-semibold text-emerald-700">
+                    <strong className="font-semibold text-emerald-700">
                       Dispones de 1 cupo activo esta semana.
-                    </span>
+                    </strong>
                   ) : (
-                    <span className="font-semibold text-red-700">
+                    <strong className="font-semibold text-destructive">
                       Ya consumiste tu cupo semanal correspondiente al ciclo{" "}
                       {windowStatus.currentCycle}.
-                    </span>
+                    </strong>
                   )}
                 </div>
               )}
@@ -758,319 +808,309 @@ function RequestsContent() {
           </div>
 
           {isWarehouseStaff && (
-            <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded bg-white/80 border border-current">
+            <Badge variant="outline" className="shrink-0 text-[10px] font-bold">
               Modo Almacén (Acceso 24/7)
-            </span>
+            </Badge>
           )}
-        </div>
+        </Alert>
       )}
 
       {feedback && (
-        <div
-          className={`p-3 rounded-lg text-xs flex items-center gap-2 border ${
-            feedback.status === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : "bg-red-50 border-red-200 text-red-800"
-          }`}
-        >
+        <Alert variant={feedback.status === "success" ? "success" : "destructive"}>
           {feedback.status === "success" ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            <CheckCircle2 className="w-4 h-4" />
           ) : (
-            <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+            <AlertCircle className="w-4 h-4" />
           )}
-          <span>{feedback.message}</span>
-        </div>
+          <AlertTitle>{feedback.status === "success" ? "Operación Exitosa" : "Atención"}</AlertTitle>
+          <AlertDescription>{feedback.message}</AlertDescription>
+        </Alert>
       )}
 
       {/* Barra de Filtros y Búsqueda Avanzada */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          {/* Input de Búsqueda Libre en Tiempo Real */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por N° solicitud, área, solicitante o insumo..."
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-8 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            {searchTerm && (
-              <button
-                type="button"
-                onClick={() => setSearchTerm("")}
-                className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Selector de Estado */}
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-400 shrink-0" />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Todos los estados</option>
-              <option value="PENDIENTE">Pendientes</option>
-              <option value="APROBADA">Aprobadas</option>
-              <option value="DESPACHADA_PARCIAL">Despacho parcial</option>
-              <option value="COMPLETADA">Completadas</option>
-              <option value="RECHAZADA">Rechazadas</option>
-            </select>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => void refreshData()}
-          className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs cursor-pointer self-end sm:self-auto"
-          title="Actualizar listado"
-        >
-          <RefreshCw
-            className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
-          />
-        </button>
-      </div>
-
-      {/* Tabla de Requisiciones */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-              <tr>
-                <th className="py-3 px-4">N° Solicitud</th>
-                <th className="py-3 px-4">Área / Sección</th>
-                <th className="py-3 px-4">Solicitante</th>
-                <th className="py-3 px-4">Fecha</th>
-                <th className="py-3 px-4 text-center">Renglones</th>
-                <th className="py-3 px-4 text-center">Estado</th>
-                <th className="py-3 px-4 text-center">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading ? (
-                <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2" />
-                    Cargando requisiciones...
-                  </td>
-                </tr>
-              ) : filteredRequests.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
-                    No se encontraron solicitudes con los filtros aplicados.
-                  </td>
-                </tr>
-              ) : (
-                filteredRequests.map((req) => {
-                  const status = STATUS_CONFIG[req.status] || {
-                    label: req.status,
-                    className: "bg-slate-50 text-slate-700",
-                  };
-
-                  // REGLA ESTRICTA: Despachar SOLO si APROBADA o DESPACHADA_PARCIAL
-                  const canDispatch =
-                    req.status === "APROBADA" ||
-                    req.status === "DESPACHADA_PARCIAL";
-
-                  return (
-                    <tr
-                      key={req.id}
-                      className="hover:bg-slate-50/60 transition-colors"
-                    >
-                      <td className="py-3 px-4 font-mono font-bold text-slate-800">
-                        {req.requestNumber}
-                      </td>
-                      <td className="py-3 px-4 font-semibold text-slate-800">
-                        {req.departmentSection}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600">
-                        {req.applicant?.fullName || req.applicant?.username}
-                      </td>
-                      <td className="py-3 px-4 text-slate-500 whitespace-nowrap font-mono">
-                        {new Date(req.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4 text-center font-bold text-slate-700">
-                        {req.items?.length || 0}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <span
-                          className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${status.className}`}
-                        >
-                          {status.label}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {/* Botón Ver Comprobante */}
-                          <button
-                            type="button"
-                            onClick={() => router.push(`/requests/${req.id}`)}
-                            className="inline-flex items-center p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 cursor-pointer transition-colors"
-                            title="Ver detalle del comprobante"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* ACCIONES EXCLUSIVAS DE ALMACÉN / ADMINISTRACIÓN */}
-                          {isWarehouseStaff && (
-                            <>
-                              {req.status === "PENDIENTE" && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => void handleApprove(req)}
-                                    disabled={approvingId === req.id}
-                                    className="inline-flex items-center gap-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer"
-                                    title="Aprobar solicitud"
-                                  >
-                                    {approvingId === req.id ? (
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    ) : (
-                                      <CheckCheck className="w-3.5 h-3.5" />
-                                    )}
-                                    Aprobar
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setRequestToReject(req);
-                                      setRejectReason("");
-                                      setFeedback(null);
-                                    }}
-                                    className="inline-flex items-center bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 p-1.5 rounded-md transition-colors cursor-pointer"
-                                    title="Rechazar solicitud"
-                                  >
-                                    <Ban className="w-3.5 h-3.5" />
-                                  </button>
-                                </>
-                              )}
-
-                              {canDispatch && (
-                                <button
-                                  type="button"
-                                  onClick={() => openDispatchModal(req)}
-                                  className="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors shadow-2xs cursor-pointer"
-                                  title="Despachar materiales"
-                                >
-                                  <Check className="w-3.5 h-3.5" /> Despachar
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
+      <Card className="p-4 shadow-2xs">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            {/* Input de Búsqueda Libre en Tiempo Real */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
+              <Input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar por N° solicitud, área, solicitante o insumo..."
+                className="pl-9 pr-8 text-xs"
+              />
+              {searchTerm && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-1 top-1 text-muted-foreground"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </Button>
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Modal: Nueva Solicitud */}
-      {isNewModalOpen && canCreate && (
-        <div className="no-print print:hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[88vh] flex flex-col overflow-hidden">
-            {/* Cabecera del modal fija */}
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0 bg-slate-50/70">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                  <ClipboardList className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-800 text-base">
-                    Crear Requisición Interna
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Complete la solicitud de insumos y reactivos para su departamento
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsNewModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200/50 transition-colors cursor-pointer"
-                title="Cerrar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
 
-            <form
-              onSubmit={handleSubmitRequest}
-              className="flex flex-col flex-1 min-h-0"
-            >
-              {/* Cuerpo scrolleable */}
-              <div className="p-6 overflow-y-auto pr-3 space-y-5 flex-1 scroll-smooth">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Área / Departamento Solicitante *
-                  </label>
-                  <select
-                    value={selectedDepartmentId}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      setSelectedDepartmentId(val);
-                      const dep = departments.find((d) => d.id === val);
-                      if (dep) setDepartmentSection(dep.name);
-                    }}
-                    required
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer"
+            {/* Selector de Estado */}
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
+              >
+                <option value="">Todos los estados</option>
+                <option value="PENDIENTE">Pendientes</option>
+                <option value="APROBADA">Aprobadas</option>
+                <option value="DESPACHADA_PARCIAL">Despacho parcial</option>
+                <option value="COMPLETADA">Completadas</option>
+                <option value="RECHAZADA">Rechazadas</option>
+              </select>
+            </div>
+          </div>
+
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => void refreshData()}
+            title="Actualizar listado"
+            className="self-end sm:self-auto"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
+            />
+          </Button>
+        </div>
+      </Card>
+
+      {/* Tabla de Requisiciones */}
+      <Card className="overflow-hidden shadow-2xs">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/30">
+              <TableHead className="py-3 px-4 font-semibold">N° Solicitud</TableHead>
+              <TableHead className="py-3 px-4 font-semibold">Área / Sección</TableHead>
+              <TableHead className="py-3 px-4 font-semibold">Solicitante</TableHead>
+              <TableHead className="py-3 px-4 font-semibold">Fecha</TableHead>
+              <TableHead className="py-3 px-4 text-center font-semibold">Renglones</TableHead>
+              <TableHead className="py-3 px-4 text-center font-semibold">Estado</TableHead>
+              <TableHead className="py-3 px-4 text-center font-semibold">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
+                  Cargando requisiciones...
+                </TableCell>
+              </TableRow>
+            ) : filteredRequests.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+                  No se encontraron solicitudes con los filtros aplicados.
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredRequests.map((req) => {
+                const status = STATUS_CONFIG[req.status] || {
+                  label: req.status,
+                  variant: "default" as const,
+                };
+
+                // REGLA ESTRICTA: Despachar SOLO si APROBADA o DESPACHADA_PARCIAL
+                const canDispatch =
+                  req.status === "APROBADA" ||
+                  req.status === "DESPACHADA_PARCIAL";
+
+                return (
+                  <TableRow
+                    key={req.id}
+                    className="hover:bg-muted/40 transition-colors"
                   >
-                    <option value="">-- Seleccione un departamento activo --</option>
-                    {departments.map((dep) => (
-                      <option key={dep.id} value={dep.id}>
-                        {dep.code} - {dep.name}
-                      </option>
-                    ))}
-                  </select>
+                    <TableCell className="py-3 px-4 font-mono font-bold text-foreground">
+                      {req.requestNumber}
+                    </TableCell>
+                    <TableCell className="py-3 px-4 font-semibold text-foreground">
+                      {req.departmentSection}
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-muted-foreground">
+                      {req.applicant?.fullName || req.applicant?.username}
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-muted-foreground whitespace-nowrap font-mono">
+                      {new Date(req.createdAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-center font-bold text-foreground">
+                      {req.items?.length || 0}
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-center">
+                      <Badge variant={status.variant}>
+                        {status.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        {/* Botón Ver Comprobante */}
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => router.push(`/requests/${req.id}`)}
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          title="Ver detalle del comprobante"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </Button>
+
+                        {/* ACCIONES EXCLUSIVAS DE ALMACÉN / ADMINISTRACIÓN */}
+                        {isWarehouseStaff && (
+                          <>
+                            {req.status === "PENDIENTE" && (
+                              <>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => void handleApprove(req)}
+                                  disabled={approvingId === req.id}
+                                  className="h-7 text-[11px] gap-1 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200"
+                                  title="Aprobar solicitud"
+                                >
+                                  {approvingId === req.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <CheckCheck className="w-3.5 h-3.5" />
+                                  )}
+                                  Aprobar
+                                </Button>
+
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => {
+                                    setRequestToReject(req);
+                                    setRejectReason("");
+                                    setFeedback(null);
+                                  }}
+                                  className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                                  title="Rechazar solicitud"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                </Button>
+                              </>
+                            )}
+
+                            {canDispatch && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => openDispatchModal(req)}
+                                className="h-7 text-[11px] gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 font-semibold"
+                                title="Despachar materiales"
+                              >
+                                <Check className="w-3.5 h-3.5" /> Despachar
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+
+      {/* Modal: Nueva Solicitud con shadcn Dialog */}
+      <Dialog open={isNewModalOpen && canCreate} onOpenChange={setIsNewModalOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-5 border-b border-border bg-muted/30">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <ClipboardList className="w-5 h-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-foreground">
+                  Solicitud Interna
+                </DialogTitle>
+                <p className="text-xs text-muted-foreground">
+                  Complete la solicitud de insumos y reactivos para su departamento
+                </p>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <form
+            onSubmit={handleSubmitRequest}
+            className="flex flex-col flex-1 min-h-0"
+          >
+            <div className="p-6 overflow-y-auto space-y-5 flex-1 scroll-smooth">
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wider">
+                  Área / Departamento Solicitante *
+                </Label>
+                <select
+                  value={selectedDepartmentId}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setSelectedDepartmentId(val);
+                    const dep = departments.find((d) => d.id === val);
+                    if (dep) setDepartmentSection(dep.name);
+                  }}
+                  required
+                  className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer font-medium"
+                >
+                  <option value="">-- Seleccione un departamento activo --</option>
+                  {departments.map((dep) => (
+                    <option key={dep.id} value={dep.id}>
+                      {dep.code} - {dep.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-3 pt-2 border-t border-border">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                    Insumos / Reactivos Requeridos ({formItems.length})
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddItem}
+                    className="gap-1.5 text-xs text-primary border-primary/20 bg-primary/5 hover:bg-primary/10"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Agregar renglón
+                  </Button>
                 </div>
 
-                <div className="space-y-3 pt-2 border-t border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                      Insumos / Reactivos Requeridos ({formItems.length})
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleAddItem}
-                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/70 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer border border-blue-200"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Agregar renglón
-                    </button>
-                  </div>
+                <div className="space-y-3">
+                  {formItems.map((item, idx) => {
+                    const selectedProd = products.find(
+                      (p) => p.id === item.productId
+                    );
+                    const unit =
+                      selectedProd?.unitOfMeasure ||
+                      selectedProd?.baseUnit?.abbreviation ||
+                      "UND";
 
-                  <div className="space-y-3">
-                    {formItems.map((item, idx) => {
-                      const selectedProd = products.find(
-                        (p) => p.id === item.productId
-                      );
-                      const unit =
-                        selectedProd?.unitOfMeasure ||
-                        selectedProd?.baseUnit?.abbreviation ||
-                        "UND";
-
-                      return (
-                        <div
-                          key={idx}
-                          className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-2xs"
-                        >
-                          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-white border border-slate-200 text-xs font-mono font-bold text-slate-600 shrink-0">
+                    return (
+                      <Card
+                        key={idx}
+                        className="p-4 bg-muted/20 border-border"
+                      >
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-background border border-border text-xs font-mono font-bold text-muted-foreground shrink-0">
                             {idx + 1}
                           </div>
 
                           {/* Selector Combobox Avanzado con Búsqueda y Categorías */}
                           <div className="flex-1 min-w-0">
-                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                            <Label className="text-[11px] mb-1 block">
                               Insumo / Reactivo
-                            </label>
+                            </Label>
                             <ProductCombobox
                               products={products}
                               categories={categories}
@@ -1084,11 +1124,11 @@ function RequestsContent() {
 
                           {/* Cantidad solicitada */}
                           <div className="w-full sm:w-36 shrink-0">
-                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                            <Label className="text-[11px] mb-1 block">
                               Cantidad {selectedProd ? `(${unit})` : ""}
-                            </label>
+                            </Label>
                             <div className="relative">
-                              <input
+                              <Input
                                 type="number"
                                 min="1"
                                 placeholder="1"
@@ -1099,11 +1139,11 @@ function RequestsContent() {
                                     Math.max(1, Number(e.target.value))
                                   )
                                 }
-                                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-mono font-bold focus:ring-2 focus:ring-blue-500"
+                                className="font-mono font-bold text-xs"
                                 required
                               />
                               {selectedProd && (
-                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 font-medium pointer-events-none">
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground font-medium pointer-events-none">
                                   {unit}
                                 </span>
                               )}
@@ -1112,517 +1152,462 @@ function RequestsContent() {
 
                           {/* Botón eliminar renglón */}
                           <div className="sm:self-end mb-0.5 shrink-0">
-                            <button
+                            <Button
                               type="button"
+                              variant="ghost"
+                              size="icon-sm"
                               onClick={() => handleRemoveItem(idx)}
                               disabled={formItems.length === 1}
-                              className="text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-30 cursor-pointer p-2 rounded-lg border border-transparent hover:border-red-200 transition-colors"
+                              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                               title="Eliminar renglón"
                             >
                               <Trash2 className="w-4 h-4" />
-                            </button>
+                            </Button>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
+                      </Card>
+                    );
+                  })}
                 </div>
+              </div>
 
-                <div className="pt-2 border-t border-slate-100">
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              <div className="pt-2 border-t border-border space-y-1.5">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <Label className="text-xs uppercase tracking-wider">
                     Justificación de Uso / Protocolo
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={justification}
-                    onChange={(e) => setJustification(e.target.value)}
-                    placeholder="Explique el protocolo analítico, lote de producción o justificación del pedido..."
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 resize-none font-medium"
-                    required
-                  />
+                  </Label>
+                  {justificationConcepts.length > 0 && (
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!val) return;
+                        const found = justificationConcepts.find((c) => String(c.id) === val);
+                        if (found) {
+                          const snippet = `${found.title}${found.description ? `: ${found.description}` : ""}`;
+                          setJustification((prev) => (prev ? `${prev}\n• ${snippet}` : snippet));
+                        }
+                      }}
+                      className="text-[11px] bg-primary/5 border border-primary/20 text-primary rounded-md px-2 py-1 focus:ring-1 focus:ring-ring font-medium cursor-pointer"
+                    >
+                      <option value="">+ Seleccionar concepto / protocolo predefinido...</option>
+                      {justificationConcepts.map((jc) => (
+                        <option key={jc.id} value={jc.id}>
+                          [{jc.code}] {jc.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
+                <Textarea
+                  rows={3}
+                  value={justification}
+                  onChange={(e) => setJustification(e.target.value)}
+                  placeholder="Explique el protocolo analítico, lote de producción o justificación del pedido..."
+                  className="text-xs resize-none font-medium"
+                  required
+                />
               </div>
-
-              {/* Pie de modal fijo */}
-              <div className="flex items-center justify-between p-4 px-6 border-t border-slate-100 bg-slate-50/70 shrink-0">
-                <span className="text-xs text-slate-500">
-                  {formItems.length}{" "}
-                  {formItems.length === 1
-                    ? "renglón agregado"
-                    : "renglones agregados"}
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsNewModalOpen(false)}
-                    className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-200/60 rounded-lg font-medium cursor-pointer transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
-                  >
-                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {submitting ? "Enviando..." : "Enviar Solicitud"}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Despacho Multi-Lote y Despacho Parcial (Solo Almacén) */}
-      {selectedForDispatch && isWarehouseStaff && (
-        <div className="no-print print:hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-5xl w-full max-h-[88vh] flex flex-col overflow-hidden">
-            {/* Cabecera del modal fija */}
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0 bg-slate-50/70">
-              <div>
-                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-blue-600" />
-                  Despachar Requisición #{selectedForDispatch.requestNumber}
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Área: <strong className="text-slate-700">{selectedForDispatch.departmentSection}</strong> • Solicitado por:{" "}
-                  <strong className="text-slate-700">
-                    {selectedForDispatch.applicant?.fullName ||
-                      selectedForDispatch.applicant?.username}
-                  </strong>
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleCloseDispatchModal}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200/50 transition-colors cursor-pointer"
-                title="Cerrar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
 
-            {/* Formulario con cuerpo scrolleable y pie fijo */}
-            <form onSubmit={handleConfirmDispatch} className="flex flex-col flex-1 overflow-hidden">
-              <div className="p-5 overflow-y-auto space-y-4 flex-1 scroll-smooth pr-3">
-                {/* Alerta de feedback dentro del modal */}
-                {dispatchFeedback && (
-                  <div
-                    className={`p-3 rounded-xl text-xs flex items-center gap-2 border ${
-                      dispatchFeedback.status === "success"
-                        ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                        : "bg-red-50 border-red-200 text-red-800"
-                    }`}
-                  >
-                    {dispatchFeedback.status === "success" ? (
-                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                    )}
-                    <span className="font-medium">{dispatchFeedback.message}</span>
-                  </div>
-                )}
+            <DialogFooter className="p-4 px-6 border-t border-border bg-muted/20 flex sm:justify-between items-center">
+              <span className="text-xs text-muted-foreground">
+                {formItems.length}{" "}
+                {formItems.length === 1
+                  ? "renglón agregado"
+                  : "renglones agregados"}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsNewModalOpen(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={submitting}
+                  className="gap-2"
+                >
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {submitting ? "Enviando..." : "Enviar Solicitud"}
+                </Button>
+              </div>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-                {/* Información General de la Requisición */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-blue-50/60 border border-blue-100 rounded-xl text-xs">
-                  <div>
-                    <span className="block text-[10px] uppercase text-slate-500 font-semibold tracking-wider">
-                      Área solicitante
-                    </span>
-                    <span className="text-slate-800 font-semibold text-xs">
-                      {selectedForDispatch.departmentSection}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="block text-[10px] uppercase text-slate-500 font-semibold tracking-wider">
-                      Solicitante
-                    </span>
-                    <span className="text-slate-800 font-semibold text-xs">
-                      {selectedForDispatch.applicant?.fullName ||
-                        selectedForDispatch.applicant?.username}
-                    </span>
-                  </div>
-                  <div className="sm:col-span-2 border-t border-blue-100 pt-2 mt-0.5">
-                    <span className="block text-[10px] uppercase text-slate-500 font-semibold tracking-wider">
-                      Justificación Técnica
-                    </span>
-                    <p className="text-slate-700 mt-0.5 leading-relaxed">
-                      {selectedForDispatch.justification ||
-                        "Sin justificación registrada"}
-                    </p>
-                  </div>
-                </div>
+      {/* Modal: Despacho Multi-Lote y Despacho Parcial (Solo Almacén) */}
+      <Dialog
+        open={!!selectedForDispatch && isWarehouseStaff}
+        onOpenChange={(open) => {
+          if (!open) handleCloseDispatchModal();
+        }}
+      >
+        <DialogContent className="sm:max-w-5xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-5 border-b border-border bg-muted/30">
+            <div>
+              <DialogTitle className="text-base font-bold text-foreground flex items-center gap-2">
+                <Layers className="w-5 h-5 text-primary" />
+                Despachar Requisición #{selectedForDispatch?.requestNumber}
+              </DialogTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Área: <strong className="text-foreground">{selectedForDispatch?.departmentSection}</strong> • Solicitado por:{" "}
+                <strong className="text-foreground">
+                  {selectedForDispatch?.applicant?.fullName ||
+                    selectedForDispatch?.applicant?.username}
+                </strong>
+              </p>
+            </div>
+          </DialogHeader>
 
-                {/* Renglones con Soporte Multi-Lote */}
-                <div className="space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                      <Layers className="w-4 h-4 text-blue-600" />
-                      Asignación de Lotes Físicos por Renglón
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      Asigne los lotes a despachar. Puede despachar parcialmente o mantener en espera (0).
-                    </span>
-                  </div>
+          <form onSubmit={handleConfirmDispatch} className="flex flex-col flex-1 overflow-hidden">
+            <div className="p-5 overflow-y-auto space-y-4 flex-1 scroll-smooth pr-3">
+              {dispatchFeedback && (
+                <Alert variant={dispatchFeedback.status === "success" ? "success" : "destructive"}>
+                  {dispatchFeedback.status === "success" ? (
+                    <CheckCircle2 className="w-4 h-4" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4" />
+                  )}
+                  <AlertTitle>{dispatchFeedback.status === "success" ? "Éxito" : "Atención"}</AlertTitle>
+                  <AlertDescription>{dispatchFeedback.message}</AlertDescription>
+                </Alert>
+              )}
 
-                  {selectedForDispatch.items.map((it) => {
-                    const itId = it.id as number;
-                    const qtyRequested = Number(
-                      it.requestedQuantity ?? it.quantityRequested ?? 0
-                    );
-                    const qtyApproved = Number(
-                      it.quantityApproved && it.quantityApproved > 0
-                        ? it.quantityApproved
-                        : it.quantityRequested ?? it.requestedQuantity ?? 0
-                    );
-                    const qtyDispatched = Number(
-                      it.quantityDispatched ?? it.dispatchedQuantity ?? 0
-                    );
-                    const pendingQuantity = Math.max(
-                      0,
-                      qtyApproved - qtyDispatched
-                    );
+              <div className="space-y-4">
+                {selectedForDispatch?.items.map((item) => {
+                  const itId = item.id;
+                  if (!itId) return null;
+                  const unit =
+                    item.product?.unitOfMeasure ||
+                    item.product?.baseUnit?.abbreviation ||
+                    "UND";
 
-                    const candidateBatches = availableBatches.filter(
-                      (b) => (b.productId ?? b.product?.id) === it.productId
-                    );
+                  const qtyRequested = Number(
+                    item.quantityRequested ?? item.requestedQuantity ?? 0
+                  );
+                  const qtyApproved = Number(
+                    item.quantityApproved && item.quantityApproved > 0
+                      ? item.quantityApproved
+                      : qtyRequested
+                  );
+                  const qtyDispatched = Number(
+                    item.quantityDispatched ?? item.dispatchedQuantity ?? 0
+                  );
+                  const pendingQuantity = Math.max(0, qtyApproved - qtyDispatched);
 
-                    const rows = dispatchItemAllocations[itId] || [];
-                    const allocatedSum = rows.reduce(
-                      (sum, r) => sum + (Number(r.quantity) || 0),
-                      0
-                    );
+                  const candidateBatches = availableBatches.filter(
+                    (b) => (b.productId ?? b.product?.id) === item.productId
+                  );
 
-                    const unit =
-                      it.product?.unitOfMeasure ||
-                      it.product?.baseUnit?.abbreviation ||
-                      "UND";
+                  const rows = dispatchItemAllocations[itId] || [];
+                  const allocatedSum = rows.reduce(
+                    (acc, r) => acc + (Number(r.quantity) || 0),
+                    0
+                  );
 
-                    return (
-                      <div
-                        key={itId}
-                        className="p-4 bg-slate-50/80 rounded-xl border border-slate-200 space-y-3.5 shadow-xs"
-                      >
-                        {/* Cabecera del ítem */}
-                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-slate-900 text-sm">
-                              {it.product?.name}
-                            </span>
-                            {it.product?.sku && (
-                              <span className="font-mono text-xs text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200 font-medium">
-                                SKU: {it.product.sku}
-                              </span>
-                            )}
-                            <span className="text-xs font-semibold text-slate-500 bg-slate-200/60 px-2 py-0.5 rounded">
-                              {unit}
-                            </span>
-                          </div>
-
-                          {/* Badges claros y legibles */}
-                          <div className="flex items-center gap-2 flex-wrap text-xs">
-                            <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                              Solicitado:{" "}
-                              <span className="font-mono font-bold text-slate-800">
-                                {qtyRequested}
-                              </span>{" "}
-                              <span className="text-slate-500 font-normal text-[11px]">
-                                {unit}
-                              </span>
-                            </span>
-                            <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                              Aprobado:{" "}
-                              <span className="font-mono font-bold text-blue-800">
-                                {qtyApproved}
-                              </span>{" "}
-                              <span className="text-blue-600 font-normal text-[11px]">
-                                {unit}
-                              </span>
-                            </span>
-                            <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-                              Ya despachado:{" "}
-                              <span className="font-mono font-bold text-purple-800">
-                                {qtyDispatched}
-                              </span>{" "}
-                              <span className="text-purple-600 font-normal text-[11px]">
-                                {unit}
-                              </span>
-                            </span>
-                            <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
-                              Remanente pendiente:{" "}
-                              <span className="font-mono font-bold text-amber-900">
-                                {pendingQuantity}
-                              </span>{" "}
-                              <span className="text-amber-700 font-normal text-[11px]">
-                                {unit}
-                              </span>
-                            </span>
-                          </div>
+                  return (
+                    <Card
+                      key={itId}
+                      className="p-4 bg-muted/20 border-border space-y-3"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-2.5">
+                        <div>
+                          <span className="font-bold text-foreground text-sm">
+                            {item.product?.name}
+                          </span>
+                          <span className="ml-2 font-mono text-xs text-muted-foreground">
+                            [{item.product?.sku}]
+                          </span>
                         </div>
 
-                        {/* Filas de lotes asignados */}
-                        <div className="space-y-2.5">
-                          {rows.map((row, allocIdx) => {
-                            const currentBatch = candidateBatches.find(
-                              (b) => b.id === row.batchId
-                            );
-                            const maxStock = currentBatch
-                              ? currentBatch.currentQuantity
-                              : 0;
+                        <div className="flex items-center gap-2 flex-wrap text-xs">
+                          <Badge variant="outline">
+                            Solicitado: {qtyRequested} {unit}
+                          </Badge>
+                          <Badge variant="info">
+                            Aprobado: {qtyApproved} {unit}
+                          </Badge>
+                          <Badge variant="purple">
+                            Ya despachado: {qtyDispatched} {unit}
+                          </Badge>
+                          <Badge variant="warning">
+                            Remanente: {pendingQuantity} {unit}
+                          </Badge>
+                        </div>
+                      </div>
 
-                            return (
-                              <div
-                                key={allocIdx}
-                                className="grid grid-cols-12 gap-3 items-center bg-white p-3 rounded-lg border border-slate-200 shadow-2xs"
-                              >
-                                <div className="col-span-12 sm:col-span-7">
-                                  <label className="block text-[11px] text-slate-600 font-semibold mb-1">
-                                    Lote de Origen
-                                  </label>
-                                  <select
-                                    value={row.batchId}
-                                    onChange={(e) => {
-                                      const bId = Number(e.target.value);
-                                      handleAllocationFieldChange(
-                                        itId,
-                                        allocIdx,
-                                        "batchId",
-                                        bId
-                                      );
-                                      const match = candidateBatches.find(
-                                        (b) => b.id === bId
-                                      );
-                                      if (
-                                        match &&
-                                        (row.quantity === "" ||
-                                          row.quantity === 0)
-                                      ) {
-                                        handleAllocationFieldChange(
-                                          itId,
-                                          allocIdx,
-                                          "quantity",
-                                          Math.min(
-                                            pendingQuantity,
-                                            match.currentQuantity
-                                          )
-                                        );
-                                      }
-                                    }}
-                                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-                                  >
-                                    <option value="0">
-                                      -- Seleccione lote disponible (
-                                      {candidateBatches.length} disponibles) --
-                                    </option>
-                                    {candidateBatches.map((b) => (
-                                      <option key={b.id} value={b.id}>
-                                        Lote #{b.lotNumber} | Stock Disp:{" "}
-                                        {b.currentQuantity} {unit}
-                                        {b.expirationDate
-                                          ? ` (Vence: ${new Date(
-                                              b.expirationDate
-                                            ).toLocaleDateString()})`
-                                          : ""}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
+                      {/* Filas de lotes asignados */}
+                      <div className="space-y-2.5">
+                        {rows.map((row, allocIdx) => {
+                          const currentBatch = candidateBatches.find(
+                            (b) => b.id === row.batchId
+                          );
+                          const maxStock = currentBatch
+                            ? currentBatch.currentQuantity
+                            : 0;
 
-                                <div className="col-span-10 sm:col-span-4">
-                                  <label className="block text-[11px] text-slate-600 font-semibold mb-1">
-                                    Cantidad a entregar{" "}
-                                    {currentBatch && (
-                                      <span className="text-slate-400 font-normal">
-                                        (máx: {maxStock})
-                                      </span>
-                                    )}
-                                  </label>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max={maxStock || undefined}
-                                    placeholder="0"
-                                    value={row.quantity}
-                                    onChange={(e) =>
+                          return (
+                            <div
+                              key={allocIdx}
+                              className="grid grid-cols-12 gap-3 items-center bg-background p-3 rounded-lg border border-border shadow-2xs"
+                            >
+                              <div className="col-span-12 sm:col-span-7">
+                                <Label className="text-[11px] mb-1 block">
+                                  Lote de Origen
+                                </Label>
+                                <select
+                                  value={row.batchId}
+                                  onChange={(e) => {
+                                    const bId = Number(e.target.value);
+                                    handleAllocationFieldChange(
+                                      itId,
+                                      allocIdx,
+                                      "batchId",
+                                      bId
+                                    );
+                                    const match = candidateBatches.find(
+                                      (b) => b.id === bId
+                                    );
+                                    if (
+                                      match &&
+                                      (row.quantity === "" ||
+                                        row.quantity === 0)
+                                    ) {
                                       handleAllocationFieldChange(
                                         itId,
                                         allocIdx,
                                         "quantity",
-                                        e.target.value === ""
-                                          ? ""
-                                          : Math.max(
-                                              0,
-                                              Number(e.target.value)
-                                            )
-                                      )
+                                        Math.min(
+                                          pendingQuantity,
+                                          match.currentQuantity
+                                        )
+                                      );
                                     }
-                                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-mono font-bold focus:ring-2 focus:ring-blue-500"
-                                  />
-                                </div>
-
-                                <div className="col-span-2 sm:col-span-1 text-center pt-5">
-                                  {rows.length > 1 && (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleRemoveBatchRow(itId, allocIdx)
-                                      }
-                                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
-                                      title="Quitar este lote"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                </div>
+                                  }}
+                                  className="w-full h-8 bg-background border border-input rounded-md px-2.5 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
+                                >
+                                  <option value="0">
+                                    -- Seleccione lote disponible ({candidateBatches.length} disp.) --
+                                  </option>
+                                  {candidateBatches.map((b) => (
+                                    <option key={b.id} value={b.id}>
+                                      Lote #{b.lotNumber} | Stock Disp:{" "}
+                                      {b.currentQuantity} {unit}
+                                      {b.expirationDate
+                                        ? ` (Vence: ${new Date(
+                                            b.expirationDate
+                                          ).toLocaleDateString()})`
+                                        : ""}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
-                            );
-                          })}
-                        </div>
 
-                        {/* Botón para agregar otro lote para este renglón y aviso de total */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs pt-1 border-t border-slate-200/60">
-                          <button
-                            type="button"
-                            onClick={() => handleAddBatchRow(itId)}
-                            className="text-blue-600 hover:text-blue-800 font-semibold text-xs inline-flex items-center gap-1.5 cursor-pointer self-start"
+                              <div className="col-span-10 sm:col-span-4">
+                                <Label className="text-[11px] mb-1 block">
+                                  Cantidad a entregar{" "}
+                                  {currentBatch && (
+                                    <span className="text-muted-foreground font-normal">
+                                      (máx: {maxStock})
+                                    </span>
+                                  )}
+                                </Label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max={maxStock || undefined}
+                                  placeholder="0"
+                                  value={row.quantity}
+                                  onChange={(e) =>
+                                    handleAllocationFieldChange(
+                                      itId,
+                                      allocIdx,
+                                      "quantity",
+                                      e.target.value === ""
+                                        ? ""
+                                        : Math.max(
+                                            0,
+                                            Number(e.target.value)
+                                          )
+                                    )
+                                  }
+                                  className="h-8 font-mono font-bold text-xs"
+                                />
+                              </div>
+
+                              <div className="col-span-2 sm:col-span-1 text-center pt-5">
+                                {rows.length > 1 && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    onClick={() =>
+                                      handleRemoveBatchRow(itId, allocIdx)
+                                    }
+                                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                    title="Quitar este lote"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs pt-1 border-t border-border">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleAddBatchRow(itId)}
+                          className="text-primary hover:text-primary font-semibold text-xs h-7 px-2 gap-1.5 self-start"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> + Agregar otro lote
+                        </Button>
+
+                        <div className="text-xs">
+                          <span className="text-muted-foreground">
+                            Total asignado en esta entrega:
+                          </span>{" "}
+                          <strong
+                            className={
+                              allocatedSum > pendingQuantity
+                                ? "text-destructive font-mono font-bold"
+                                : "text-foreground font-mono font-bold"
+                            }
                           >
-                            <Plus className="w-3.5 h-3.5" /> + Agregar otro lote
-                            a este renglón
-                          </button>
-
-                          <div className="text-xs">
-                            <span className="text-slate-600">
-                              Total asignado en esta entrega:
-                            </span>{" "}
-                            <strong
-                              className={
-                                allocatedSum > pendingQuantity
-                                  ? "text-red-600 font-mono font-bold"
-                                  : "text-slate-900 font-mono font-bold"
-                              }
-                            >
-                              <span>{allocatedSum}</span> / <span>{pendingQuantity}</span>{" "}
-                              <span className="text-slate-500 font-normal text-[11px]">
-                                {unit}
-                              </span>
-                            </strong>
-                            {allocatedSum > pendingQuantity && (
-                              <span className="text-red-500 ml-1.5 font-semibold text-[11px]">
-                                (Excede saldo pendiente)
-                              </span>
-                            )}
-                            {allocatedSum === 0 && (
-                              <span className="text-amber-600 ml-1.5 text-[11px] font-medium">
-                                (Se mantendrá pendiente en Standby)
-                              </span>
-                            )}
-                          </div>
+                            <span>{allocatedSum}</span> / <span>{pendingQuantity}</span>{" "}
+                            <span className="text-muted-foreground font-normal text-[11px]">
+                              {unit}
+                            </span>
+                          </strong>
+                          {allocatedSum > pendingQuantity && (
+                            <span className="text-destructive ml-1.5 font-semibold text-[11px]">
+                              (Excede saldo pendiente)
+                            </span>
+                          )}
+                          {allocatedSum === 0 && (
+                            <span className="text-amber-600 ml-1.5 text-[11px] font-medium">
+                              (Se mantendrá pendiente en Standby)
+                            </span>
+                          )}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Notas de Despacho (Opcional)
-                  </label>
-                  <input
-                    type="text"
-                    value={dispatchNotes}
-                    onChange={(e) => setDispatchNotes(e.target.value)}
-                    placeholder="N° de acta de entrega o nombre de quien recibe..."
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+                    </Card>
+                  );
+                })}
               </div>
 
-              {/* Pie de modal fijo */}
-              <div className="p-4 border-t border-slate-100 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/70">
-                <p className="text-[11px] text-slate-500">
-                  Puede realizar despachos parciales. Si cancela o cierra, la
-                  solicitud permanece aprobada en espera (Standby).
-                </p>
-                <div className="flex items-center gap-2 self-end sm:self-auto">
-                  <button
-                    type="button"
-                    onClick={handleCloseDispatchModal}
-                    className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-200/60 rounded-lg font-semibold transition-colors cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={dispatching}
-                    className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
-                  >
-                    {dispatching && (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    )}
-                    {dispatching ? "Despachando..." : "Confirmar y Despachar"}
-                  </button>
-                </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wider">
+                  Notas de Despacho (Opcional)
+                </Label>
+                <Input
+                  type="text"
+                  value={dispatchNotes}
+                  onChange={(e) => setDispatchNotes(e.target.value)}
+                  placeholder="N° de acta de entrega o nombre de quien recibe..."
+                  className="text-xs"
+                />
               </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Rechazo (Solo Almacén) */}
-      {requestToReject && isWarehouseStaff && (
-        <div className="no-print print:hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-red-600" />
-                <h3 className="font-bold text-slate-800">
-                  Rechazar requisición #{requestToReject.requestNumber}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setRequestToReject(null)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
-            <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-xs text-red-800 flex gap-2">
-              <XCircle className="w-4 h-4 shrink-0" />
-              <span>
-                Indique el motivo de rechazo técnico o administrativo.
-              </span>
-            </div>
-            <textarea
+
+            <DialogFooter className="p-4 border-t border-border bg-muted/20 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <p className="text-[11px] text-muted-foreground">
+                Puede realizar despachos parciales. Si cancela o cierra, la
+                solicitud permanece aprobada en espera (Standby).
+              </p>
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCloseDispatchModal}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="success"
+                  disabled={dispatching}
+                  className="gap-2"
+                >
+                  {dispatching && (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  )}
+                  {dispatching ? "Despachando..." : "Confirmar y Despachar"}
+                </Button>
+              </div>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Rechazo (Solo Almacén) con shadcn Dialog */}
+      <Dialog
+        open={!!requestToReject && isWarehouseStaff}
+        onOpenChange={(open) => {
+          if (!open) setRequestToReject(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+              Rechazar requisición #{requestToReject?.requestNumber}
+            </DialogTitle>
+          </DialogHeader>
+
+          <Alert variant="destructive">
+            <XCircle className="w-4 h-4" />
+            <AlertDescription>
+              Indique el motivo de rechazo técnico o administrativo.
+            </AlertDescription>
+          </Alert>
+
+          <div className="space-y-2">
+            <Textarea
               rows={4}
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder="Indique el motivo técnico o administrativo..."
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-red-500"
+              className="text-xs"
               autoFocus
             />
-            <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
-              <button
-                type="button"
-                onClick={() => setRequestToReject(null)}
-                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleReject()}
-                disabled={rejecting || rejectReason.trim().length < 5}
-                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer"
-              >
-                {rejecting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {rejecting ? "Rechazando..." : "Confirmar Rechazo"}
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setRequestToReject(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => void handleReject()}
+              disabled={rejecting || rejectReason.trim().length < 5}
+              className="gap-2"
+            >
+              {rejecting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {rejecting ? "Rechazando..." : "Confirmar Rechazo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1632,8 +1617,8 @@ export default function InternalRequestsPage() {
     <Suspense
       fallback={
         <div className="h-[70vh] flex flex-col items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-2" />
-          <span className="text-xs text-slate-500 font-medium">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mb-2" />
+          <span className="text-xs text-muted-foreground font-medium">
             Cargando módulo de solicitudes...
           </span>
         </div>

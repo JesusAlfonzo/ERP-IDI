@@ -340,7 +340,7 @@ export const PurchasingClientService = {
     payload: RegisterPaymentPayload,
   ): Promise<SupplierPayment> => {
     const res = await apiClient.post<ApiResponse<SupplierPayment>>(
-      "/suppliers/payments",
+      `/suppliers/${payload.supplierId}/payments`,
       payload,
     );
     const data = res.data.data;

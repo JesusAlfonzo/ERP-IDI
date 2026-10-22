@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { AuthService } from "@/services/auth.service";
 import type { Supplier } from "@/types/purchasing";
-import axios from "axios";
 import {
   Building2,
   Plus,
@@ -15,7 +14,6 @@ import {
   Mail,
   MapPin,
   User,
-  X,
   CheckCircle2,
   AlertCircle,
   Loader2,
@@ -24,6 +22,31 @@ import {
   Trash2,
   AlertTriangle,
 } from "lucide-react";
+
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function SuppliersPage() {
   const router = useRouter();
@@ -113,28 +136,17 @@ export default function SuppliersPage() {
 
   const filteredSuppliers = suppliers.filter((s) => {
     const term = search.toLowerCase();
-    const rifValue = (s.rifOrId ?? s.rif ?? "").toLowerCase();
-    return (
-      s.name.toLowerCase().includes(term) ||
-      rifValue.includes(term) ||
-      (s.contactName && s.contactName.toLowerCase().includes(term))
-    );
+    const rif = (s.rifOrId || s.rif || "").toLowerCase();
+    const name = s.name.toLowerCase();
+    const contact = (s.contactName || "").toLowerCase();
+    return rif.includes(term) || name.includes(term) || contact.includes(term);
   });
 
-  // Manejo de Creación
   const handleCreateSupplier = async (e: FormEvent) => {
     e.preventDefault();
     setCreateFeedback(null);
-
-    if (!createForm.rifOrId.trim() || !createForm.name.trim()) {
-      setCreateFeedback({
-        status: "error",
-        message: "El RIF/ID y la Razón Social son obligatorios.",
-      });
-      return;
-    }
-
     setCreateSubmitting(true);
+
     try {
       await PurchasingClientService.createSupplier({
         rifOrId: createForm.rifOrId.trim(),
@@ -147,36 +159,37 @@ export default function SuppliersPage() {
 
       setCreateFeedback({
         status: "success",
-        message: "Proveedor comercial registrado exitosamente.",
+        message: "Proveedor registrado exitosamente.",
       });
+
+      setCreateForm({
+        rifOrId: "",
+        name: "",
+        contactName: "",
+        phone: "",
+        email: "",
+        address: "",
+      });
+
       await loadSuppliers();
 
       setTimeout(() => {
         setIsCreateModalOpen(false);
-        setCreateForm({
-          rifOrId: "",
-          name: "",
-          contactName: "",
-          phone: "",
-          email: "",
-          address: "",
-        });
         setCreateFeedback(null);
-      }, 1000);
+      }, 1200);
     } catch (err: unknown) {
-      const msg =
-        axios.isAxiosError(err) && err.response?.data?.message
-          ? err.response.data.message
-          : err instanceof Error
+      setCreateFeedback({
+        status: "error",
+        message:
+          err instanceof Error
             ? err.message
-            : "Error al registrar el proveedor.";
-      setCreateFeedback({ status: "error", message: msg });
+            : "Error al registrar el proveedor. Verifique que el RIF no esté duplicado.",
+      });
     } finally {
       setCreateSubmitting(false);
     }
   };
 
-  // Abrir Modal de Edición
   const handleOpenEditModal = (sup: Supplier) => {
     setEditingSupplier(sup);
     setEditForm({
@@ -191,36 +204,28 @@ export default function SuppliersPage() {
     setEditFeedback(null);
   };
 
-  // Manejo de Actualización
   const handleUpdateSupplier = async (e: FormEvent) => {
     e.preventDefault();
     if (!editingSupplier) return;
     setEditFeedback(null);
-
-    if (!editForm.rifOrId.trim() || !editForm.name.trim()) {
-      setEditFeedback({
-        status: "error",
-        message: "El RIF/ID y la Razón Social son obligatorios.",
-      });
-      return;
-    }
-
     setEditSubmitting(true);
+
     try {
       await PurchasingClientService.updateSupplier(editingSupplier.id, {
         rifOrId: editForm.rifOrId.trim(),
         name: editForm.name.trim(),
-        contactName: editForm.contactName.trim() || null,
-        phone: editForm.phone.trim() || null,
-        email: editForm.email.trim() || null,
-        address: editForm.address.trim() || null,
+        contactName: editForm.contactName.trim() || undefined,
+        phone: editForm.phone.trim() || undefined,
+        email: editForm.email.trim() || undefined,
+        address: editForm.address.trim() || undefined,
         isActive: editForm.isActive,
       });
 
       setEditFeedback({
         status: "success",
-        message: "Datos del proveedor actualizados correctamente.",
+        message: "Proveedor actualizado exitosamente.",
       });
+
       await loadSuppliers();
 
       setTimeout(() => {
@@ -228,36 +233,35 @@ export default function SuppliersPage() {
         setEditFeedback(null);
       }, 1000);
     } catch (err: unknown) {
-      const msg =
-        axios.isAxiosError(err) && err.response?.data?.message
-          ? err.response.data.message
-          : err instanceof Error
+      setEditFeedback({
+        status: "error",
+        message:
+          err instanceof Error
             ? err.message
-            : "Error al actualizar los datos del proveedor.";
-      setEditFeedback({ status: "error", message: msg });
+            : "Error al actualizar los datos del proveedor.",
+      });
     } finally {
       setEditSubmitting(false);
     }
   };
 
-  // Abrir Modal de Eliminación
   const handleOpenDeleteModal = (sup: Supplier) => {
     setDeletingSupplier(sup);
     setDeleteFeedback(null);
   };
 
-  // Manejo de Eliminación con Protección Referencial
   const handleDeleteSupplier = async () => {
     if (!deletingSupplier) return;
-    setDeleteSubmitting(true);
     setDeleteFeedback(null);
+    setDeleteSubmitting(true);
 
     try {
       await PurchasingClientService.deleteSupplier(deletingSupplier.id);
       setDeleteFeedback({
         status: "success",
-        message: "Proveedor comercial eliminado exitosamente del catálogo.",
+        message: "Proveedor eliminado permanentemente del sistema.",
       });
+
       await loadSuppliers();
 
       setTimeout(() => {
@@ -265,15 +269,12 @@ export default function SuppliersPage() {
         setDeleteFeedback(null);
       }, 1200);
     } catch (err: unknown) {
-      const msg =
-        axios.isAxiosError(err) && err.response?.data?.message
-          ? err.response.data.message
-          : err instanceof Error
-            ? err.message
-            : "Error al intentar eliminar el proveedor.";
       setDeleteFeedback({
         status: "error",
-        message: msg,
+        message:
+          err instanceof Error
+            ? err.message
+            : "No se puede eliminar el proveedor porque tiene órdenes de compra asociadas. Se recomienda inactivarlo.",
       });
     } finally {
       setDeleteSubmitting(false);
@@ -285,597 +286,574 @@ export default function SuppliersPage() {
       {/* Encabezado */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <Building2 className="w-6 h-6 text-blue-600" />
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <Building2 className="w-6 h-6 text-primary" />
             Directorio de Proveedores Comerciales
           </h1>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted-foreground">
             Registro, actualización y gestión técnica de proveedores y casas comerciales
           </p>
         </div>
 
-        <button
+        <Button
           onClick={() => {
             setIsCreateModalOpen(true);
             setCreateFeedback(null);
           }}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto cursor-pointer"
+          className="gap-2 self-start sm:self-auto"
         >
           <Plus className="w-4 h-4" />
           Registrar Proveedor
-        </button>
+        </Button>
       </div>
 
       {/* Barra de Filtros */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-4">
-        <div className="relative w-full sm:w-80">
-          <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-            <Search className="w-4 h-4" />
-          </span>
-          <input
-            type="text"
-            placeholder="Buscar por RIF, Razón Social o Contacto..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
+      <Card>
+        <CardContent className="p-4 flex items-center justify-between gap-4">
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Buscar por RIF, Razón Social o Contacto..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 text-xs"
+            />
+          </div>
 
-        <button
-          onClick={() => void loadSuppliers()}
-          className="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 transition-colors shadow-2xs cursor-pointer"
-          title="Actualizar listado"
-        >
-          <RefreshCw
-            className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
-          />
-        </button>
-      </div>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => void loadSuppliers()}
+            title="Actualizar listado"
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+            />
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Tabla de Proveedores */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-semibold">
-              <tr>
-                <th className="py-3 px-4">RIF / ID Fiscal</th>
-                <th className="py-3 px-4">Razón Social</th>
-                <th className="py-3 px-4">Contacto Directo</th>
-                <th className="py-3 px-4">Teléfono</th>
-                <th className="py-3 px-4">Correo Electrónico</th>
-                <th className="py-3 px-4">Dirección</th>
-                <th className="py-3 px-4 text-center">Estado</th>
-                <th className="py-3 px-4 text-center">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
+          <Table>
+            <TableHeader className="bg-muted/50">
+              <TableRow>
+                <TableHead className="py-3 px-4">RIF / ID Fiscal</TableHead>
+                <TableHead className="py-3 px-4">Razón Social</TableHead>
+                <TableHead className="py-3 px-4">Contacto Directo</TableHead>
+                <TableHead className="py-3 px-4">Teléfono</TableHead>
+                <TableHead className="py-3 px-4">Correo Electrónico</TableHead>
+                <TableHead className="py-3 px-4">Dirección</TableHead>
+                <TableHead className="py-3 px-4 text-center">Estado</TableHead>
+                <TableHead className="py-3 px-4 text-center">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {loading ? (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2" />
+                <TableRow>
+                  <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
                     Cargando directorio de proveedores...
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : filteredSuppliers.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                <TableRow>
+                  <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
                     No se encontraron proveedores registrados.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : (
                 filteredSuppliers.map((sup) => (
-                  <tr
+                  <TableRow
                     key={sup.id}
-                    className="hover:bg-slate-50/70 transition-colors"
+                    className="hover:bg-muted/50 transition-colors"
                   >
-                    <td className="py-3 px-4 font-mono font-bold text-slate-800 whitespace-nowrap">
+                    <TableCell className="py-3 px-4 font-mono font-bold text-foreground whitespace-nowrap">
                       {sup.rifOrId || sup.rif || "-"}
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-slate-800">
+                    </TableCell>
+                    <TableCell className="py-3 px-4 font-semibold text-foreground">
                       <button
                         onClick={() => router.push(`/purchasing/suppliers/${sup.id}`)}
-                        className="text-left hover:text-blue-600 hover:underline cursor-pointer"
+                        className="text-left hover:text-primary hover:underline cursor-pointer"
                       >
                         {sup.name}
                       </button>
-                    </td>
-                    <td className="py-3 px-4 text-slate-600 whitespace-nowrap">
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-muted-foreground whitespace-nowrap">
                       <span className="flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                         {sup.contactName || "-"}
                       </span>
-                    </td>
-                    <td className="py-3 px-4 text-slate-600 whitespace-nowrap">
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-muted-foreground whitespace-nowrap">
                       <span className="flex items-center gap-1.5">
-                        <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                         {sup.phone || "-"}
                       </span>
-                    </td>
-                    <td className="py-3 px-4 text-slate-600">
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-muted-foreground">
                       <span className="flex items-center gap-1.5">
-                        <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                         {sup.email || "-"}
                       </span>
-                    </td>
-                    <td className="py-3 px-4 text-slate-500 max-w-xs truncate">
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-muted-foreground max-w-xs truncate">
                       <span
                         className="flex items-center gap-1.5"
                         title={sup.address || ""}
                       >
-                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                         {sup.address || "-"}
                       </span>
-                    </td>
-                    <td className="py-3 px-4 text-center whitespace-nowrap">
-                      {sup.isActive !== false ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          Activo
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                          Inactivo
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center whitespace-nowrap">
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-center whitespace-nowrap">
+                      <Badge variant={sup.isActive !== false ? "success" : "secondary"}>
+                        {sup.isActive !== false ? "Activo" : "Inactivo"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1">
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           onClick={() => router.push(`/purchasing/suppliers/${sup.id}`)}
-                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                          className="h-8 w-8 text-muted-foreground hover:text-primary"
                           title="Ver Ficha Técnica y Órdenes"
                         >
                           <Eye className="w-4 h-4" />
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           onClick={() => handleOpenEditModal(sup)}
-                          className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                          className="h-8 w-8 text-muted-foreground hover:text-amber-600"
                           title="Editar Proveedor"
                         >
                           <Pencil className="w-4 h-4" />
-                        </button>
+                        </Button>
                         {isAdmin && (
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => handleOpenDeleteModal(sup)}
-                            className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                             title="Eliminar Proveedor (Admin)"
                           >
                             <Trash2 className="w-4 h-4" />
-                          </button>
+                          </Button>
                         )}
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      </div>
+      </Card>
 
       {/* Modal: Registrar Proveedor */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-slate-800 text-base">
-                  Registrar Nuevo Proveedor
-                </h3>
+      <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-primary" />
+              <DialogTitle className="text-base font-bold text-foreground">
+                Registrar Nuevo Proveedor
+              </DialogTitle>
+            </div>
+          </DialogHeader>
+
+          {createFeedback && (
+            <Alert
+              variant={createFeedback.status === "success" ? "default" : "destructive"}
+              className={createFeedback.status === "success" ? "border-emerald-300 bg-emerald-50 text-emerald-900" : ""}
+            >
+              {createFeedback.status === "success" ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              ) : (
+                <AlertCircle className="w-4 h-4" />
+              )}
+              <AlertDescription>{createFeedback.message}</AlertDescription>
+            </Alert>
+          )}
+
+          <form onSubmit={handleCreateSupplier} className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-1 space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                  RIF / ID Fiscal *
+                </Label>
+                <Input
+                  type="text"
+                  value={createForm.rifOrId}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, rifOrId: e.target.value })
+                  }
+                  placeholder="J-12345678-9"
+                  className="font-mono"
+                  required
+                />
               </div>
-              <button
-                onClick={() => setIsCreateModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                  Razón Social *
+                </Label>
+                <Input
+                  type="text"
+                  value={createForm.name}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, name: e.target.value })
+                  }
+                  placeholder="Nombre comercial o empresa"
+                  required
+                />
+              </div>
             </div>
 
-            {createFeedback && (
-              <div
-                className={`p-3 rounded-lg text-xs flex items-center gap-2 border ${
-                  createFeedback.status === "success"
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                    : "bg-red-50 border-red-200 text-red-800"
-                }`}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                  Persona de Contacto
+                </Label>
+                <Input
+                  type="text"
+                  value={createForm.contactName}
+                  onChange={(e) =>
+                    setCreateForm({
+                      ...createForm,
+                      contactName: e.target.value,
+                    })
+                  }
+                  placeholder="Representante de ventas"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                  Teléfono
+                </Label>
+                <Input
+                  type="text"
+                  value={createForm.phone}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, phone: e.target.value })
+                  }
+                  placeholder="0212-0000000 / 0414-..."
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                Correo Electrónico
+              </Label>
+              <Input
+                type="email"
+                value={createForm.email}
+                onChange={(e) =>
+                  setCreateForm({ ...createForm, email: e.target.value })
+                }
+                placeholder="ventas@proveedor.com"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                Dirección Fiscal o Almacén
+              </Label>
+              <Textarea
+                rows={2}
+                value={createForm.address}
+                onChange={(e) =>
+                  setCreateForm({ ...createForm, address: e.target.value })
+                }
+                placeholder="Ubicación física o ciudad..."
+                className="resize-none"
+              />
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsCreateModalOpen(false)}
               >
-                {createFeedback.status === "success" ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={createSubmitting}
+                className="gap-2"
+              >
+                {createSubmitting && (
+                  <Loader2 className="w-4 h-4 animate-spin" />
                 )}
-                <span>{createFeedback.message}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCreateSupplier} className="space-y-3">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-1">
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    RIF / ID Fiscal *
-                  </label>
-                  <input
-                    type="text"
-                    value={createForm.rifOrId}
-                    onChange={(e) =>
-                      setCreateForm({ ...createForm, rifOrId: e.target.value })
-                    }
-                    placeholder="J-12345678-9"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-mono"
-                    required
-                  />
-                </div>
-
-                <div className="col-span-2">
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Razón Social *
-                  </label>
-                  <input
-                    type="text"
-                    value={createForm.name}
-                    onChange={(e) =>
-                      setCreateForm({ ...createForm, name: e.target.value })
-                    }
-                    placeholder="Nombre comercial o empresa"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Persona de Contacto
-                  </label>
-                  <input
-                    type="text"
-                    value={createForm.contactName}
-                    onChange={(e) =>
-                      setCreateForm({
-                        ...createForm,
-                        contactName: e.target.value,
-                      })
-                    }
-                    placeholder="Representante de ventas"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Teléfono
-                  </label>
-                  <input
-                    type="text"
-                    value={createForm.phone}
-                    onChange={(e) =>
-                      setCreateForm({ ...createForm, phone: e.target.value })
-                    }
-                    placeholder="0212-0000000 / 0414-..."
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Correo Electrónico
-                </label>
-                <input
-                  type="email"
-                  value={createForm.email}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, email: e.target.value })
-                  }
-                  placeholder="ventas@proveedor.com"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Dirección Fiscal o Almacén
-                </label>
-                <textarea
-                  rows={2}
-                  value={createForm.address}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, address: e.target.value })
-                  }
-                  placeholder="Ubicación física o ciudad..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={createSubmitting}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
-                >
-                  {createSubmitting && (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  )}
-                  {createSubmitting ? "Guardando..." : "Guardar Proveedor"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+                {createSubmitting ? "Guardando..." : "Guardar Proveedor"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal: Editar Proveedor */}
-      {editingSupplier && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Pencil className="w-5 h-5 text-amber-600" />
-                <h3 className="font-bold text-slate-800 text-base">
-                  Editar Proveedor Comercial
-                </h3>
+      <Dialog
+        open={Boolean(editingSupplier)}
+        onOpenChange={(open) => {
+          if (!open) setEditingSupplier(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <Pencil className="w-5 h-5 text-amber-600" />
+              <DialogTitle className="text-base font-bold text-foreground">
+                Editar Proveedor Comercial
+              </DialogTitle>
+            </div>
+          </DialogHeader>
+
+          {editFeedback && (
+            <Alert
+              variant={editFeedback.status === "success" ? "default" : "destructive"}
+              className={editFeedback.status === "success" ? "border-emerald-300 bg-emerald-50 text-emerald-900" : ""}
+            >
+              {editFeedback.status === "success" ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              ) : (
+                <AlertCircle className="w-4 h-4" />
+              )}
+              <AlertDescription>{editFeedback.message}</AlertDescription>
+            </Alert>
+          )}
+
+          <form onSubmit={handleUpdateSupplier} className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-1 space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                  RIF / ID Fiscal *
+                </Label>
+                <Input
+                  type="text"
+                  value={editForm.rifOrId}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, rifOrId: e.target.value })
+                  }
+                  placeholder="J-12345678-9"
+                  className="font-mono"
+                  required
+                />
               </div>
-              <button
-                onClick={() => setEditingSupplier(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                  Razón Social *
+                </Label>
+                <Input
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, name: e.target.value })
+                  }
+                  placeholder="Nombre comercial o empresa"
+                  required
+                />
+              </div>
             </div>
 
-            {editFeedback && (
-              <div
-                className={`p-3 rounded-lg text-xs flex items-center gap-2 border ${
-                  editFeedback.status === "success"
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                    : "bg-red-50 border-red-200 text-red-800"
-                }`}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                  Persona de Contacto
+                </Label>
+                <Input
+                  type="text"
+                  value={editForm.contactName}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, contactName: e.target.value })
+                  }
+                  placeholder="Representante"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                  Teléfono
+                </Label>
+                <Input
+                  type="text"
+                  value={editForm.phone}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, phone: e.target.value })
+                  }
+                  placeholder="0212-... / 0414-..."
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                Correo Electrónico
+              </Label>
+              <Input
+                type="email"
+                value={editForm.email}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, email: e.target.value })
+                }
+                placeholder="contacto@proveedor.com"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+                Dirección Fiscal o Almacén
+              </Label>
+              <Textarea
+                rows={2}
+                value={editForm.address}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, address: e.target.value })
+                }
+                placeholder="Ubicación..."
+                className="resize-none"
+              />
+            </div>
+
+            {/* Toggle de Estado Activo/Inactivo */}
+            <div className="pt-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <Checkbox
+                  checked={editForm.isActive}
+                  onCheckedChange={(checked) =>
+                    setEditForm({ ...editForm, isActive: checked === true })
+                  }
+                />
+                <span className="text-xs font-medium text-foreground">
+                  Proveedor Activo en el Catálogo de Compras
+                </span>
+              </label>
+              <p className="text-[11px] text-muted-foreground pl-6">
+                Si un proveedor tiene órdenes en el historial y no puede eliminarse, puede desactivarlo para que no aparezca en nuevas órdenes.
+              </p>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditingSupplier(null)}
               >
-                {editFeedback.status === "success" ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                )}
-                <span>{editFeedback.message}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleUpdateSupplier} className="space-y-3">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-1">
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    RIF / ID Fiscal *
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.rifOrId}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, rifOrId: e.target.value })
-                    }
-                    placeholder="J-12345678-9"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-amber-500 font-mono"
-                    required
-                  />
-                </div>
-
-                <div className="col-span-2">
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Razón Social *
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.name}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, name: e.target.value })
-                    }
-                    placeholder="Nombre comercial o empresa"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-amber-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Persona de Contacto
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.contactName}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, contactName: e.target.value })
-                    }
-                    placeholder="Representante"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Teléfono
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.phone}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, phone: e.target.value })
-                    }
-                    placeholder="0212-... / 0414-..."
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-amber-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Correo Electrónico
-                </label>
-                <input
-                  type="email"
-                  value={editForm.email}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, email: e.target.value })
-                  }
-                  placeholder="contacto@proveedor.com"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Dirección Fiscal o Almacén
-                </label>
-                <textarea
-                  rows={2}
-                  value={editForm.address}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, address: e.target.value })
-                  }
-                  placeholder="Ubicación..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-
-              {/* Toggle de Estado Activo/Inactivo */}
-              <div className="pt-1">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={editForm.isActive}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, isActive: e.target.checked })
-                    }
-                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                  />
-                  <span className="text-xs font-medium text-slate-700">
-                    Proveedor Activo en el Catálogo de Compras
-                  </span>
-                </label>
-                <p className="text-[11px] text-slate-400 pl-6">
-                  Si un proveedor tiene órdenes en el historial y no puede eliminarse, puede desactivarlo para que no aparezca en nuevas órdenes.
-                </p>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setEditingSupplier(null)}
-                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={editSubmitting}
-                  className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
-                >
-                  {editSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {editSubmitting ? "Guardando Cambios..." : "Actualizar Proveedor"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={editSubmitting}
+                className="gap-2"
+              >
+                {editSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {editSubmitting ? "Guardando Cambios..." : "Actualizar Proveedor"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal: Confirmación de Eliminación (Protección Referencial) */}
-      {deletingSupplier && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4">
-            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <div className="p-2 bg-red-100 text-red-600 rounded-xl">
+      <Dialog
+        open={Boolean(deletingSupplier)}
+        onOpenChange={(open) => {
+          if (!open) setDeletingSupplier(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-destructive/10 text-destructive rounded-xl">
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-800 text-base">
+                <DialogTitle className="text-base font-bold text-foreground">
                   Eliminar Proveedor
-                </h3>
-                <p className="text-xs text-slate-500">
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
                   Confirmación con verificación de integridad referencial
-                </p>
+                </DialogDescription>
               </div>
             </div>
+          </DialogHeader>
 
-            <div className="text-xs text-slate-600 space-y-2">
-              <p>
-                ¿Está seguro de que desea eliminar permanentemente al proveedor{" "}
-                <span className="font-semibold text-slate-900">
-                  {deletingSupplier.name}
-                </span>{" "}
-                (
-                <span className="font-mono font-medium text-slate-800">
-                  {deletingSupplier.rifOrId || deletingSupplier.rif}
-                </span>
-                )?
-              </p>
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] leading-relaxed">
-                <strong>Aviso de Seguridad Institucional:</strong> El sistema verificará que este proveedor no posea Órdenes de Compra en el historial. Si existen órdenes registradas, la eliminación será rechazada por seguridad documental.
-              </div>
-            </div>
-
-            {deleteFeedback && (
-              <div
-                className={`p-3 rounded-lg text-xs flex items-start gap-2 border ${
-                  deleteFeedback.status === "success"
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                    : "bg-red-50 border-red-200 text-red-800"
-                }`}
-              >
-                {deleteFeedback.status === "success" ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
-                )}
-                <div className="space-y-1">
-                  <p className="font-semibold">{deleteFeedback.message}</p>
-                  {deleteFeedback.status === "error" && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const sup = deletingSupplier;
-                        setDeletingSupplier(null);
-                        handleOpenEditModal(sup);
-                      }}
-                      className="text-[11px] underline hover:text-red-900 cursor-pointer"
-                    >
-                      Ir a editar para inactivarlo
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setDeletingSupplier(null)}
-                disabled={deleteSubmitting}
-                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteSupplier}
-                disabled={deleteSubmitting}
-                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
-              >
-                {deleteSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {deleteSubmitting ? "Verificando..." : "Confirmar Eliminación"}
-              </button>
+          <div className="text-xs text-muted-foreground space-y-3">
+            <p>
+              ¿Está seguro de que desea eliminar permanentemente al proveedor{" "}
+              <strong className="text-foreground">
+                {deletingSupplier?.name}
+              </strong>{" "}
+              (
+              <span className="font-mono font-medium text-foreground">
+                {deletingSupplier?.rifOrId || deletingSupplier?.rif}
+              </span>
+              )?
+            </p>
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] leading-relaxed">
+              <strong>Aviso de Seguridad Institucional:</strong> El sistema verificará que este proveedor no posea Órdenes de Compra en el historial. Si existen órdenes registradas, la eliminación será rechazada por seguridad documental.
             </div>
           </div>
-        </div>
-      )}
+
+          {deleteFeedback && (
+            <Alert
+              variant={deleteFeedback.status === "success" ? "default" : "destructive"}
+              className={deleteFeedback.status === "success" ? "border-emerald-300 bg-emerald-50 text-emerald-900" : ""}
+            >
+              {deleteFeedback.status === "success" ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0" />
+              )}
+              <div className="space-y-1">
+                <AlertDescription className="font-semibold">{deleteFeedback.message}</AlertDescription>
+                {deleteFeedback.status === "error" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sup = deletingSupplier;
+                      setDeletingSupplier(null);
+                      if (sup) handleOpenEditModal(sup);
+                    }}
+                    className="text-[11px] underline hover:text-destructive cursor-pointer"
+                  >
+                    Ir a editar para inactivarlo
+                  </button>
+                )}
+              </div>
+            </Alert>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeletingSupplier(null)}
+              disabled={deleteSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteSupplier}
+              disabled={deleteSubmitting}
+              className="gap-2"
+            >
+              {deleteSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {deleteSubmitting ? "Verificando..." : "Confirmar Eliminación"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

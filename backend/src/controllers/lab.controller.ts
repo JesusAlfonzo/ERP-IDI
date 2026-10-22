@@ -54,7 +54,7 @@ export const assignUnitToFridge = async (
     const userRoles = req.user?.roles ?? [];
     const isAuthorized =
       userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('ANALISTA_LABORATORIO');
+      userRoles.includes('LABORATORIO');
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -101,7 +101,7 @@ export const createFridge = async (
     const userRoles = req.user?.roles ?? [];
     const isAuthorized =
       userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('ANALISTA_LABORATORIO');
+      userRoles.includes('LABORATORIO');
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -157,7 +157,7 @@ export const createLabUnit = async (
     const userRoles = req.user?.roles ?? [];
     const isAuthorized =
       userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('ANALISTA_LABORATORIO');
+      userRoles.includes('LABORATORIO');
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -320,7 +320,7 @@ export const registerReagentConsumption = async (
     const userRoles = req.user?.roles ?? [];
     const isAuthorized =
       userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('ANALISTA_LABORATORIO');
+      userRoles.includes('LABORATORIO');
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -374,7 +374,7 @@ export const assignBatchToFridge = async (
     const userRoles = req.user?.roles ?? [];
     const isAuthorized =
       userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('ANALISTA_LABORATORIO');
+      userRoles.includes('LABORATORIO');
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -455,7 +455,7 @@ export const openLabUnit = async (
     const userRoles = req.user?.roles ?? [];
     const isAuthorized =
       userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('ANALISTA_LABORATORIO');
+      userRoles.includes('LABORATORIO');
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -503,7 +503,7 @@ export const consumeLabUnit = async (
     const userRoles = req.user?.roles ?? [];
     const isAuthorized =
       userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('ANALISTA_LABORATORIO');
+      userRoles.includes('LABORATORIO');
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -566,7 +566,7 @@ export const transferFridge = async (
     const userRoles = req.user?.roles ?? [];
     const isAuthorized =
       userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('ANALISTA_LABORATORIO');
+      userRoles.includes('LABORATORIO');
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -629,7 +629,7 @@ export const discardLabUnit = async (
     const userRoles = req.user?.roles ?? [];
     const isAuthorized =
       userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('ANALISTA_LABORATORIO');
+      userRoles.includes('LABORATORIO');
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',

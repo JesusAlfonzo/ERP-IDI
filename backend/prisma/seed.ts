@@ -657,7 +657,7 @@ async function main() {
       description: 'Acceso total al sistema y auditoría',
     },
     {
-      name: 'ANALISTA_LABORATORIO',
+      name: 'LABORATORIO',
       description: 'Gestión de reactivos, neveras y solicitudes',
     },
     {

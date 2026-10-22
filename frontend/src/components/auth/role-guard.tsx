@@ -23,11 +23,11 @@ const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
   // Restringido para que SOLICITANTE no vea costos de lote ni auditoría profunda
   {
     pattern: /^\/inventory\/products\/[^/]+$/,
-    roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS", "ANALISTA_LABORATORIO"],
+    roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS", "LABORATORIO"],
   },
   {
     pattern: /^\/inventory\/catalog\/[^/]+$/,
-    roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS", "ANALISTA_LABORATORIO"],
+    roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS", "LABORATORIO"],
   },
 
   // 4. Catálogo General de Productos (Listado base)
@@ -37,7 +37,7 @@ const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
       "ADMINISTRADOR",
       "ALMACENISTA",
       "COMPRAS",
-      "ANALISTA_LABORATORIO",
+      "LABORATORIO",
       "SOLICITANTE",
     ],
   },
@@ -47,14 +47,14 @@ const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
       "ADMINISTRADOR",
       "ALMACENISTA",
       "COMPRAS",
-      "ANALISTA_LABORATORIO",
+      "LABORATORIO",
       "SOLICITANTE",
     ],
   },
 
   // 5. Cadena de Frío y Calidad
-  { pattern: "/laboratory", roles: ["ADMINISTRADOR", "ANALISTA_LABORATORIO"] },
-  { pattern: "/quality", roles: ["ADMINISTRADOR", "ANALISTA_LABORATORIO"] },
+  { pattern: "/laboratory", roles: ["ADMINISTRADOR", "LABORATORIO"] },
+  { pattern: "/quality", roles: ["ADMINISTRADOR", "LABORATORIO", "ALMACENISTA"] },
 
   // 6. Compras y Proveedores
   { pattern: "/purchasing", roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"] },
@@ -65,7 +65,7 @@ const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
     roles: [
       "ADMINISTRADOR",
       "ALMACENISTA",
-      "ANALISTA_LABORATORIO",
+      "LABORATORIO",
       "SOLICITANTE",
     ],
   },

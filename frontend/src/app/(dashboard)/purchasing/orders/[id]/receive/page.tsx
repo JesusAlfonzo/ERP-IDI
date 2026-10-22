@@ -10,6 +10,18 @@ import { getCurrencySymbol } from "@/utils/currency";
 import type { PurchaseOrder, PurchaseOrderItem } from "@/types/purchasing";
 import type { Location } from "@/types/inventory";
 import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
   PackageCheck,
   ArrowLeft,
   Building2,
@@ -200,8 +212,8 @@ export default function ReceiveOrderPage() {
 
   if (loading) {
     return (
-      <div className="h-96 flex items-center justify-center text-slate-500">
-        <Loader2 className="w-6 h-6 animate-spin mr-2 text-blue-600" />
+      <div className="h-96 flex items-center justify-center text-muted-foreground">
+        <Loader2 className="w-6 h-6 animate-spin mr-2 text-primary" />
         <span className="text-sm font-medium">
           Consultando orden de compra y almacenes...
         </span>
@@ -211,7 +223,7 @@ export default function ReceiveOrderPage() {
 
   if (!order) {
     return (
-      <div className="p-8 text-center text-slate-500">
+      <div className="p-8 text-center text-muted-foreground">
         Orden no encontrada o no disponible para recepción.
       </div>
     );
@@ -221,119 +233,126 @@ export default function ReceiveOrderPage() {
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Encabezado */}
       <div className="flex items-center gap-3">
-        <Link
-          href={`/purchasing/orders/${orderId}`}
-          className="p-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 transition-colors shadow-2xs"
-          title="Volver al detalle de la orden"
+        <Button
+          variant="outline"
+          size="icon"
+          asChild
+          className="cursor-pointer"
         >
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
+          <Link
+            href={`/purchasing/orders/${orderId}`}
+            title="Volver al detalle de la orden"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+        </Button>
         <div>
           <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <PackageCheck className="w-6 h-6 text-emerald-600" />
             Recepción de Mercancía
           </h1>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted-foreground">
             Ingreso de lotes físicos y verificación de conformidad (Vía Verde / Ámbar)
           </p>
         </div>
       </div>
 
       {feedback && (
-        <div
-          className={`p-4 rounded-xl text-xs flex items-center gap-2.5 border ${
-            feedback.status === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : "bg-red-50 border-red-200 text-red-800"
-          }`}
-        >
+        <Alert variant={feedback.status === "success" ? "default" : "destructive"}>
           {feedback.status === "success" ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
           ) : (
-            <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
+            <AlertTriangle className="h-4 w-4" />
           )}
-          <span>{feedback.message}</span>
-        </div>
+          <AlertDescription className="text-xs font-medium">
+            {feedback.message}
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* Tarjeta Informativa de la Orden */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <span className="text-[10px] text-slate-400 uppercase font-semibold">
-            Orden de Compra
-          </span>
-          <div className="text-lg font-bold font-mono text-slate-800">
-            {order.orderNumber || `#${order.id}`}
+      <Card className="shadow-xs">
+        <CardContent className="p-5 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <span className="text-[10px] text-muted-foreground uppercase font-semibold">
+              Orden de Compra
+            </span>
+            <div className="text-lg font-bold font-mono text-slate-800">
+              {order.orderNumber || `#${order.id}`}
+            </div>
           </div>
-        </div>
 
-        <div>
-          <span className="text-[10px] text-slate-400 uppercase font-semibold">
-            Proveedor Comercial
-          </span>
-          <div className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
-            <Building2 className="w-4 h-4 text-slate-400" />
-            {order.supplier?.name || "Proveedor General"}
+          <div>
+            <span className="text-[10px] text-muted-foreground uppercase font-semibold">
+              Proveedor Comercial
+            </span>
+            <div className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+              <Building2 className="w-4 h-4 text-muted-foreground" />
+              {order.supplier?.name || "Proveedor General"}
+            </div>
           </div>
-        </div>
 
-        <div>
-          <span className="text-[10px] text-slate-400 uppercase font-semibold">
-            Monto Acordado
-          </span>
-          <div className="text-sm font-bold font-mono text-slate-800">
-            {getCurrencySymbol(order.currency)}{" "}
-            {displayTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+          <div>
+            <span className="text-[10px] text-muted-foreground uppercase font-semibold">
+              Monto Acordado
+            </span>
+            <div className="text-sm font-bold font-mono text-slate-800">
+              {getCurrencySymbol(order.currency)}{" "}
+              {displayTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {itemsData.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center space-y-3 shadow-xs">
-          <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
-          <h3 className="text-base font-bold text-slate-800">
-            Orden Completada
-          </h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            Todos los renglones de esta orden ya han sido recibidos en su
-            totalidad en el inventario.
-          </p>
-          <div className="pt-2">
-            <Link
-              href={`/purchasing/orders/${orderId}`}
-              className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-semibold"
-            >
-              Regresar al Detalle
-            </Link>
-          </div>
-        </div>
+        <Card className="p-8 text-center space-y-3 shadow-xs">
+          <CardContent className="space-y-3 p-0">
+            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
+            <h3 className="text-base font-bold text-slate-800">
+              Orden Completada
+            </h3>
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+              Todos los renglones de esta orden ya han sido recibidos en su
+              totalidad en el inventario.
+            </p>
+            <div className="pt-2">
+              <Button asChild size="sm">
+                <Link href={`/purchasing/orders/${orderId}`}>
+                  Regresar al Detalle
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       ) : (
         <form onSubmit={handleSubmitReception} className="space-y-6">
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-              N° Guía de Despacho / Factura / Observaciones (Opcional)
-            </label>
-            <input
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ej: Guía de traslado 00492 / Cadena de frío preservada"
-              className="w-full sm:w-96 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-mono"
-            />
-          </div>
+          <Card className="shadow-xs">
+            <CardContent className="p-5 space-y-1.5">
+              <Label className="text-xs font-semibold uppercase tracking-wider">
+                N° Guía de Despacho / Factura / Observaciones (Opcional)
+              </Label>
+              <Input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Ej: Guía de traslado 00492 / Cadena de frío preservada"
+                className="w-full sm:w-96 font-mono text-xs"
+              />
+            </CardContent>
+          </Card>
 
-          <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                <Package className="w-4 h-4 text-slate-500" />
+          <Card className="shadow-xs overflow-hidden">
+            <CardHeader className="px-5 py-3.5 border-b border-border bg-muted/30 flex flex-row items-center justify-between">
+              <CardTitle className="text-xs font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                <Package className="w-4 h-4 text-muted-foreground" />
                 Renglones Pendientes por Recibir
-              </span>
-              <span className="text-[11px] text-slate-500">
+              </CardTitle>
+              <span className="text-[11px] text-muted-foreground">
                 Modelo de Inspección: <b className="text-emerald-700">Vía Verde (Disponible) / Vía Ámbar (Cuarentena)</b>
               </span>
-            </div>
+            </CardHeader>
 
-            <div className="divide-y divide-slate-100 p-5 space-y-4">
+            <CardContent className="p-5 space-y-4 divide-y divide-border">
               {itemsData.map((row, idx) => {
                 const baseEquivalent = row.receivedQuantity * row.multiplier;
                 return (
@@ -345,28 +364,28 @@ export default function ReceiveOrderPage() {
                       <div className="font-semibold text-xs text-slate-800">
                         {row.productName}
                       </div>
-                      <div className="font-mono text-[10px] text-slate-400">
+                      <div className="font-mono text-[10px] text-muted-foreground">
                         SKU: {row.sku}
                       </div>
-                      <div className="text-[11px] text-slate-500">
+                      <div className="text-[11px] text-muted-foreground">
                         Pendiente:{" "}
-                        <b className="text-blue-700">
+                        <b className="text-primary">
                           {row.pendingQuantity} / {row.orderedQuantity}{" "}
                           {row.unitOfMeasure}
                         </b>
                       </div>
                       {row.multiplier > 1 && (
-                        <div className="text-[10px] text-blue-600 font-medium">
+                        <div className="text-[10px] text-primary font-medium">
                           Factor: x{row.multiplier} (= {baseEquivalent} base)
                         </div>
                       )}
                     </div>
 
-                    <div className="md:col-span-2">
-                      <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">
+                    <div className="md:col-span-2 space-y-1">
+                      <Label className="text-[10px] font-semibold text-muted-foreground uppercase">
                         Cant. a Recibir
-                      </label>
-                      <input
+                      </Label>
+                      <Input
                         type="number"
                         step="any"
                         min="1"
@@ -379,46 +398,46 @@ export default function ReceiveOrderPage() {
                             Number(e.target.value),
                           )
                         }
-                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold"
+                        className="h-8 text-xs font-semibold"
                         required
                       />
                     </div>
 
-                    <div className="md:col-span-2">
-                      <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">
+                    <div className="md:col-span-2 space-y-1">
+                      <Label className="text-[10px] font-semibold text-muted-foreground uppercase">
                         Lote Fabricante *
-                      </label>
-                      <input
+                      </Label>
+                      <Input
                         type="text"
                         value={row.lotNumber}
                         onChange={(e) =>
                           handleRowChange(idx, "lotNumber", e.target.value)
                         }
                         placeholder="LOTE-2026-X"
-                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-mono uppercase"
+                        className="h-8 text-xs font-mono uppercase"
                         required
                       />
                     </div>
 
-                    <div className="md:col-span-2">
-                      <label className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 uppercase mb-1">
+                    <div className="md:col-span-2 space-y-1">
+                      <Label className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground uppercase">
                         <Calendar className="w-3 h-3" /> Vencimiento *
-                      </label>
-                      <input
+                      </Label>
+                      <Input
                         type="date"
                         value={row.expirationDate}
                         onChange={(e) =>
                           handleRowChange(idx, "expirationDate", e.target.value)
                         }
-                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
+                        className="h-8 text-xs"
                         required
                       />
                     </div>
 
-                    <div className="md:col-span-3">
-                      <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">
+                    <div className="md:col-span-3 space-y-1">
+                      <Label className="text-[10px] font-semibold text-muted-foreground uppercase">
                         Ubicación Física
-                      </label>
+                      </Label>
                       <select
                         value={row.locationId}
                         onChange={(e) =>
@@ -428,7 +447,7 @@ export default function ReceiveOrderPage() {
                             Number(e.target.value),
                           )
                         }
-                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
+                        className="w-full bg-background border border-input rounded-md px-2.5 py-1.5 text-xs text-foreground focus:ring-2 focus:ring-ring"
                       >
                         {locations.map((loc) => (
                           <option key={loc.id} value={loc.id}>
@@ -439,60 +458,68 @@ export default function ReceiveOrderPage() {
                     </div>
 
                     {/* Control de Conformidad: Vía Verde vs Vía Ámbar */}
-                    <div className="md:col-span-12 mt-2 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-                      <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
+                    <div className="md:col-span-12 mt-2 pt-2.5 border-t border-border flex flex-wrap items-center justify-between gap-3">
+                      <div
+                        className="inline-flex items-center gap-2 cursor-pointer select-none"
+                        onClick={() =>
+                          handleRowChange(
+                            idx,
+                            "isConforming",
+                            !row.isConforming,
+                          )
+                        }
+                      >
+                        <Checkbox
                           checked={row.isConforming}
-                          onChange={(e) =>
+                          onCheckedChange={(checked) =>
                             handleRowChange(
                               idx,
                               "isConforming",
-                              e.target.checked,
+                              Boolean(checked),
                             )
                           }
-                          className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                          className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
                         />
                         <span className="text-xs font-semibold text-slate-700">
                           Ingreso Conforme (Pasa directo a Disponible)
                         </span>
-                      </label>
+                      </div>
 
                       {row.isConforming ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <Badge variant="outline" className="gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                           Vía Verde: Lote DISPONIBLE
-                        </span>
+                        </Badge>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs">
+                        <Badge variant="outline" className="gap-1.5 bg-amber-50 text-amber-800 border-amber-300">
                           <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                           Irá a Cuarentena / Revisión Técnica
-                        </span>
+                        </Badge>
                       )}
                     </div>
                   </div>
                 );
               })}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
           <div className="flex justify-end gap-3 pt-2">
-            <Link
-              href={`/purchasing/orders/${orderId}`}
-              className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors"
-            >
-              Cancelar
-            </Link>
-            <button
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/purchasing/orders/${orderId}`}>
+                Cancelar
+              </Link>
+            </Button>
+            <Button
               type="submit"
               disabled={submitting}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-5 py-2.5 rounded-lg transition-colors shadow-xs disabled:opacity-50"
+              size="sm"
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
             >
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
               {submitting
                 ? "Procesando entrada..."
                 : "Confirmar Recepción de Mercancía"}
-            </button>
+            </Button>
           </div>
         </form>
       )}

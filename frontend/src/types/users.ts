@@ -1,7 +1,7 @@
 export type UserRole =
   | "ADMINISTRADOR"
   | "ALMACENISTA"
-  | "ANALISTA_LABORATORIO"
+  | "LABORATORIO"
   | "COMPRAS"
   | "SOLICITANTE"
   | "ADMINISTRACION";

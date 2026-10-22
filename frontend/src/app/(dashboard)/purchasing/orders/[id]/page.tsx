@@ -37,7 +37,12 @@ import {
   Clock,
   X,
   Plus,
+  Mail,
+  MessageCircle,
 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 export default function OrderDetailPage() {
   const params = useParams();
@@ -155,20 +160,25 @@ export default function OrderDetailPage() {
 
   if (!order) {
     return (
-      <div className="p-8 text-center space-y-4">
-        <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
-          <FileText className="w-6 h-6" />
-        </div>
-        <h2 className="text-lg font-bold text-slate-900">
-          Orden de compra no encontrada
-        </h2>
-        <button
-          type="button"
-          onClick={() => router.push("/purchasing/orders")}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs bg-slate-900 text-white rounded-lg cursor-pointer hover:bg-slate-800 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" /> Volver al listado
-        </button>
+      <div className="p-8 text-center space-y-4 max-w-md mx-auto">
+        <Card className="shadow-xs p-6 space-y-4">
+          <CardContent className="space-y-4 p-0">
+            <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center mx-auto text-muted-foreground">
+              <FileText className="w-6 h-6" />
+            </div>
+            <h2 className="text-lg font-bold text-slate-900">
+              Orden de compra no encontrada
+            </h2>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => router.push("/purchasing/orders")}
+              className="gap-2 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" /> Volver al listado
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -427,12 +437,7 @@ export default function OrderDetailPage() {
           sourceAccountId
             ? Number(sourceAccountId)
             : null,
-        destinationAccount:
-          (paymentMethod === "TRANSFERENCIA" ||
-            paymentMethod === "PAGO_MOVIL") &&
-          destinationAccount.trim()
-            ? destinationAccount.trim()
-            : null,
+        destinationAccount: null,
         referenceNumber: referenceNumber.trim(),
         amountPaid: parsedAmountPaid,
         transactionCurrency,
@@ -632,27 +637,78 @@ export default function OrderDetailPage() {
     );
   };
 
+  const handleSendEmail = () => {
+    if (!order) return;
+    const recipient = order.supplier?.email || "";
+    const subject = encodeURIComponent(
+      `Orden de Compra #${order.orderNumber} - Instituto de Inmunología Clínica`
+    );
+    const body = encodeURIComponent(
+      `Estimado(a) ${order.supplier?.name || "Proveedor"},\n\n` +
+      `Le hacemos llegar la Orden de Compra #${order.orderNumber} emitida por el Instituto de Inmunología Clínica (RIF J-30710739-1) por un valor total de ${symbol} ${Number(order.total).toFixed(2)} (${order.currency}).\n\n` +
+      `Cantidad de renglones solicitados: ${order.items?.length || 0}.\n\n` +
+      `Agradecemos confirmar recepción y los tiempos estimados de entrega.\n\n` +
+      `Atentamente,\n` +
+      `Departamento de Compras y Suministros\n` +
+      `Instituto de Inmunología Clínica · ERP-IDI`
+    );
+    window.location.href = `mailto:${recipient}?subject=${subject}&body=${body}`;
+  };
+
+  const handleSendWhatsApp = () => {
+    if (!order) return;
+    const rawPhone = order.supplier?.phone || "";
+    let cleanPhone = rawPhone.replace(/\D/g, "");
+    if (!cleanPhone) {
+      const inputPhone = window.prompt(
+        "Ingrese el número telefónico del proveedor para WhatsApp (ej: 584121234567):",
+        ""
+      );
+      if (!inputPhone) return;
+      cleanPhone = inputPhone.replace(/\D/g, "");
+    }
+    if (cleanPhone.startsWith("0")) {
+      cleanPhone = "58" + cleanPhone.slice(1);
+    } else if (cleanPhone.length === 10 && !cleanPhone.startsWith("58")) {
+      cleanPhone = "58" + cleanPhone;
+    }
+
+    const message = encodeURIComponent(
+      `*INSTITUTO DE INMUNOLOGÍA CLÍNICA* (RIF J-30710739-1)\n` +
+      `*ORDEN DE COMPRA:* ${order.orderNumber}\n` +
+      `*Proveedor:* ${order.supplier?.name || "Proveedor"}\n` +
+      `*Monto Total:* ${symbol} ${Number(order.total).toFixed(2)} (${order.currency})\n` +
+      `*Renglones:* ${order.items?.length || 0}\n\n` +
+      `Estimado proveedor, le notificamos la emisión de la orden de compra adjunta. Agradecemos confirmar recepción y disponibilidad para entrega.\n\n` +
+      `_Departamento de Compras y Suministros_`
+    );
+
+    window.open(`https://wa.me/${cleanPhone}?text=${message}`, "_blank");
+  };
+
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-6xl mx-auto print:p-0 print:m-0 print:max-w-none">
       {/* Encabezado de Acciones (Oculto en Impresión) */}
-      <div className="no-print print:hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-200">
+      <div className="no-print print:hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-border">
         <div className="flex items-center gap-3">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="icon"
             onClick={() => router.push("/purchasing/orders")}
-            className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
+            className="cursor-pointer"
             title="Regresar al listado"
           >
             <ArrowLeft className="w-4 h-4" />
-          </button>
+          </Button>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+              <Badge variant="outline" className="font-mono text-xs font-bold bg-blue-50 text-blue-700 border-blue-200">
                 {order.orderNumber || `#${order.id}`}
-              </span>
-              <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold border bg-slate-100 text-slate-800 border-slate-200">
+              </Badge>
+              <Badge variant="outline" className="text-[11px] font-bold">
                 {order.status}
-              </span>
+              </Badge>
               {order.requisition && (
                 <Link
                   href="/purchasing/requisitions"
@@ -665,7 +721,7 @@ export default function OrderDetailPage() {
                 </Link>
               )}
             </div>
-            <h1 className="text-xl font-bold text-slate-900 mt-1">
+            <h1 className="text-xl font-bold text-foreground mt-1">
               Orden de Compra Institucional
             </h1>
           </div>
@@ -673,76 +729,100 @@ export default function OrderDetailPage() {
 
         <div className="flex items-center gap-2 flex-wrap">
           {canPay && (
-            <button
+            <Button
               type="button"
+              size="sm"
               onClick={handleOpenPaymentModal}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors cursor-pointer"
+              className="gap-1.5 cursor-pointer shadow-xs"
             >
               <CreditCard className="w-3.5 h-3.5" />
               Registrar Pago
-            </button>
+            </Button>
           )}
           {canReceive && (
-            <button
+            <Button
               type="button"
+              size="sm"
               onClick={() =>
                 router.push(`/purchasing/orders/${order.id}/receive`)
               }
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition-colors cursor-pointer"
+              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer"
             >
               <Truck className="w-3.5 h-3.5" />
               Recibir Mercancía
-            </button>
+            </Button>
           )}
-          <PrintActionButton label="Imprimir / Exportar Orden PDF" />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleSendEmail}
+            className="no-print print:hidden gap-1.5 shadow-2xs cursor-pointer"
+            title="Enviar orden por Correo Electrónico"
+          >
+            <Mail className="w-3.5 h-3.5 text-blue-600" />
+            <span>Correo</span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleSendWhatsApp}
+            className="no-print print:hidden gap-1.5 shadow-2xs cursor-pointer"
+            title="Enviar detalles por WhatsApp al proveedor"
+          >
+            <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+            <span>WhatsApp</span>
+          </Button>
+          <PrintActionButton label="Descargar / Imprimir PDF" />
         </div>
       </div>
 
       {/* Resumen Superior en Pantalla */}
       <div className="no-print print:hidden grid grid-cols-1 md:grid-cols-4 gap-4">
         {/* Proveedor */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs space-y-2">
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+        <div className="p-4 bg-card text-card-foreground border border-border rounded-xl shadow-xs space-y-2">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
             <Building2 className="w-4 h-4 text-blue-600" />
             Proveedor Adjudicado
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-900">
+            <h3 className="text-sm font-bold text-foreground">
               {order.supplier?.name ?? "Sin proveedor"}
             </h3>
-            <span className="font-mono text-xs text-slate-500 block">
+            <span className="font-mono text-xs text-muted-foreground block">
               RIF: {order.supplier?.rifOrId || order.supplier?.rif || "N/A"}
             </span>
           </div>
         </div>
 
         {/* Importe en Moneda de la Orden */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs space-y-2">
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+        <div className="p-4 bg-card text-card-foreground border border-border rounded-xl shadow-xs space-y-2">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
             <Receipt className="w-4 h-4 text-emerald-600" />
             Total Factura ({currCode})
           </div>
-          <div className="text-2xl font-bold font-mono text-slate-900">
+          <div className="text-2xl font-bold font-mono text-foreground">
             {symbol}{" "}
             {totalAmount.toLocaleString("es-VE", {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             })}
           </div>
-          <span className="text-[11px] text-slate-400 block font-mono">
+          <span className="text-[11px] text-muted-foreground block font-mono">
             Moneda: {currCode} ({symbol})
           </span>
         </div>
 
         {/* Tasa BCV y Conversión Bs. */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs space-y-2">
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+        <div className="p-4 bg-card text-card-foreground border border-border rounded-xl shadow-xs space-y-2">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
             <Coins className="w-4 h-4 text-amber-600" />
             {currCode === "VED"
               ? "Total Moneda Nacional"
               : "Tasa BCV y Total Bs."}
           </div>
-          <div className="text-base font-bold font-mono text-slate-900">
+          <div className="text-base font-bold font-mono text-foreground">
             {totalAmountBs != null
               ? `Bs. ${totalAmountBs.toLocaleString("es-VE", {
                   minimumFractionDigits: 2,
@@ -750,9 +830,9 @@ export default function OrderDetailPage() {
                 })}`
               : "N/A"}
           </div>
-          <div className="flex items-center gap-1 text-[11px] text-slate-500 font-mono">
+          <div className="flex items-center gap-1 text-[11px] text-muted-foreground font-mono">
             <span>Tasa BCV:</span>
-            <span className="font-bold text-slate-700">
+            <span className="font-bold text-foreground/80">
               {currCode === "VED"
                 ? "1.00 (Moneda Base)"
                 : rate > 0
@@ -763,30 +843,30 @@ export default function OrderDetailPage() {
         </div>
 
         {/* Control */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs space-y-2">
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+        <div className="p-4 bg-card text-card-foreground border border-border rounded-xl shadow-xs space-y-2">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
             <Boxes className="w-4 h-4 text-purple-600" />
             Información y Control
           </div>
           <div className="space-y-1 text-xs">
             <div className="flex justify-between">
-              <span className="text-slate-500">Fecha:</span>
-              <span className="font-mono text-slate-700">
+              <span className="text-muted-foreground">Fecha:</span>
+              <span className="font-mono text-foreground/80">
                 {order.createdAt
                   ? new Date(order.createdAt).toLocaleDateString()
                   : "-"}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Renglones:</span>
-              <span className="font-semibold text-slate-800">
+              <span className="text-muted-foreground">Renglones:</span>
+              <span className="font-semibold text-foreground">
                 {order.items?.length ?? 0}
               </span>
             </div>
             {order.requisition?.departmentSection && (
               <div className="flex justify-between">
-                <span className="text-slate-500">Dpto.:</span>
-                <span className="font-semibold text-slate-800 truncate max-w-[120px]">
+                <span className="text-muted-foreground">Dpto.:</span>
+                <span className="font-semibold text-foreground truncate max-w-[120px]">
                   {order.requisition.departmentSection}
                 </span>
               </div>
@@ -796,17 +876,17 @@ export default function OrderDetailPage() {
       </div>
 
       {/* Panel de Resumen Financiero y Estado de Pagos en Pantalla */}
-      <div className="no-print print:hidden bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-slate-100">
+      <div className="no-print print:hidden bg-card text-card-foreground border border-border rounded-xl p-5 shadow-xs">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-border">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+            <div className="w-9 h-9 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
               <Landmark className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-slate-900">
+              <h2 className="text-sm font-bold text-foreground">
                 Resumen Financiero y Estado de Liquidación
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 Monitoreo multi-moneda de pagos realizados, amortización de deuda y saldo pendiente
               </p>
             </div>
@@ -828,23 +908,23 @@ export default function OrderDetailPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
           {/* Total Orden */}
-          <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200/80 space-y-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 block">
+          <div className="p-3.5 rounded-lg bg-muted/40 border border-border space-y-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">
               Total Orden
             </span>
-            <div className="text-xl font-bold font-mono text-slate-900">
+            <div className="text-xl font-bold font-mono text-foreground">
               $ {orderTotalUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
             </div>
-            <span className="text-xs font-mono text-slate-500 block">
+            <span className="text-xs font-mono text-muted-foreground block">
               Equiv. Bs. {totalOrderBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
 
           {/* Total Amortizado / Pagado */}
-          <div className="p-3.5 rounded-lg bg-emerald-50/60 border border-emerald-200/80 space-y-1">
-            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
+          <div className="p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 space-y-1">
+            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
               <span>Total Pagado / Amortizado</span>
-              <span className="font-mono text-[10px] bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-800 font-bold">
+              <span className="font-mono text-[10px] bg-emerald-500/20 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-300 font-bold">
                 {orderTotalUsd > 0
                   ? Math.min(
                       100,
@@ -854,10 +934,10 @@ export default function OrderDetailPage() {
                 %
               </span>
             </div>
-            <div className="text-xl font-bold font-mono text-emerald-700">
+            <div className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
               $ {totalPaidUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
             </div>
-            <span className="text-xs font-mono text-emerald-600 block">
+            <span className="text-xs font-mono text-emerald-600/80 dark:text-emerald-400/80 block">
               Equiv. Bs. {totalPaidBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
@@ -866,27 +946,27 @@ export default function OrderDetailPage() {
           <div
             className={`p-3.5 rounded-lg border space-y-1 ${
               remainingDebtUsd > 0
-                ? "bg-amber-50/60 border-amber-200/80"
-                : "bg-slate-50 border-slate-200/80"
+                ? "bg-amber-500/10 border-amber-500/20"
+                : "bg-muted/40 border-border"
             }`}
           >
             <span
               className={`text-[11px] font-semibold uppercase tracking-wider block ${
-                remainingDebtUsd > 0 ? "text-amber-700" : "text-slate-500"
+                remainingDebtUsd > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
               }`}
             >
               Saldo Pendiente por Pagar
             </span>
             <div
               className={`text-xl font-bold font-mono ${
-                remainingDebtUsd > 0 ? "text-amber-700" : "text-slate-700"
+                remainingDebtUsd > 0 ? "text-amber-600 dark:text-amber-400" : "text-foreground"
               }`}
             >
               $ {remainingDebtUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
             </div>
             <span
               className={`text-xs font-mono block ${
-                remainingDebtUsd > 0 ? "text-amber-600" : "text-slate-400"
+                remainingDebtUsd > 0 ? "text-amber-600/80 dark:text-amber-400/80" : "text-muted-foreground"
               }`}
             >
               Equiv. Bs. {remainingDebtBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1049,9 +1129,14 @@ export default function OrderDetailPage() {
                     item.product?.baseUnit?.abbreviation ||
                     item.product?.unitOfMeasure ||
                     "UND";
+                  const factor = Number(item.multiplier || 1);
+                  const baseUnit =
+                    item.product?.baseUnit?.abbreviation ||
+                    item.product?.unitOfMeasure ||
+                    "UND";
                   const factorText =
-                    Number(item.multiplier || 1) > 1
-                      ? `x${item.multiplier}`
+                    factor > 1
+                      ? `1 ${unitText} = ${factor} ${baseUnit}`
                       : "1:1";
 
                   return (
@@ -1067,14 +1152,24 @@ export default function OrderDetailPage() {
                           {item.product?.name}
                         </div>
                       </td>
-                      <td className="py-2 px-2.5 text-center text-slate-700 print:text-black border-r border-slate-200 print:border-black uppercase">
+                      <td className="py-2 px-2.5 text-center text-slate-700 print:text-black border-r border-slate-200 print:border-black uppercase font-semibold">
                         {unitText}
                       </td>
-                      <td className="py-2 px-2 text-center font-mono text-[11px] text-slate-600 print:text-black border-r border-slate-200 print:border-black">
+                      <td className="py-2 px-2 text-center font-mono text-[10px] text-slate-600 print:text-black border-r border-slate-200 print:border-black">
                         {factorText}
                       </td>
-                      <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-900 print:text-black border-r border-slate-200 print:border-black">
-                        {Number(item.quantityOrdered)}
+                      <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-900 print:text-black border-r border-slate-200 print:border-black whitespace-nowrap">
+                        <span>
+                          {Number(item.quantityOrdered)}{" "}
+                          <span className="font-normal font-sans text-[11px] text-slate-500 print:text-black">
+                            {unitText}
+                          </span>
+                        </span>
+                        {factor > 1 && (
+                          <span className="block text-[10px] font-sans font-normal text-blue-700 print:text-slate-600">
+                            ≈ {Number(item.quantityOrdered) * factor} {baseUnit}
+                          </span>
+                        )}
                       </td>
                       <td className="py-2 px-2.5 text-right font-mono font-medium text-slate-800 print:text-black border-r border-slate-200 print:border-black">
                         {symbol} {Number(item.unitPrice).toFixed(2)}
@@ -1220,21 +1315,21 @@ export default function OrderDetailPage() {
       </PrintableDocument>
 
       {/* Historial de Pagos y Amortizaciones */}
-      <div className="no-print print:hidden bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-        <div className="p-4 border-b border-slate-100 bg-slate-50/70 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      <div className="no-print print:hidden bg-card text-card-foreground border border-border rounded-xl overflow-hidden shadow-xs">
+        <div className="p-4 border-b border-border bg-muted/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="flex items-center gap-2">
-            <CreditCard className="w-4 h-4 text-blue-600" />
+            <CreditCard className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             <div>
-              <h3 className="text-sm font-bold text-slate-900">
+              <h3 className="text-sm font-bold text-foreground">
                 Historial de Pagos y Amortizaciones
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 Transacciones registradas, cuentas asociadas y deducción del saldo deudor
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-mono font-medium px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
+            <span className="text-xs font-mono font-medium px-2.5 py-1 rounded-md bg-muted text-foreground border border-border">
               {payments.length}{" "}
               {payments.length === 1 ? "pago registrado" : "pagos registrados"}
             </span>
@@ -1253,14 +1348,14 @@ export default function OrderDetailPage() {
 
         {payments.length === 0 ? (
           <div className="p-8 text-center space-y-3">
-            <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+            <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center mx-auto text-muted-foreground">
               <CreditCard className="w-6 h-6" />
             </div>
             <div className="space-y-1">
-              <h4 className="text-sm font-bold text-slate-800">
+              <h4 className="text-sm font-bold text-foreground">
                 No se han registrado pagos para esta orden
               </h4>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
                 Utilice el botón &quot;Registrar Pago&quot; para asentar
                 transferencias, pagos móviles, Zelle o desembolsos en efectivo.
               </p>
@@ -1278,8 +1373,8 @@ export default function OrderDetailPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-xs">
-              <thead className="bg-slate-50 text-slate-600">
+            <table className="min-w-full divide-y divide-border text-xs">
+              <thead className="bg-muted/60 text-muted-foreground">
                 <tr>
                   <th className="py-3 px-4 text-left">Fecha</th>
                   <th className="py-3 px-4 text-left">Método</th>
@@ -1293,13 +1388,13 @@ export default function OrderDetailPage() {
                   <th className="py-3 px-4 text-right">Amortizado (USD)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {payments.map((p, idx) => (
                   <tr
                     key={`${p.id || "pay"}-${idx}`}
-                    className="hover:bg-slate-50/80"
+                    className="hover:bg-muted/40 transition-colors"
                   >
-                    <td className="py-3 px-4 font-mono text-slate-700 whitespace-nowrap">
+                    <td className="py-3 px-4 font-mono text-foreground/90 whitespace-nowrap">
                       {p.paymentDate
                         ? new Date(p.paymentDate).toLocaleDateString("es-VE")
                         : p.createdAt
@@ -1313,14 +1408,14 @@ export default function OrderDetailPage() {
                     <td className="py-3 px-4">
                       {renderDestinationAccount(p)}
                     </td>
-                    <td className="py-3 px-4 font-mono font-medium text-slate-800">
+                    <td className="py-3 px-4 font-mono font-medium text-foreground">
                       <div>{p.referenceNumber || p.reference || "S/R"}</div>
                       {(p.reviewedBy || p.authorizedBy || p.approvedBy) && (
-                        <div className="text-[10px] text-slate-500 font-sans mt-0.5 space-y-0.5">
+                        <div className="text-[10px] text-muted-foreground font-sans mt-0.5 space-y-0.5">
                           {p.reviewedBy && (
                             <div>
                               Rev:{" "}
-                              <span className="font-semibold text-slate-700">
+                              <span className="font-semibold text-foreground/90">
                                 {p.reviewedBy}
                               </span>
                             </div>
@@ -1328,7 +1423,7 @@ export default function OrderDetailPage() {
                           {p.authorizedBy && (
                             <div>
                               Aut:{" "}
-                              <span className="font-semibold text-slate-700">
+                              <span className="font-semibold text-foreground/90">
                                 {p.authorizedBy}
                               </span>
                             </div>
@@ -1336,7 +1431,7 @@ export default function OrderDetailPage() {
                           {p.approvedBy && (
                             <div>
                               Apr:{" "}
-                              <span className="font-semibold text-slate-700">
+                              <span className="font-semibold text-foreground/90">
                                 {p.approvedBy}
                               </span>
                             </div>
@@ -1363,18 +1458,18 @@ export default function OrderDetailPage() {
 
       {/* Modal Dinámico de Registro de Pago */}
       {showPaymentModal && (
-        <div className="no-print print:hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="no-print print:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-card text-card-foreground rounded-xl max-w-lg w-full p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto border border-border">
+            <div className="flex items-center justify-between pb-3 border-b border-border">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
                   <CreditCard className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">
+                  <h3 className="text-base font-bold text-foreground">
                     Registrar Pago de Orden
                   </h3>
-                  <p className="text-xs text-slate-500 font-mono">
+                  <p className="text-xs text-muted-foreground font-mono">
                     Orden {order.orderNumber || `#${order.id}`} &bull; Saldo: ${" "}
                     {remainingDebtUsd.toFixed(2)} USD
                   </p>
@@ -1383,7 +1478,7 @@ export default function OrderDetailPage() {
               <button
                 type="button"
                 onClick={() => setShowPaymentModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-muted transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1392,7 +1487,7 @@ export default function OrderDetailPage() {
             <form onSubmit={handleRegisterPayment} className="space-y-4">
               {/* Método de Pago */}
               <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1">
                   Método de Pago *
                 </label>
                 <select
@@ -1406,7 +1501,7 @@ export default function OrderDetailPage() {
                         | "ZELLE"
                     )
                   }
-                  className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 bg-white"
+                  className="w-full text-sm border border-input rounded-lg p-2.5 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background"
                 >
                   <option value="TRANSFERENCIA">Transferencia Bancaria</option>
                   <option value="PAGO_MOVIL">Pago Móvil Interbancario</option>
@@ -1422,7 +1517,7 @@ export default function OrderDetailPage() {
                   <div>
                     <label
                       htmlFor="sourceAccountId"
-                      className="block text-xs font-semibold text-slate-700 uppercase mb-1"
+                      className="block text-xs font-semibold text-muted-foreground uppercase mb-1"
                     >
                       Cuenta Bancaria Origen *
                     </label>
@@ -1431,7 +1526,7 @@ export default function OrderDetailPage() {
                       required
                       value={sourceAccountId}
                       onChange={(e) => setSourceAccountId(e.target.value)}
-                      className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 bg-white font-mono"
+                      className="w-full text-sm border border-input rounded-lg p-2.5 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background font-mono"
                     >
                       <option value="">
                         {loadingAccounts
@@ -1449,12 +1544,12 @@ export default function OrderDetailPage() {
                     </select>
                     {bankAccounts.filter((acc) => acc.isActive).length === 0 &&
                       !loadingAccounts && (
-                        <p className="mt-1 text-[11px] text-amber-700">
+                        <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
                           No hay cuentas bancarias activas registradas. Puede
                           crear cuentas en{" "}
                           <Link
                             href="/inventory/settings"
-                            className="font-bold underline text-amber-900"
+                            className="font-bold underline text-amber-700 dark:text-amber-300"
                           >
                             Configuración &gt; Cuentas Institucionales
                           </Link>
@@ -1462,26 +1557,13 @@ export default function OrderDetailPage() {
                         </p>
                       )}
                   </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
-                      Cuenta Destino / Proveedor
-                    </label>
-                    <input
-                      type="text"
-                      value={destinationAccount}
-                      onChange={(e) => setDestinationAccount(e.target.value)}
-                      placeholder="N° de cuenta o datos de pago móvil del proveedor..."
-                      className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-slate-800"
-                    />
-                  </div>
                 </>
               )}
 
               {/* N° Referencia y Fecha de Pago */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1">
                     {paymentMethod === "EFECTIVO"
                       ? "N° Recibo / Comprobante *"
                       : paymentMethod === "ZELLE"
@@ -1494,11 +1576,11 @@ export default function OrderDetailPage() {
                     value={referenceNumber}
                     onChange={(e) => setReferenceNumber(e.target.value)}
                     placeholder="Ej. 98765432, ZL-88219"
-                    className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-slate-800"
+                    className="w-full text-sm border border-input rounded-lg p-2.5 focus:ring-2 focus:ring-ring outline-none font-mono text-foreground bg-background"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1">
                     Fecha de Pago *
                   </label>
                   <input
@@ -1506,7 +1588,7 @@ export default function OrderDetailPage() {
                     required
                     value={paymentDate}
                     onChange={(e) => setPaymentDate(e.target.value)}
-                    className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800"
+                    className="w-full text-sm border border-input rounded-lg p-2.5 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background"
                   />
                 </div>
               </div>
@@ -1514,7 +1596,7 @@ export default function OrderDetailPage() {
               {/* Moneda y Monto Pagado */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1">
                     Moneda del Pago *
                   </label>
                   <select
@@ -1524,7 +1606,7 @@ export default function OrderDetailPage() {
                         e.target.value as "USD" | "VED" | "EUR"
                       )
                     }
-                    className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 bg-white"
+                    className="w-full text-sm border border-input rounded-lg p-2.5 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background"
                   >
                     <option value="USD">USD ($)</option>
                     <option value="VED">VED (Bs.)</option>
@@ -1533,7 +1615,7 @@ export default function OrderDetailPage() {
                 </div>
                 <div className="sm:col-span-2">
                   <div className="flex justify-between items-center mb-1">
-                    <label className="block text-xs font-semibold text-slate-600 uppercase">
+                    <label className="block text-xs font-semibold text-muted-foreground uppercase">
                       Monto Pagado (
                       {transactionCurrency === "VED"
                         ? "Bs."
@@ -1546,7 +1628,7 @@ export default function OrderDetailPage() {
                       <button
                         type="button"
                         onClick={handleFillRemainingDebt}
-                        className="text-[10px] text-blue-600 hover:text-blue-700 font-semibold underline cursor-pointer"
+                        className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-semibold cursor-pointer"
                       >
                         Pagar saldo total
                       </button>
@@ -1560,7 +1642,7 @@ export default function OrderDetailPage() {
                     value={amountPaid}
                     onChange={(e) => setAmountPaid(e.target.value)}
                     placeholder="0.00"
-                    className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none font-mono font-bold text-slate-900"
+                    className="w-full text-sm border border-input rounded-lg p-2.5 focus:ring-2 focus:ring-ring outline-none font-mono font-bold text-foreground bg-background"
                   />
                 </div>
               </div>
@@ -1568,13 +1650,13 @@ export default function OrderDetailPage() {
               {/* Tasa de Cambio (Visible si es VED o EUR) */}
               {(transactionCurrency === "VED" ||
                 transactionCurrency === "EUR") && (
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                <div className="p-3 bg-muted/40 border border-border rounded-lg space-y-2">
                   <div className="flex justify-between items-center">
-                    <label className="block text-xs font-semibold text-slate-700">
+                    <label className="block text-xs font-semibold text-foreground">
                       Tasa de Cambio a aplicar (Bs./
                       {transactionCurrency === "EUR" ? "€" : "$"})
                     </label>
-                    <span className="text-[10px] text-slate-400 font-mono">
+                    <span className="text-[10px] text-muted-foreground font-mono">
                       BCV Oficial:{" "}
                       {transactionCurrency === "VED"
                         ? bcvRates.USD.toFixed(2)
@@ -1588,9 +1670,9 @@ export default function OrderDetailPage() {
                     min="0.0001"
                     value={paymentExchangeRate}
                     onChange={(e) => setPaymentExchangeRate(e.target.value)}
-                    className="w-full text-sm border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-slate-800 bg-white"
+                    className="w-full text-sm border border-input rounded-lg p-2 focus:ring-2 focus:ring-ring outline-none font-mono text-foreground bg-background"
                   />
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-muted-foreground">
                     Precargada con la tasa BCV del día, editable si se acuerda
                     una tasa contractual específica.
                   </p>
@@ -1598,16 +1680,16 @@ export default function OrderDetailPage() {
               )}
 
               {/* Indicador Reactivo de Amortización */}
-              <div className="p-3.5 rounded-lg bg-blue-50/70 border border-blue-200/80 space-y-1.5">
+              <div className="p-3.5 rounded-lg bg-blue-500/10 border border-blue-500/20 space-y-1.5">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-blue-900">
+                  <span className="font-semibold text-blue-700 dark:text-blue-300">
                     Equivale a amortizar de la deuda:
                   </span>
-                  <span className="font-mono text-sm font-bold text-blue-800">
+                  <span className="font-mono text-sm font-bold text-blue-600 dark:text-blue-400">
                     $ {dynamicAmortizedUsd.toFixed(2)} USD
                   </span>
                 </div>
-                <div className="flex justify-between items-center text-[11px] text-blue-700 font-mono">
+                <div className="flex justify-between items-center text-[11px] text-blue-600/80 dark:text-blue-300/80 font-mono">
                   <span>Deuda restante actual:</span>
                   <span>$ {remainingDebtUsd.toFixed(2)} USD</span>
                 </div>
@@ -1615,8 +1697,8 @@ export default function OrderDetailPage() {
 
               {/* Alerta de Sobrepago */}
               {isOverpaying && (
-                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 flex items-start gap-2 text-rose-800 text-xs">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 flex items-start gap-2 text-destructive text-xs">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-destructive" />
                   <div>
                     <span className="font-bold block">
                       El monto amortizado excede la deuda restante
@@ -1632,13 +1714,13 @@ export default function OrderDetailPage() {
               )}
 
               {/* Firmas de Autorización */}
-              <div className="border-t border-slate-200 pt-3 space-y-2">
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+              <div className="border-t border-border pt-3 space-y-2">
+                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
                   Firmas de Autorización del Pago
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                    <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
                       Revisado por
                     </label>
                     <input
@@ -1646,11 +1728,11 @@ export default function OrderDetailPage() {
                       value={reviewedBy}
                       onChange={(e) => setReviewedBy(e.target.value)}
                       placeholder="Ej. Lic. Ana Pérez"
-                      className="w-full text-xs border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800"
+                      className="w-full text-xs border border-input rounded-lg p-2 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                    <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
                       Autorizado por
                     </label>
                     <input
@@ -1658,11 +1740,11 @@ export default function OrderDetailPage() {
                       value={authorizedBy}
                       onChange={(e) => setAuthorizedBy(e.target.value)}
                       placeholder="Ej. Dr. Roberto Silva"
-                      className="w-full text-xs border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800"
+                      className="w-full text-xs border border-input rounded-lg p-2 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                    <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
                       Aprobado por
                     </label>
                     <input
@@ -1670,18 +1752,18 @@ export default function OrderDetailPage() {
                       value={approvedBy}
                       onChange={(e) => setApprovedBy(e.target.value)}
                       placeholder="Ej. Dra. Carmen Díaz"
-                      className="w-full text-xs border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800"
+                      className="w-full text-xs border border-input rounded-lg p-2 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background"
                     />
                   </div>
                 </div>
               </div>
 
               {/* Botones de Acción */}
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex justify-end gap-3 pt-3 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setShowPaymentModal(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50 text-xs font-semibold cursor-pointer"
+                  className="px-4 py-2 border border-input rounded-lg text-muted-foreground hover:bg-muted text-xs font-semibold cursor-pointer"
                 >
                   Cancelar
                 </button>

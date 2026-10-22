@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma.js';
 import { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
 import { serializeBigInt } from '../utils/serializer.js';
+import { PurchaseFinanceService } from './purchase-finance.service.js';
 
 export interface CreateSupplierDTO {
   rifOrId: string;
@@ -23,11 +24,22 @@ export interface UpdateSupplierDTO {
 
 export interface RegisterSupplierPaymentDTO {
   supplierId: number;
-  amountUsd: number;
-  paymentMethod: PaymentMethod;
+  amountUsd?: number;
+  amount?: number;
+  amountPaid?: number;
+  method?: string;
+  paymentMethod?: PaymentMethod | string;
+  sourceAccountId?: number | null;
+  transactionCurrency?: string;
+  exchangeRate?: number | null;
+  bankName?: string | null;
   referenceNumber?: string | null;
   paymentDate?: Date;
   notes?: string | null;
+  receiptImageUrl?: string | null;
+  reviewedBy?: string | null;
+  authorizedBy?: string | null;
+  approvedBy?: string | null;
   registeredById: number;
 }
 
@@ -156,7 +168,7 @@ export class SupplierService {
         orders: {
           where: { status: { not: OrderStatus.CANCELADA } },
           include: {
-            currency: true,
+            currencyRel: true,
             payments: {
               include: {
                 currency: true,
@@ -191,77 +203,51 @@ export class SupplierService {
   }
 
   static async registerPayment(data: RegisterSupplierPaymentDTO) {
-    if (data.amountUsd <= 0)
+    const rawAmount =
+      data.amountPaid !== undefined && data.amountPaid !== null
+        ? Number(data.amountPaid)
+        : data.amount !== undefined && data.amount !== null
+          ? Number(data.amount)
+          : Number(data.amountUsd || 0);
+
+    if (rawAmount <= 0) {
       throw new Error('El monto del pago debe ser mayor que 0');
-    return prisma.$transaction(async (tx) => {
-      const supplier = await tx.supplier.findUnique({
-        where: { id: data.supplierId },
-        include: {
-          orders: {
-            where: { status: { not: OrderStatus.CANCELADA } },
-            include: { payments: true },
-            orderBy: { createdAt: 'asc' },
-          },
-        },
-      });
-      if (!supplier) throw new Error('Proveedor no encontrado');
+    }
 
-      const target = supplier.orders.find(
-        (order) => this.summarizeOrder(order).balanceUsd > 0.009
-      );
-      if (!target) throw new Error('El proveedor no tiene saldo pendiente');
+    const supplier = await prisma.supplier.findUnique({
+      where: { id: data.supplierId },
+      include: {
+        orders: {
+          where: { status: { not: OrderStatus.CANCELADA } },
+          include: { payments: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!supplier) throw new Error('Proveedor no encontrado');
 
-      const ves = await tx.currency.findUnique({
-        where: { code: 'VES' },
-        include: { exchanges: { orderBy: { effectiveDate: 'desc' }, take: 1 } },
-      });
-      const rate =
-        data.paymentMethod === PaymentMethod.TRANSFERENCIA_USD ||
-        data.paymentMethod === PaymentMethod.EFECTIVO_USD
-          ? 1
-          : Number(ves?.exchanges[0]?.rate ?? 1);
-      const currencyId =
-        data.paymentMethod === PaymentMethod.TRANSFERENCIA_USD ||
-        data.paymentMethod === PaymentMethod.EFECTIVO_USD
-          ? 1
-          : 2;
-      const amount = currencyId === 1 ? data.amountUsd : data.amountUsd * rate;
-      const payment = await tx.orderPayment.create({
-        data: {
-          orderId: target.id,
-          paymentMethod: data.paymentMethod,
-          currencyId,
-          exchangeRate: rate,
-          amount,
-          referenceNumber: data.referenceNumber?.trim() || null,
-          paymentDate: data.paymentDate ?? new Date(),
-          receiptImageUrl: data.notes?.trim() || null,
-          registeredById: data.registeredById,
-        },
-        include: { currency: true },
-      });
-      const allPayments = [...target.payments, payment];
-      const paidUsd = allPayments.reduce(
-        (sum, item) =>
-          sum +
-          this.normalizePaymentToUsd(
-            Number(item.amount),
-            item.currencyId,
-            Number(item.exchangeRate)
-          ),
-        0
-      );
-      const totalUsd = this.summarizeOrder(target).totalUsd;
-      await tx.order.update({
-        where: { id: target.id },
-        data: {
-          paymentStatus:
-            paidUsd >= totalUsd - 0.01
-              ? PaymentStatus.PAGADO
-              : PaymentStatus.PAGADO_PARCIAL,
-        },
-      });
-      return payment;
+    const target = supplier.orders.find(
+      (order) => this.summarizeOrder(order).balanceUsd > 0.009
+    );
+    if (!target) throw new Error('El proveedor no tiene saldo pendiente');
+
+    return PurchaseFinanceService.registerPayment({
+      orderId: target.id,
+      method: data.method,
+      paymentMethod: data.paymentMethod as any,
+      sourceAccountId: data.sourceAccountId,
+      amount: rawAmount,
+      amountPaid: rawAmount,
+      transactionCurrency: data.transactionCurrency || 'USD',
+      exchangeRate: data.exchangeRate,
+      bankName: data.bankName,
+      referenceNumber: data.referenceNumber,
+      paymentDate: data.paymentDate ?? new Date(),
+      receiptImageUrl: data.receiptImageUrl ?? data.notes,
+      reviewedBy: data.reviewedBy,
+      authorizedBy: data.authorizedBy,
+      approvedBy: data.approvedBy,
+      registeredById: data.registeredById,
     });
   }
   static async listSuppliers(search?: string, includeInactive = false) {

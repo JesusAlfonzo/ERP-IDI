@@ -20,6 +20,7 @@ export interface KardexItem {
   performedBy: {
     fullName: string;
     username: string;
+    department?: string | null;
   } | null;
   batch?: {
     lotNumber: string;

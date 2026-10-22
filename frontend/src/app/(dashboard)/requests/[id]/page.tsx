@@ -23,6 +23,10 @@ import {
   AlertCircle,
   CheckCircle2,
 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const STATUS_CONFIG: Record<
   RequestStatus,
@@ -164,17 +168,22 @@ export default function RequestDetailPage() {
 
   if (!request) {
     return (
-      <div className="p-8 text-center space-y-4">
-        <h2 className="text-lg font-bold text-slate-900">
-          Solicitud no encontrada
-        </h2>
-        <button
-          type="button"
-          onClick={() => router.push("/requests")}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs bg-slate-900 text-white rounded-lg cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" /> Volver a solicitudes
-        </button>
+      <div className="p-8 text-center space-y-4 max-w-md mx-auto">
+        <Card className="shadow-xs p-6 space-y-4">
+          <CardContent className="space-y-4 p-0">
+            <h2 className="text-lg font-bold text-slate-900">
+              Solicitud no encontrada
+            </h2>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => router.push("/requests")}
+              className="gap-2 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" /> Volver a solicitudes
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -201,26 +210,29 @@ export default function RequestDetailPage() {
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-5xl mx-auto print:p-0 print:m-0 print:max-w-none">
       {/* Barra de Acciones Superior (Oculta al imprimir) */}
-      <div className="no-print print:hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-200">
+      <div className="no-print print:hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-border">
         <div className="flex items-center gap-3">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="icon"
             onClick={() => router.push("/requests")}
-            className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
+            className="cursor-pointer"
             title="Volver"
           >
             <ArrowLeft className="w-4 h-4" />
-          </button>
+          </Button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
+              <Badge variant="outline" className="font-mono text-xs font-bold bg-blue-50 text-blue-800 border-blue-200">
                 {request.requestNumber}
-              </span>
-              <span
-                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${statusConfig.className}`}
+              </Badge>
+              <Badge
+                variant="outline"
+                className={`text-[11px] font-bold ${statusConfig.className}`}
               >
                 {statusConfig.label}
-              </span>
+              </Badge>
             </div>
             <h1 className="text-xl font-bold text-slate-900 mt-1">
               Requisición Interna de Materiales
@@ -234,11 +246,12 @@ export default function RequestDetailPage() {
             <>
               {request.status === "PENDIENTE" && (
                 <>
-                  <button
+                  <Button
                     type="button"
+                    size="sm"
                     onClick={() => void handleApprove()}
                     disabled={actionLoading}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 transition-colors cursor-pointer"
+                    className="gap-1.5 bg-sky-600 hover:bg-sky-700 text-white cursor-pointer"
                   >
                     {actionLoading ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -246,27 +259,30 @@ export default function RequestDetailPage() {
                       <CheckCheck className="w-3.5 h-3.5" />
                     )}
                     Aprobar
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => void handleReject()}
                     disabled={actionLoading}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors cursor-pointer"
+                    className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 cursor-pointer"
                   >
                     <Ban className="w-3.5 h-3.5" />
                     Rechazar
-                  </button>
+                  </Button>
                 </>
               )}
 
               {canDispatch && (
-                <button
+                <Button
                   type="button"
+                  size="sm"
                   onClick={() => router.push(`/requests?dispatch=${request.id}`)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 shadow-xs transition-colors cursor-pointer"
+                  className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer"
                 >
                   <Check className="w-3.5 h-3.5" /> Despachar
-                </button>
+                </Button>
               )}
             </>
           )}
@@ -276,19 +292,17 @@ export default function RequestDetailPage() {
       </div>
 
       {feedback && (
-        <div
-          className={`no-print print:hidden p-3 rounded-lg text-xs flex items-center gap-2 border ${
-            feedback.status === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : "bg-red-50 border-red-200 text-red-800"
-          }`}
-        >
-          {feedback.status === "success" ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-          ) : (
-            <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-          )}
-          <span>{feedback.message}</span>
+        <div className="no-print print:hidden">
+          <Alert variant={feedback.status === "success" ? "default" : "destructive"}>
+            {feedback.status === "success" ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            ) : (
+              <AlertCircle className="h-4 w-4" />
+            )}
+            <AlertDescription className="text-xs font-medium">
+              {feedback.message}
+            </AlertDescription>
+          </Alert>
         </div>
       )}
 

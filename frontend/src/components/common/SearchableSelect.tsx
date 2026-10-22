@@ -230,29 +230,29 @@ export function SearchableSelect<T = unknown>({
         tabIndex={disabled ? -1 : 0}
         onClick={() => !disabled && setIsOpen((prev) => !prev)}
         onKeyDown={handleKeyDown}
-        className={`w-full min-h-[42px] flex items-center justify-between bg-white border rounded-lg px-3 py-2 text-xs transition-colors cursor-pointer outline-none ${
+        className={`w-full min-h-[42px] flex items-center justify-between bg-card text-card-foreground border rounded-lg px-3 py-2 text-xs transition-colors cursor-pointer outline-none ${
           isOpen
-            ? "border-blue-500 ring-2 ring-blue-100"
-            : "border-slate-300 hover:border-slate-400"
-        } ${disabled ? "opacity-50 cursor-not-allowed bg-slate-50" : ""}`}
+            ? "border-primary ring-2 ring-primary/20"
+            : "border-input hover:border-ring"
+        } ${disabled ? "opacity-50 cursor-not-allowed bg-muted" : ""}`}
       >
         {selectedOption ? (
           <div className="flex items-start gap-2.5 min-w-0 mr-2 py-0.5 flex-1">
-            {icon || <Package className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />}
+            {icon || <Package className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />}
             <div className="min-w-0 flex-1">
               {/* Línea 1: Nombre en font-semibold, hasta 1 línea en trigger */}
-              <div className="text-xs font-semibold text-slate-900 leading-snug line-clamp-1">
+              <div className="text-xs font-semibold text-foreground leading-snug line-clamp-1">
                 {selectedOption.label}
               </div>
               {/* Línea 2: Datos secundarios atenuados con puntos medios */}
               {(selectedOption.sublabel || selectedOption.badgeText) && (
-                <div className="text-[11px] text-slate-500 font-normal flex items-center gap-1.5 flex-wrap mt-0.5">
+                <div className="text-[11px] text-muted-foreground font-normal flex items-center gap-1.5 flex-wrap mt-0.5">
                   {selectedOption.sublabel && <span>{selectedOption.sublabel}</span>}
                   {selectedOption.sublabel && selectedOption.badgeText && (
-                    <span className="text-slate-300">·</span>
+                    <span className="text-muted-foreground/40">·</span>
                   )}
                   {selectedOption.badgeText && (
-                    <span className={selectedOption.badgeColor || "text-emerald-600 font-medium"}>
+                    <span className={selectedOption.badgeColor || "text-emerald-600 dark:text-emerald-400 font-medium"}>
                       {selectedOption.badgeText}
                     </span>
                   )}
@@ -262,8 +262,8 @@ export function SearchableSelect<T = unknown>({
           </div>
         ) : (
           <div className="flex items-center gap-2.5 min-w-0 mr-2 py-0.5">
-            {icon || <Package className="w-4 h-4 text-slate-400 shrink-0" />}
-            <span className="text-xs text-slate-400 font-normal">
+            {icon || <Package className="w-4 h-4 text-muted-foreground shrink-0" />}
+            <span className="text-xs text-muted-foreground font-normal">
               {placeholder}
             </span>
           </div>
@@ -274,14 +274,14 @@ export function SearchableSelect<T = unknown>({
             <button
               type="button"
               onClick={handleClear}
-              className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+              className="p-1 text-muted-foreground hover:text-foreground rounded cursor-pointer"
               title="Limpiar selección"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           )}
           <ChevronDown
-            className={`w-4 h-4 text-slate-400 transition-transform ${
+            className={`w-4 h-4 text-muted-foreground transition-transform ${
               isOpen ? "rotate-180" : ""
             }`}
           />
@@ -290,11 +290,11 @@ export function SearchableSelect<T = unknown>({
 
       {/* Menú Desplegable con Panel de Búsqueda y Resultados */}
       {isOpen && (
-        <div className="absolute z-50 left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden text-xs max-h-72 flex flex-col min-w-full sm:min-w-[26rem] max-w-2xl">
+        <div className="absolute z-50 left-0 right-0 mt-1.5 bg-popover text-popover-foreground border border-border rounded-xl shadow-xl overflow-hidden text-xs max-h-72 flex flex-col min-w-full sm:min-w-[26rem] max-w-2xl">
           {/* Cabecera: Campo de búsqueda con espaciado amplio */}
-          <div className="p-3 border-b border-slate-200 bg-white shrink-0">
+          <div className="p-3 border-b border-border bg-popover shrink-0">
             <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
               <input
                 ref={inputRef}
                 type="text"
@@ -305,13 +305,13 @@ export function SearchableSelect<T = unknown>({
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder="Escriba para filtrar por nombre o código..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-8 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all font-medium"
+                className="w-full bg-muted/50 border border-input rounded-lg pl-9 pr-8 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:bg-background transition-all font-medium"
               />
               {searchTerm && (
                 <button
                   type="button"
                   onClick={() => setSearchTerm("")}
-                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground cursor-pointer"
                   title="Limpiar búsqueda"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -325,10 +325,10 @@ export function SearchableSelect<T = unknown>({
             ref={listRef}
             id={listboxId}
             role="listbox"
-            className="overflow-y-auto flex-1 divide-y divide-slate-100 scroll-smooth"
+            className="overflow-y-auto flex-1 divide-y divide-border scroll-smooth"
           >
             {filteredOptions.length === 0 ? (
-              <div className="py-8 px-4 text-center text-slate-400">
+              <div className="py-8 px-4 text-center text-muted-foreground">
                 <p className="font-medium text-xs">{emptyMessage}</p>
               </div>
             ) : (
@@ -345,29 +345,29 @@ export function SearchableSelect<T = unknown>({
                     aria-selected={isSelected}
                     onClick={() => handleSelectOption(opt)}
                     onMouseEnter={() => setHighlightedIndex(idx)}
-                    className={`py-2.5 px-3 flex items-start justify-between hover:bg-slate-50 cursor-pointer transition-colors ${
-                      isHighlighted ? "bg-slate-100/70" : ""
+                    className={`py-2.5 px-3 flex items-start justify-between hover:bg-accent cursor-pointer transition-colors ${
+                      isHighlighted ? "bg-accent" : ""
                     } ${
                       isSelected
-                        ? "bg-blue-50/70 hover:bg-blue-50 text-blue-900"
-                        : "text-slate-800"
+                        ? "bg-primary/10 hover:bg-primary/15 text-primary font-semibold"
+                        : "text-foreground"
                     } ${opt.disabled ? "opacity-50 cursor-not-allowed" : ""}`}
                   >
                     <div className="flex-1 min-w-0 pr-3">
                       {/* Línea 1: Nombre en font-medium, hasta 2 líneas sin corte abrupto */}
-                      <div className="text-xs font-medium text-slate-900 leading-snug line-clamp-2">
+                      <div className="text-xs font-medium text-foreground leading-snug line-clamp-2">
                         {opt.label}
                       </div>
 
                       {/* Línea 2: SKU · Unidad · Empaque · etc. (atenuado con puntos medios) */}
                       {(opt.sublabel || opt.badgeText) && (
-                        <div className="text-[11px] text-slate-500 font-normal flex items-center gap-1.5 flex-wrap mt-1">
+                        <div className="text-[11px] text-muted-foreground font-normal flex items-center gap-1.5 flex-wrap mt-1">
                           {opt.sublabel && <span>{opt.sublabel}</span>}
                           {opt.sublabel && opt.badgeText && (
-                            <span className="text-slate-300">·</span>
+                            <span className="text-muted-foreground/40">·</span>
                           )}
                           {opt.badgeText && (
-                            <span className={opt.badgeColor || "text-emerald-600 font-medium"}>
+                            <span className={opt.badgeColor || "text-emerald-600 dark:text-emerald-400 font-medium"}>
                               {opt.badgeText}
                             </span>
                           )}
@@ -376,7 +376,7 @@ export function SearchableSelect<T = unknown>({
                     </div>
 
                     {isSelected && (
-                      <Check className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                      <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />
                     )}
                   </div>
                 );
@@ -385,7 +385,7 @@ export function SearchableSelect<T = unknown>({
           </div>
 
           {/* Pie Fijo (Sticky) Discreto */}
-          <div className="px-3.5 py-2 bg-slate-50/90 border-t border-slate-200 text-[11px] text-slate-500 flex items-center justify-between shrink-0">
+          <div className="px-3.5 py-2 bg-muted/40 border-t border-border text-[11px] text-muted-foreground flex items-center justify-between shrink-0">
             <span>
               {filteredOptions.length} de {options.length} {itemTypeLabel}
             </span>
@@ -393,9 +393,9 @@ export function SearchableSelect<T = unknown>({
               <button
                 type="button"
                 onClick={() => setSearchTerm("")}
-                className="text-blue-600 hover:underline cursor-pointer"
+                className="text-primary hover:underline cursor-pointer"
               >
-                Limpiar búsqueda
+                Limpiar filtro
               </button>
             )}
           </div>

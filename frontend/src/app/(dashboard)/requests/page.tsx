@@ -13,14 +13,8 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { RequestClientService } from "@/services/request.service";
 import { InventoryClientService } from "@/services/inventory.service";
-import {
-  InventoryMasterService,
-  type DepartmentItem,
-  type JustificationConceptItem,
-} from "@/services/inventory-master.service";
 import { AuthService } from "@/services/auth.service";
 import { toast } from "@/utils/toast";
-import { ProductCombobox } from "@/components/requests/ProductCombobox";
 import { RequestWindowAdminCard } from "@/components/requests/RequestWindowAdminCard";
 import type {
   InternalRequest,
@@ -28,7 +22,7 @@ import type {
   RequestWindowStatus,
   DispatchRequestItemPayload,
 } from "@/types/requests";
-import type { Product, StockBatch, Category } from "@/types/inventory";
+import type { StockBatch } from "@/types/inventory";
 import type { AuthUser } from "@/types/auth";
 import {
   ClipboardList,
@@ -53,7 +47,7 @@ import {
   Sliders,
 } from "lucide-react";
 
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import {
   Table,
   TableHeader,
@@ -102,11 +96,6 @@ const STATUS_CONFIG: Record<
   },
 };
 
-interface FormItem {
-  productId: number;
-  requestedQuantity: number;
-}
-
 interface DispatchAllocationRow {
   batchId: number;
   quantity: number | "";
@@ -121,8 +110,6 @@ function RequestsContent() {
     AuthService.getCurrentUser()
   );
   const [requests, setRequests] = useState<InternalRequest[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [windowStatus, setWindowStatus] = useState<RequestWindowStatus | null>(
     null
   );
@@ -156,18 +143,6 @@ function RequestsContent() {
   // Validación de ventana y cupo para creación
   const canCreate =
     canCreateRole && (isWarehouseStaff || (windowStatus?.canCreate ?? false));
-
-  // Modal Nueva Solicitud
-  const [departments, setDepartments] = useState<DepartmentItem[]>([]);
-  const [justificationConcepts, setJustificationConcepts] = useState<JustificationConceptItem[]>([]);
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | "">("");
-  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
-  const [departmentSection, setDepartmentSection] = useState("");
-  const [justification, setJustification] = useState("");
-  const [formItems, setFormItems] = useState<FormItem[]>([
-    { productId: 0, requestedQuantity: 1 },
-  ]);
-  const [submitting, setSubmitting] = useState(false);
 
   // Modal Despacho Multi-Lote (Solo Almacén)
   const [selectedForDispatch, setSelectedForDispatch] =
@@ -272,30 +247,18 @@ function RequestsContent() {
   const refreshData = async () => {
     setLoading(true);
     try {
-      const [reqs, prods, batches, cats, wStatus, deps, concepts] = await Promise.all([
+      const [reqs, batches, wStatus] = await Promise.all([
         RequestClientService.getRequests(statusFilter || undefined).catch(
           () => []
         ),
-        InventoryClientService.getProducts().catch(() => []),
         isWarehouseStaff
           ? InventoryClientService.getActiveBatches().catch(() => [])
           : Promise.resolve([]),
-        InventoryClientService.getCategories().catch(() => []),
         RequestClientService.getWindowStatus().catch(() => null),
-        InventoryMasterService.getDepartments(true).catch(() => []),
-        InventoryMasterService.getJustificationConcepts(undefined, true).catch(() => []),
       ]);
       setRequests(reqs);
-      setProducts(prods);
       setAvailableBatches(batches);
-      setCategories(cats);
       setWindowStatus(wStatus);
-      setDepartments(deps);
-      setJustificationConcepts(concepts);
-      if (deps.length > 0) {
-        setSelectedDepartmentId((prev) => (prev !== "" ? prev : deps[0].id));
-        setDepartmentSection((prev) => (prev ? prev : deps[0].name));
-      }
     } finally {
       setLoading(false);
     }
@@ -312,31 +275,19 @@ function RequestsContent() {
     startTransition(() => {
       void (async () => {
         try {
-          const [reqs, prods, batches, cats, wStatus, deps, concepts] = await Promise.all([
+          const [reqs, batches, wStatus] = await Promise.all([
             RequestClientService.getRequests(statusFilter || undefined).catch(
               () => []
             ),
-            InventoryClientService.getProducts().catch(() => []),
             isWarehouseStaff
               ? InventoryClientService.getActiveBatches().catch(() => [])
               : Promise.resolve([]),
-            InventoryClientService.getCategories().catch(() => []),
             RequestClientService.getWindowStatus().catch(() => null),
-            InventoryMasterService.getDepartments(true).catch(() => []),
-            InventoryMasterService.getJustificationConcepts(undefined, true).catch(() => []),
           ]);
           if (isMounted) {
             setRequests(reqs);
-            setProducts(prods);
             setAvailableBatches(batches);
-            setCategories(cats);
             setWindowStatus(wStatus);
-            setDepartments(deps);
-            setJustificationConcepts(concepts);
-            if (deps.length > 0) {
-              setSelectedDepartmentId((prev) => (prev !== "" ? prev : deps[0].id));
-              setDepartmentSection((prev) => (prev ? prev : deps[0].name));
-            }
             setLoading(false);
 
             // Si vino query param de despacho y es personal de almacén, abrir modal
@@ -402,88 +353,6 @@ function RequestsContent() {
       );
     });
   }, [requests, statusFilter, searchTerm]);
-
-  const handleAddItem = () => {
-    setFormItems((prev) => [...prev, { productId: 0, requestedQuantity: 1 }]);
-  };
-
-  const handleRemoveItem = (index: number) => {
-    if (formItems.length === 1) return;
-    setFormItems((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleProductSelect = (index: number, productId: number) => {
-    setFormItems((prev) => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], productId };
-      return updated;
-    });
-  };
-
-  const handleQuantityChange = (index: number, quantity: number) => {
-    setFormItems((prev) => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], requestedQuantity: quantity };
-      return updated;
-    });
-  };
-
-  const handleSubmitRequest = async (e: FormEvent) => {
-    e.preventDefault();
-    setFeedback(null);
-
-    const hasInvalid = formItems.some(
-      (it) => !it.productId || it.requestedQuantity <= 0
-    );
-    if (hasInvalid || !justification.trim()) {
-      setFeedback({
-        status: "error",
-        message: "Complete todos los insumos y justificación técnica.",
-      });
-      return;
-    }
-
-    if (!selectedDepartmentId) {
-      setFeedback({
-        status: "error",
-        message: "Debe seleccionar un área o departamento solicitante.",
-      });
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      await RequestClientService.createRequest({
-        departmentId: Number(selectedDepartmentId),
-        departmentSection: departmentSection || undefined,
-        justification: justification.trim(),
-        items: formItems,
-      });
-
-      const successMsg = "Solicitud enviada a almacén exitosamente.";
-      setFeedback({
-        status: "success",
-        message: successMsg,
-      });
-      toast.success(successMsg);
-      setIsNewModalOpen(false);
-      setJustification("");
-      setFormItems([{ productId: 0, requestedQuantity: 1 }]);
-      await refreshData();
-    } catch (err: unknown) {
-      const errorMsg =
-        err instanceof Error
-          ? err.message
-          : "Error al crear la requisición";
-      setFeedback({
-        status: "error",
-        message: errorMsg,
-      });
-      toast.error(errorMsg);
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const handleApprove = async (req: InternalRequest) => {
     if (!isWarehouseStaff) return;
@@ -736,10 +605,7 @@ function RequestsContent() {
           {canCreateRole && (
             <Button
               disabled={!canCreate}
-              onClick={() => {
-                setIsNewModalOpen(true);
-                setFeedback(null);
-              }}
+              onClick={() => router.push("/requests/new")}
               title={
                 !canCreate
                   ? windowStatus?.message || "Ventana cerrada o cupo agotado"
@@ -1021,225 +887,6 @@ function RequestsContent() {
           </TableBody>
         </Table>
       </Card>
-
-      {/* Modal: Nueva Solicitud con shadcn Dialog */}
-      <Dialog open={isNewModalOpen && canCreate} onOpenChange={setIsNewModalOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
-          <DialogHeader className="p-5 border-b border-border bg-muted/30">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                <ClipboardList className="w-5 h-5" />
-              </div>
-              <div>
-                <DialogTitle className="text-base font-bold text-foreground">
-                  Solicitud Interna
-                </DialogTitle>
-                <p className="text-xs text-muted-foreground">
-                  Complete la solicitud de insumos y reactivos para su departamento
-                </p>
-              </div>
-            </div>
-          </DialogHeader>
-
-          <form
-            onSubmit={handleSubmitRequest}
-            className="flex flex-col flex-1 min-h-0"
-          >
-            <div className="p-6 overflow-y-auto space-y-5 flex-1 scroll-smooth">
-              <div className="space-y-1.5">
-                <Label className="text-xs uppercase tracking-wider">
-                  Área / Departamento Solicitante *
-                </Label>
-                <select
-                  value={selectedDepartmentId}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setSelectedDepartmentId(val);
-                    const dep = departments.find((d) => d.id === val);
-                    if (dep) setDepartmentSection(dep.name);
-                  }}
-                  required
-                  className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer font-medium"
-                >
-                  <option value="">-- Seleccione un departamento activo --</option>
-                  {departments.map((dep) => (
-                    <option key={dep.id} value={dep.id}>
-                      {dep.code} - {dep.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-3 pt-2 border-t border-border">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-foreground uppercase tracking-wider">
-                    Insumos / Reactivos Requeridos ({formItems.length})
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddItem}
-                    className="gap-1.5 text-xs text-primary border-primary/20 bg-primary/5 hover:bg-primary/10"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Agregar renglón
-                  </Button>
-                </div>
-
-                <div className="space-y-3">
-                  {formItems.map((item, idx) => {
-                    const selectedProd = products.find(
-                      (p) => p.id === item.productId
-                    );
-                    const unit =
-                      selectedProd?.unitOfMeasure ||
-                      selectedProd?.baseUnit?.abbreviation ||
-                      "UND";
-
-                    return (
-                      <Card
-                        key={idx}
-                        className="p-4 bg-muted/20 border-border"
-                      >
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-background border border-border text-xs font-mono font-bold text-muted-foreground shrink-0">
-                            {idx + 1}
-                          </div>
-
-                          {/* Selector Combobox Avanzado con Búsqueda y Categorías */}
-                          <div className="flex-1 min-w-0">
-                            <Label className="text-[11px] mb-1 block">
-                              Insumo / Reactivo
-                            </Label>
-                            <ProductCombobox
-                              products={products}
-                              categories={categories}
-                              selectedProductId={item.productId}
-                              onSelect={(prodId) =>
-                                handleProductSelect(idx, prodId)
-                              }
-                              placeholder="Buscar insumo por nombre o SKU..."
-                            />
-                          </div>
-
-                          {/* Cantidad solicitada */}
-                          <div className="w-full sm:w-36 shrink-0">
-                            <Label className="text-[11px] mb-1 block">
-                              Cantidad {selectedProd ? `(${unit})` : ""}
-                            </Label>
-                            <div className="relative">
-                              <Input
-                                type="number"
-                                min="1"
-                                placeholder="1"
-                                value={item.requestedQuantity}
-                                onChange={(e) =>
-                                  handleQuantityChange(
-                                    idx,
-                                    Math.max(1, Number(e.target.value))
-                                  )
-                                }
-                                className="font-mono font-bold text-xs"
-                                required
-                              />
-                              {selectedProd && (
-                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground font-medium pointer-events-none">
-                                  {unit}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Botón eliminar renglón */}
-                          <div className="sm:self-end mb-0.5 shrink-0">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() => handleRemoveItem(idx)}
-                              disabled={formItems.length === 1}
-                              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              title="Eliminar renglón"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-border space-y-1.5">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                  <Label className="text-xs uppercase tracking-wider">
-                    Justificación de Uso / Protocolo
-                  </Label>
-                  {justificationConcepts.length > 0 && (
-                    <select
-                      value=""
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (!val) return;
-                        const found = justificationConcepts.find((c) => String(c.id) === val);
-                        if (found) {
-                          const snippet = `${found.title}${found.description ? `: ${found.description}` : ""}`;
-                          setJustification((prev) => (prev ? `${prev}\n• ${snippet}` : snippet));
-                        }
-                      }}
-                      className="text-[11px] bg-primary/5 border border-primary/20 text-primary rounded-md px-2 py-1 focus:ring-1 focus:ring-ring font-medium cursor-pointer"
-                    >
-                      <option value="">+ Seleccionar concepto / protocolo predefinido...</option>
-                      {justificationConcepts.map((jc) => (
-                        <option key={jc.id} value={jc.id}>
-                          [{jc.code}] {jc.title}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                <Textarea
-                  rows={3}
-                  value={justification}
-                  onChange={(e) => setJustification(e.target.value)}
-                  placeholder="Explique el protocolo analítico, lote de producción o justificación del pedido..."
-                  className="text-xs resize-none font-medium"
-                  required
-                />
-              </div>
-            </div>
-
-            <DialogFooter className="p-4 px-6 border-t border-border bg-muted/20 flex sm:justify-between items-center">
-              <span className="text-xs text-muted-foreground">
-                {formItems.length}{" "}
-                {formItems.length === 1
-                  ? "renglón agregado"
-                  : "renglones agregados"}
-              </span>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsNewModalOpen(false)}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={submitting}
-                  className="gap-2"
-                >
-                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {submitting ? "Enviando..." : "Enviar Solicitud"}
-                </Button>
-              </div>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
 
       {/* Modal: Despacho Multi-Lote y Despacho Parcial (Solo Almacén) */}
       <Dialog

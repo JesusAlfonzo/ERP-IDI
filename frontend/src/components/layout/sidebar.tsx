@@ -129,15 +129,15 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
     children: [
       {
-        label: "Órdenes de Compra",
-        href: "/purchasing/orders",
-        icon: ShoppingCart,
-        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
-      },
-      {
         label: "Preórdenes de Compra",
         href: "/purchasing/requisitions",
         icon: FileText,
+        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
+      },
+      {
+        label: "Órdenes de Compra",
+        href: "/purchasing/orders",
+        icon: ShoppingCart,
         roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
       },
       {

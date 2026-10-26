@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { InventoryClientService } from "@/services/inventory.service";
 import { CurrencyService } from "@/services/currency.service";
@@ -23,6 +24,7 @@ import type {
 } from "@/types/purchasing";
 import type { Product, Category } from "@/types/inventory";
 import { ProductPackagingSelector } from "@/components/purchasing/ProductPackagingSelector";
+import { ProtocolBadgeSelector } from "@/components/requests/ProtocolBadgeSelector";
 import {
   FileText,
   Plus,
@@ -532,16 +534,27 @@ export default function PurchaseRequisitionsPage() {
           </p>
         </div>
 
-        <Button
-          onClick={() => {
-            setIsNewModalOpen(true);
-            setFeedback(null);
-          }}
-          className="gap-2 self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          Nueva Preorden
-        </Button>
+        <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-auto">
+          <Badge variant="indigo" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
+            <span className="font-bold">{requisitions.length}</span>
+            <span>totales</span>
+          </Badge>
+          <Badge variant="warning" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
+            <span className="font-bold">{requisitions.filter((r) => r.status === "EN_COTIZACION").length}</span>
+            <span>en cotización</span>
+          </Badge>
+          <Badge variant="success" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
+            <span className="font-bold">{requisitions.filter((r) => r.status === "ADJUDICADA").length}</span>
+            <span>adjudicadas</span>
+          </Badge>
+
+          <Button asChild className="gap-2 ml-1 cursor-pointer">
+            <Link href="/purchasing/requisitions/new">
+              <Plus className="w-4 h-4" />
+              Nueva Preorden
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {feedback && (
@@ -897,39 +910,47 @@ export default function PurchaseRequisitionsPage() {
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-border space-y-1.5">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                  <Label className="text-xs uppercase tracking-wider">
-                    Justificación de la Compra / Protocolo *
-                  </Label>
-                  {justificationConcepts.length > 0 && (
-                    <select
-                      value=""
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (!val) return;
-                        const found = justificationConcepts.find((c) => String(c.id) === val);
-                        if (found) {
-                          const snippet = `${found.title}${found.description ? `: ${found.description}` : ""}`;
-                          setJustification((prev) => (prev ? `${prev}\n• ${snippet}` : snippet));
-                        }
-                      }}
-                      className="text-[11px] bg-primary/5 border border-primary/20 text-primary rounded-md px-2 py-1 focus:ring-1 focus:ring-ring font-medium cursor-pointer"
-                    >
-                      <option value="">+ Seleccionar concepto / protocolo predefinido...</option>
-                      {justificationConcepts.map((jc) => (
-                        <option key={jc.id} value={jc.id}>
-                          [{jc.code}] {jc.title}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
+              <div className="pt-2 border-t border-border space-y-2">
+                <Label className="text-xs uppercase tracking-wider">
+                  Motivo y Justificación de la Compra *
+                </Label>
+                {justificationConcepts.length > 0 && (
+                  <ProtocolBadgeSelector
+                    concepts={justificationConcepts}
+                    isConceptSelected={(c) =>
+                      justification.toLowerCase().includes(c.title.toLowerCase())
+                    }
+                    onToggleConcept={(c) => {
+                      const isPresent = justification
+                        .toLowerCase()
+                        .includes(c.title.toLowerCase());
+                      if (isPresent) {
+                        const filtered = justification
+                          .split("\n")
+                          .filter(
+                            (l) =>
+                              !l.toLowerCase().includes(c.title.toLowerCase())
+                          )
+                          .join("\n")
+                          .trim();
+                        setJustification(filtered);
+                      } else {
+                        const snippet = `• ${c.title}${
+                          c.description ? `: ${c.description}` : ""
+                        }`;
+                        setJustification((prev) =>
+                          prev.trim() ? `${prev.trim()}\n${snippet}` : snippet
+                        );
+                      }
+                    }}
+                    onClearAll={() => setJustification("")}
+                  />
+                )}
                 <Textarea
                   rows={3}
                   value={justification}
                   onChange={(e) => setJustification(e.target.value)}
-                  placeholder="Explique el requerimiento de insumos o el protocolo científico a ejecutar..."
+                  placeholder="Detalle la justificación de la compra o seleccione un motivo rápido..."
                   className="text-xs resize-none font-medium"
                   required
                 />
@@ -1009,7 +1030,10 @@ export default function PurchaseRequisitionsPage() {
                   Justificación Técnica
                 </span>
                 <p className="text-xs text-foreground bg-muted/30 p-3 rounded-lg border border-border">
-                  {selectedForView.justification}
+                  {selectedForView.justification
+                    .replace(/\[[A-Za-z0-9_\-]+\]\s*/g, "")
+                    .replace(/^•\s*/gm, "")
+                    .trim()}
                 </p>
               </div>
 

@@ -11,6 +11,7 @@ import {
   type FormEvent,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { RequestClientService } from "@/services/request.service";
 import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
@@ -45,6 +46,12 @@ import {
   ShieldAlert,
   Layers,
   Sliders,
+  PackageCheck,
+  Pencil,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
@@ -354,6 +361,21 @@ function RequestsContent() {
     });
   }, [requests, statusFilter, searchTerm]);
 
+  // Estados de Paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Reiniciar a la primera página si cambian los filtros
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRequests.length / pageSize));
+  const paginatedRequests = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredRequests.slice(start, start + pageSize);
+  }, [filteredRequests, currentPage, pageSize]);
+
   const handleApprove = async (req: InternalRequest) => {
     if (!isWarehouseStaff) return;
     setApprovingId(req.id);
@@ -602,6 +624,19 @@ function RequestsContent() {
             </Button>
           )}
 
+          {isWarehouseStaff && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push("/requests/dispatch")}
+              className="gap-1.5 border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:border-emerald-800 dark:text-emerald-300 dark:bg-emerald-950/40"
+              title="Crear un nuevo despacho de materiales"
+            >
+              <PackageCheck className="w-4 h-4" />
+              Nuevo Despacho
+            </Button>
+          )}
+
           {canCreateRole && (
             <Button
               disabled={!canCreate}
@@ -779,7 +814,7 @@ function RequestsContent() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredRequests.map((req) => {
+              paginatedRequests.map((req) => {
                 const status = STATUS_CONFIG[req.status] || {
                   label: req.status,
                   variant: "default" as const,
@@ -796,7 +831,9 @@ function RequestsContent() {
                     className="hover:bg-muted/40 transition-colors"
                   >
                     <TableCell className="py-3 px-4 font-mono font-bold text-foreground">
-                      {req.requestNumber}
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-indigo-50/80 text-indigo-700 border border-indigo-200/80">
+                        {req.requestNumber}
+                      </span>
                     </TableCell>
                     <TableCell className="py-3 px-4 font-semibold text-foreground">
                       {req.departmentSection}
@@ -804,29 +841,50 @@ function RequestsContent() {
                     <TableCell className="py-3 px-4 text-muted-foreground">
                       {req.applicant?.fullName || req.applicant?.username}
                     </TableCell>
-                    <TableCell className="py-3 px-4 text-muted-foreground whitespace-nowrap font-mono">
+                    <TableCell className="py-3 px-4 text-muted-foreground whitespace-nowrap font-mono text-xs">
                       {new Date(req.createdAt).toLocaleDateString()}
                     </TableCell>
                     <TableCell className="py-3 px-4 text-center font-bold text-foreground">
-                      {req.items?.length || 0}
+                      <span className="inline-flex items-center justify-center min-w-6 px-1.5 py-0.5 rounded-full text-xs font-mono bg-muted text-foreground">
+                        {req.items?.length || 0}
+                      </span>
                     </TableCell>
                     <TableCell className="py-3 px-4 text-center">
                       <Badge variant={status.variant}>
                         {status.label}
                       </Badge>
                     </TableCell>
-                    <TableCell className="py-3 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
+                    <TableCell className="py-3 px-4 text-center whitespace-nowrap">
+                      <div className="inline-flex items-center justify-center gap-1.5">
                         {/* Botón Ver Comprobante */}
                         <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => router.push(`/requests/${req.id}`)}
-                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs font-medium gap-1 text-muted-foreground hover:text-foreground border-border/80 cursor-pointer"
                           title="Ver detalle del comprobante"
                         >
-                          <Eye className="w-3.5 h-3.5" />
+                          <Link href={`/requests/${req.id}`}>
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Ver</span>
+                          </Link>
                         </Button>
+
+                        {/* Botón Editar (Solo antes de aprobación) */}
+                        {req.status === "PENDIENTE" && (
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-xs font-semibold gap-1 text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100/90 border-indigo-200/80 cursor-pointer transition-colors"
+                            title="Modificar solicitud antes de ser aprobada"
+                          >
+                            <Link href={`/requests/${req.id}/edit`}>
+                              <Pencil className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Editar</span>
+                            </Link>
+                          </Button>
+                        )}
 
                         {/* ACCIONES EXCLUSIVAS DE ALMACÉN / ADMINISTRACIÓN */}
                         {isWarehouseStaff && (
@@ -834,19 +892,18 @@ function RequestsContent() {
                             {req.status === "PENDIENTE" && (
                               <>
                                 <Button
-                                  variant="secondary"
                                   size="sm"
                                   onClick={() => void handleApprove(req)}
                                   disabled={approvingId === req.id}
-                                  className="h-7 text-[11px] gap-1 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200"
-                                  title="Aprobar solicitud"
+                                  className="h-7 px-2.5 text-xs font-semibold gap-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs cursor-pointer"
+                                  title="Aprobar solicitud para retiro"
                                 >
                                   {approvingId === req.id ? (
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                   ) : (
                                     <CheckCheck className="w-3.5 h-3.5" />
                                   )}
-                                  Aprobar
+                                  <span>Aprobar</span>
                                 </Button>
 
                                 <Button
@@ -857,7 +914,7 @@ function RequestsContent() {
                                     setRejectReason("");
                                     setFeedback(null);
                                   }}
-                                  className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                                  className="h-7 w-7 text-destructive hover:bg-destructive/10 cursor-pointer"
                                   title="Rechazar solicitud"
                                 >
                                   <Ban className="w-3.5 h-3.5" />
@@ -867,13 +924,15 @@ function RequestsContent() {
 
                             {canDispatch && (
                               <Button
-                                variant="secondary"
+                                asChild
                                 size="sm"
-                                onClick={() => openDispatchModal(req)}
-                                className="h-7 text-[11px] gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 font-semibold"
-                                title="Despachar materiales"
+                                className="h-7 px-2.5 text-xs font-semibold gap-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs cursor-pointer"
+                                title="Despachar materiales y rebajar de lotes"
                               >
-                                <Check className="w-3.5 h-3.5" /> Despachar
+                                <Link href={`/requests/dispatch?id=${req.id}`}>
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Despachar</span>
+                                </Link>
                               </Button>
                             )}
                           </>
@@ -886,6 +945,97 @@ function RequestsContent() {
             )}
           </TableBody>
         </Table>
+
+        {/* Barra de Paginación */}
+        {filteredRequests.length > 0 && (
+          <div className="p-3.5 border-t border-border bg-muted/20 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            {/* Contador de registros */}
+            <div className="text-muted-foreground font-medium">
+              Mostrando{" "}
+              <span className="font-bold text-foreground font-mono">
+                {(currentPage - 1) * pageSize + 1}
+              </span>{" "}
+              a{" "}
+              <span className="font-bold text-foreground font-mono">
+                {Math.min(currentPage * pageSize, filteredRequests.length)}
+              </span>{" "}
+              de{" "}
+              <span className="font-bold text-foreground font-mono">
+                {filteredRequests.length}
+              </span>{" "}
+              solicitudes
+            </div>
+
+            {/* Controles de navegación y tamaño de página */}
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">Por página:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="h-8 bg-background border border-input rounded-md px-2 text-xs font-semibold text-foreground focus:ring-2 focus:ring-ring cursor-pointer"
+                >
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  className="h-8 w-8 cursor-pointer"
+                  title="Primera página"
+                >
+                  <ChevronsLeft className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="h-8 w-8 cursor-pointer"
+                  title="Página anterior"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </Button>
+
+                <div className="px-2 font-mono font-medium text-foreground text-xs">
+                  Página <strong className="font-bold">{currentPage}</strong> de{" "}
+                  <strong className="font-bold">{totalPages}</strong>
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="h-8 w-8 cursor-pointer"
+                  title="Página siguiente"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className="h-8 w-8 cursor-pointer"
+                  title="Última página"
+                >
+                  <ChevronsRight className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Modal: Despacho Multi-Lote y Despacho Parcial (Solo Almacén) */}

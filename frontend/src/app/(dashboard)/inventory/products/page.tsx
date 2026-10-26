@@ -269,11 +269,51 @@ export default function ProductsPage() {
     });
   };
 
+  // Métricas para badges superiores del Catálogo
+  const totalProducts = products.length;
+  const availableCount = products.filter(
+    (p) => Number(p.totalStock ?? 0) > Number(p.minStockAlert ?? 0)
+  ).length;
+  const lowStockCount = products.filter(
+    (p) =>
+      Number(p.totalStock ?? 0) > 0 &&
+      Number(p.totalStock ?? 0) <= Number(p.minStockAlert ?? 0)
+  ).length;
+  const depletedCount = products.filter(
+    (p) => Number(p.totalStock ?? 0) <= 0
+  ).length;
+  const reagentsCount = products.filter((p) => Boolean(p.isReagent)).length;
+
   return (
     <div className="space-y-6">
       {/* Encabezado Principal */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
         <div>
+          <div className="flex items-center gap-2 flex-wrap mb-1.5">
+            <Badge variant="indigo" className="text-xs">
+              Catálogo ({totalProducts})
+            </Badge>
+            <Badge variant="success" className="text-xs gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              {availableCount} Disponibles
+            </Badge>
+            {lowStockCount > 0 && (
+              <Badge variant="warning" className="text-xs">
+                {lowStockCount} Bajo Stock
+              </Badge>
+            )}
+            {depletedCount > 0 && (
+              <Badge variant="rose" className="text-xs">
+                {depletedCount} Agotados
+              </Badge>
+            )}
+            {reagentsCount > 0 && (
+              <Badge variant="purple" className="text-xs gap-1">
+                <FlaskConical className="w-3 h-3" />
+                {reagentsCount} Reactivos
+              </Badge>
+            )}
+          </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <Package className="w-6 h-6 text-primary" />
             Catálogo Institucional de Insumos y Reactivos
@@ -283,15 +323,11 @@ export default function ProductsPage() {
           </p>
         </div>
 
-        <Button
-          onClick={() => {
-            setIsModalOpen(true);
-            setFeedback(null);
-          }}
-          className="gap-2 self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          Registrar Insumo
+        <Button asChild className="gap-2 self-start sm:self-auto cursor-pointer">
+          <Link href="/inventory/products/new">
+            <Plus className="w-4 h-4" />
+            Registrar Insumo
+          </Link>
         </Button>
       </div>
 
@@ -452,7 +488,7 @@ export default function ProductsPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleOpenDetail(p)}
-                          className="h-7 text-xs font-semibold gap-1.5 bg-blue-50/60 hover:bg-blue-100 text-blue-700 border-blue-200"
+                          className="h-7 text-xs font-semibold gap-1.5 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 border-indigo-200/80"
                           title="Ver Ficha y Lotes del Insumo"
                         >
                           <Boxes className="w-3.5 h-3.5" />
@@ -488,15 +524,15 @@ export default function ProductsPage() {
             <div className="p-5 border-b border-border bg-muted/30 flex items-start justify-between gap-4 sticky top-0 z-10 backdrop-blur-xs">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                  <Badge variant="indigo" className="font-mono text-xs font-bold">
                     {selectedProductForDetail.sku || `#${selectedProductForDetail.id}`}
-                  </span>
+                  </Badge>
                   {selectedProductForDetail.isReagent ? (
                     <Badge variant="purple" className="gap-1">
                       <FlaskConical className="w-3 h-3" /> Reactivo Clínico
                     </Badge>
                   ) : (
-                    <Badge variant="secondary">
+                    <Badge variant="outline" className="border-border/60 bg-muted/20 text-muted-foreground text-xs">
                       Insumo General
                     </Badge>
                   )}
@@ -676,7 +712,7 @@ export default function ProductsPage() {
                       Lotes Físicos en Existencia
                     </CardTitle>
                   </div>
-                  <Badge variant="outline" className="font-mono text-[11px]">
+                  <Badge variant="indigo" className="font-mono text-xs">
                     {selectedProductForDetail.batches?.length ?? 0} lote(s)
                   </Badge>
                 </div>

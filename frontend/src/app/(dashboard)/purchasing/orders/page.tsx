@@ -358,7 +358,7 @@ export default function PurchaseOrdersPage() {
   return (
     <div className="space-y-6">
       {/* Encabezado */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <ShoppingCart className="w-6 h-6 text-primary" />
@@ -369,16 +369,35 @@ export default function PurchaseOrdersPage() {
           </p>
         </div>
 
-        <Button
-          onClick={() => {
-            setIsModalOpen(true);
-            setFeedback(null);
-          }}
-          className="self-start sm:self-auto gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Nueva Orden de Compra
-        </Button>
+        <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-auto">
+          <Badge variant="indigo" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
+            <span className="font-bold">{orders.length}</span>
+            <span>órdenes</span>
+          </Badge>
+          <Badge variant="info" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
+            <span className="font-bold">{orders.filter((o) => o.status === "APROBADA").length}</span>
+            <span>aprobadas</span>
+          </Badge>
+          <Badge variant="purple" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
+            <span className="font-bold">
+              {orders.filter((o) => o.status === "EN_PROCESO" || o.status === "PARCIAL").length}
+            </span>
+            <span>en tránsito</span>
+          </Badge>
+          <Badge variant="success" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
+            <span className="font-bold">
+              {orders.filter((o) => o.status === "COMPLETADA" || o.status === "RECIBIDO").length}
+            </span>
+            <span>recibidas</span>
+          </Badge>
+
+          <Button asChild className="gap-2 ml-1 cursor-pointer">
+            <Link href="/purchasing/orders/new">
+              <Plus className="w-4 h-4" />
+              Nueva Orden de Compra
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {feedback && (
@@ -871,17 +890,54 @@ export default function PurchaseOrdersPage() {
                 </div>
               </div>
 
-              {/* Observaciones */}
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold text-foreground uppercase tracking-wider">
-                  Notas de Compra o Términos de Despacho (Opcional)
-                </Label>
+              {/* Observaciones y Badges de Términos Rápidos */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                    Términos de Despacho y Condiciones
+                  </Label>
+                  <span className="text-[11px] text-muted-foreground">
+                    (Haz clic para asociar a las notas)
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  {[
+                    { word: "Contado", text: "Pago de contado contra entrega de mercancía", theme: "bg-emerald-50 text-emerald-700 border-emerald-200/90 hover:bg-emerald-100/90" },
+                    { word: "Crédito", text: "Crédito comercial acordado a 30 días", theme: "bg-amber-50 text-amber-700 border-amber-200/90 hover:bg-amber-100/90" },
+                    { word: "Anticipo", text: "Anticipo acordado para inicio de despacho", theme: "bg-sky-50 text-sky-700 border-sky-200/90 hover:bg-sky-100/90" },
+                    { word: "Refrigerado", text: "Exige transporte bajo estricta cadena de frío (2°C - 8°C)", theme: "bg-purple-50 text-purple-700 border-purple-200/90 hover:bg-purple-100/90" },
+                    { word: "Urgente", text: "Prioridad alta por abastecimiento crítico en servicio", theme: "bg-rose-50 text-rose-700 border-rose-200/90 hover:bg-rose-100/90" },
+                  ].map((badge) => {
+                    const isSelected = notes.toLowerCase().includes(badge.text.toLowerCase());
+                    return (
+                      <button
+                        key={badge.word}
+                        type="button"
+                        onClick={() => {
+                          if (isSelected) {
+                            setNotes((prev) => prev.split("\n").filter((l) => !l.toLowerCase().includes(badge.text.toLowerCase())).join("\n").trim());
+                          } else {
+                            setNotes((prev) => prev.trim() ? `${prev.trim()}\n• ${badge.text}` : `• ${badge.text}`);
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border cursor-pointer transition-all ${
+                          isSelected ? "bg-primary text-primary-foreground border-primary shadow-xs font-semibold" : badge.theme
+                        }`}
+                        title={badge.text}
+                      >
+                        <span className="font-bold">{badge.word}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <Textarea
                   rows={2}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Especificaciones sobre transporte en frío, acuerdos de pago..."
-                  className="resize-none"
+                  className="resize-none text-xs"
                 />
               </div>
             </div>

@@ -12,16 +12,21 @@ const badgeVariants = cva(
         secondary:
           "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
         destructive:
-          "border-transparent bg-destructive text-destructive-foreground shadow-2xs hover:bg-destructive/80",
-        outline: "text-foreground",
+          "border-rose-200/80 bg-rose-50 text-rose-700 shadow-2xs hover:bg-rose-100/80 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-300",
+        outline:
+          "border-border/60 text-foreground bg-muted/20 hover:bg-muted/40",
         success:
-          "border-transparent bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+          "border-emerald-200/80 bg-emerald-50 text-emerald-700 hover:bg-emerald-100/80 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300",
         warning:
-          "border-transparent bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+          "border-amber-200/80 bg-amber-50 text-amber-700 hover:bg-amber-100/80 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300",
         info:
-          "border-transparent bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
+          "border-sky-200/80 bg-sky-50 text-sky-700 hover:bg-sky-100/80 dark:border-sky-800/60 dark:bg-sky-950/40 dark:text-sky-300",
         purple:
-          "border-transparent bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300",
+          "border-purple-200/80 bg-purple-50 text-purple-700 hover:bg-purple-100/80 dark:border-purple-800/60 dark:bg-purple-950/40 dark:text-purple-300",
+        indigo:
+          "border-indigo-200/80 bg-indigo-50 text-indigo-700 hover:bg-indigo-100/80 dark:border-indigo-800/60 dark:bg-indigo-950/40 dark:text-indigo-300",
+        rose:
+          "border-rose-200/80 bg-rose-50 text-rose-700 hover:bg-rose-100/80 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-300",
       },
     },
     defaultVariants: {

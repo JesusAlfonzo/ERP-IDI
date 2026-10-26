@@ -3,6 +3,7 @@ import {
   getRequests,
   getRequestById,
   createRequest,
+  updateRequest,
   approveRequest,
   rejectRequest,
   dispatchRequest,
@@ -26,6 +27,7 @@ router.put('/window-config', requireRoles(['ADMINISTRADOR']), updateWindowConfig
 router.get('/', getRequests);
 router.get('/:id', getRequestById);
 router.post('/', createRequest);
+router.put('/:id', updateRequest);
 
 // Despacho de almacén
 router.post(

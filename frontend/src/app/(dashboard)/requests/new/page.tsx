@@ -17,8 +17,12 @@ import {
 } from "@/services/inventory-master.service";
 import { AuthService } from "@/services/auth.service";
 import { toast } from "@/utils/toast";
+import { cn } from "@/lib/utils";
 import { ProductCombobox } from "@/components/requests/ProductCombobox";
-import { ProtocolBadgeSelector } from "@/components/requests/ProtocolBadgeSelector";
+import {
+  ProtocolBadgeSelector,
+  getConceptSummaryWord,
+} from "@/components/requests/ProtocolBadgeSelector";
 import type { RequestWindowStatus } from "@/types/requests";
 import type { Product, Category } from "@/types/inventory";
 import type { AuthUser } from "@/types/auth";
@@ -247,34 +251,39 @@ export default function NewInternalRequestPage() {
     toast.info("Se limpiaron los renglones sin insumo asignado.");
   }, []);
 
-  // Inserción / alternancia inteligente de conceptos protocolares en Justificación
+  // Inserción / alternancia inteligente de conceptos en Justificación (sin códigos de protocolos)
   const isConceptSelected = useCallback(
     (concept: JustificationConceptItem) => {
-      return justification.includes(`[${concept.code}]`);
+      return justification.toLowerCase().includes(concept.title.toLowerCase());
     },
     [justification]
   );
 
   const handleToggleConcept = useCallback(
     (concept: JustificationConceptItem) => {
-      const isPresent = justification.includes(`[${concept.code}]`);
+      const isPresent = justification
+        .toLowerCase()
+        .includes(concept.title.toLowerCase());
+      const summaryWord = getConceptSummaryWord(concept);
+
       if (isPresent) {
-        // Remover las líneas que correspondan a este protocolo
+        // Remover las líneas que correspondan a esta justificación
         const lines = justification.split("\n");
         const filtered = lines.filter(
-          (line) => !line.includes(`[${concept.code}]`)
+          (line) =>
+            !line.toLowerCase().includes(concept.title.toLowerCase())
         );
         const cleaned = filtered.join("\n").replace(/\n{3,}/g, "\n\n").trim();
         setJustification(cleaned);
-        toast.info(`Protocolo [${concept.code}] removido.`);
+        toast.info(`Justificación "${summaryWord}" removida.`);
       } else {
-        const snippet = `• [${concept.code}] ${concept.title}${
+        const snippet = `• ${concept.title}${
           concept.description ? `: ${concept.description}` : ""
         }`;
         setJustification((prev) =>
           prev.trim() ? `${prev.trim()}\n${snippet}` : snippet
         );
-        toast.success(`Protocolo [${concept.code}] agregado.`);
+        toast.success(`Justificación "${summaryWord}" agregada.`);
       }
     },
     [justification]
@@ -283,15 +292,17 @@ export default function NewInternalRequestPage() {
   const handleClearAllConcepts = useCallback(() => {
     let text = justification;
     for (const c of justificationConcepts) {
-      if (text.includes(`[${c.code}]`)) {
+      if (text.toLowerCase().includes(c.title.toLowerCase())) {
         const lines = text.split("\n");
         text = lines
-          .filter((line) => !line.includes(`[${c.code}]`))
+          .filter(
+            (line) => !line.toLowerCase().includes(c.title.toLowerCase())
+          )
           .join("\n");
       }
     }
     setJustification(text.replace(/\n{3,}/g, "\n\n").trim());
-    toast.info("Se removieron todos los protocolos de la justificación.");
+    toast.info("Se removieron las justificaciones rápidas.");
   }, [justification, justificationConcepts]);
 
   // Cálculo de estadísticas y validaciones en vivo
@@ -482,25 +493,33 @@ export default function NewInternalRequestPage() {
           </p>
         </div>
 
-        {/* Resumen Superior Rápido */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="outline" className="gap-1.5 py-1 px-3 text-xs bg-muted/40">
-            <Layers className="w-3.5 h-3.5 text-primary" />
-            <span className="font-semibold">{validRowsCount}</span>
-            <span className="text-muted-foreground">
+        {/* Resumen Superior Rápido con badges estilizados y coloridos */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <Badge variant="indigo" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
+            <Layers className="w-3.5 h-3.5" />
+            <span className="font-bold">{validRowsCount}</span>
+            <span>
               {validRowsCount === 1 ? "renglón" : "renglones"}
             </span>
           </Badge>
-          <Badge variant="outline" className="gap-1.5 py-1 px-3 text-xs bg-muted/40">
-            <span className="font-semibold">{totalUnits}</span>
-            <span className="text-muted-foreground">unidades totales</span>
+          <Badge variant="purple" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
+            <span className="font-bold">{totalUnits}</span>
+            <span>unidades totales</span>
           </Badge>
           {windowStatus && (
             <Badge
               variant={windowStatus.isOpen ? "success" : "warning"}
-              className="py-1 px-2.5 text-xs"
+              className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium"
             >
-              {windowStatus.isOpen ? "Ventana Operativa Abierta" : "Ventana Restringida"}
+              <span
+                className={cn(
+                  "w-2 h-2 rounded-full shrink-0",
+                  windowStatus.isOpen
+                    ? "bg-emerald-500 animate-pulse"
+                    : "bg-amber-500"
+                )}
+              />
+              <span>{windowStatus.isOpen ? "Ventana Operativa Abierta" : "Ventana Restringida"}</span>
             </Badge>
           )}
         </div>
@@ -847,16 +866,15 @@ export default function NewInternalRequestPage() {
           </CardContent>
         </Card>
 
-        {/* SECCIÓN 3: JUSTIFICACIÓN TÉCNICA Y PROTOCOLOS */}
+        {/* SECCIÓN 3: JUSTIFICACIÓN DE USO / MOTIVO */}
         <Card className="border-border">
           <CardHeader className="pb-3 border-b border-border/50 bg-muted/20">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-primary" />
-              3. Justificación de Uso / Protocolo Técnico *
+              3. Justificación de Uso / Motivo Técnico *
             </CardTitle>
             <CardDescription className="text-xs">
-              Indique el lote de producción, protocolo analítico o justificación del
-              requerimiento.
+              Seleccione un badge de resumen de una palabra para autocompletar la justificación o detalle el motivo del pedido.
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-4 space-y-4">

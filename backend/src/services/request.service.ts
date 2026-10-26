@@ -39,6 +39,20 @@ export interface CreateRequestDTO {
   items: CreateRequestItemDTO[];
 }
 
+export interface UpdateRequestItemDTO {
+  productId: number;
+  quantityRequested: number;
+}
+
+export interface UpdateRequestDTO {
+  departmentId?: number;
+  departmentSection?: string;
+  priority?: RequestPriority;
+  justification?: string;
+  notes?: string | null;
+  items?: UpdateRequestItemDTO[];
+}
+
 export interface ApproveRequestItemDTO {
   itemId: bigint;
   quantityApproved: number;
@@ -353,6 +367,107 @@ export class RequestService {
       applicant: created.user,
       items: created.items.map(formatRequestItem),
     };
+  }
+
+  static async updateRequest(
+    requestId: bigint,
+    userId: number,
+    userRoles: string[],
+    data: UpdateRequestDTO
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const request = await tx.request.findUnique({
+        where: { id: requestId },
+        include: { items: true },
+      });
+
+      if (!request) {
+        throw new Error('Solicitud no encontrada');
+      }
+
+      if (request.status !== RequestStatus.PENDIENTE) {
+        throw new Error(
+          'Solo se pueden modificar solicitudes en estado PENDIENTE antes de ser aprobadas'
+        );
+      }
+
+      const isWarehouse =
+        userRoles.includes('ADMINISTRADOR') || userRoles.includes('ALMACENISTA');
+      if (!isWarehouse && Number(request.userId) !== userId) {
+        throw new Error(
+          'No tienes autorización para editar una solicitud creada por otro usuario'
+        );
+      }
+
+      const updateData: Record<string, any> = {};
+      if (data.departmentId !== undefined) {
+        updateData.departmentId = Number(data.departmentId);
+      }
+      if (data.departmentSection !== undefined) {
+        updateData.departmentSection = data.departmentSection?.trim() || null;
+      }
+      if (data.priority !== undefined) {
+        updateData.priority = data.priority;
+      }
+      if (data.justification !== undefined) {
+        updateData.justification = data.justification.trim();
+      }
+      if (data.notes !== undefined) {
+        updateData.notes = data.notes?.trim() || null;
+      }
+
+      if (data.items && data.items.length > 0) {
+        const hasInvalidItem = data.items.some(
+          (it) => !it.productId || Number(it.quantityRequested) <= 0
+        );
+        if (hasInvalidItem) {
+          throw new Error('Todos los renglones deben tener un insumo válido y cantidad mayor a cero');
+        }
+
+        await tx.requestItem.deleteMany({
+          where: { requestId },
+        });
+
+        await tx.requestItem.createMany({
+          data: data.items.map((it) => ({
+            requestId,
+            productId: BigInt(it.productId),
+            quantityRequested: Number(it.quantityRequested),
+            quantityApproved: 0,
+            quantityDispatched: 0,
+          })),
+        });
+      }
+
+      const updated = await tx.request.update({
+        where: { id: requestId },
+        data: updateData,
+        include: {
+          department: true,
+          items: {
+            include: {
+              product: {
+                include: { baseUnit: true },
+              },
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              username: true,
+              department: true,
+            },
+          },
+        },
+      });
+
+      return {
+        ...updated,
+        applicant: updated.user,
+        items: updated.items.map(formatRequestItem),
+      };
+    });
   }
 
   static async approveRequest(data: ApproveRequestDTO) {

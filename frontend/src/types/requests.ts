@@ -46,6 +46,7 @@ export interface InternalRequest {
   };
   departmentSection: string;
   justification: string;
+  notes?: string | null;
   weeklyTokenCycle?: string;
   createdAt: string;
   applicant: {
@@ -84,6 +85,18 @@ export interface CreateInternalRequestPayload {
   justification: string;
   notes?: string;
   items: {
+    productId: number;
+    requestedQuantity: number;
+  }[];
+}
+
+export interface UpdateInternalRequestPayload {
+  priority?: RequestPriority;
+  departmentId?: number;
+  departmentSection?: string;
+  justification?: string;
+  notes?: string;
+  items?: {
     productId: number;
     requestedQuantity: number;
   }[];

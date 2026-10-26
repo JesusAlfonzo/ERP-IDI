@@ -314,7 +314,7 @@ export default function SupplierDebtsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-[10px] font-mono">
+            <Badge variant="indigo" className="text-[10px] font-mono shadow-2xs font-medium">
               Finanzas & Proveedores
             </Badge>
             <span className="text-xs font-mono font-medium text-muted-foreground">
@@ -329,15 +329,41 @@ export default function SupplierDebtsPage() {
             Balances comerciales, historial de pagos multimoneda y estado de cuenta de proveedores
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => void loadData()}
-          title="Actualizar listado de saldos"
-          className="self-end sm:self-auto"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-        </Button>
+
+        <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-auto">
+          <Badge variant="rose" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
+            <span className="font-bold">{pendingSuppliers}</span>
+            <span>con saldo</span>
+          </Badge>
+          <Badge variant="success" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
+            <span className="font-bold">{debts.length - pendingSuppliers}</span>
+            <span>solventes</span>
+          </Badge>
+          <Badge variant="purple" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium font-mono">
+            <span>BCV: {bcvRates.USD.toFixed(2)} Bs./$</span>
+          </Badge>
+
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => void loadData()}
+            title="Actualizar listado de saldos"
+            className="ml-1 cursor-pointer"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          </Button>
+
+          <Button
+            asChild
+            size="sm"
+            className="gap-1.5 ml-1 text-xs cursor-pointer shadow-xs"
+          >
+            <Link href="/purchasing/debts/payment">
+              <PlusCircle className="w-3.5 h-3.5" />
+              Nuevo Pago
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {feedback && (
@@ -542,14 +568,16 @@ export default function SupplierDebtsPage() {
                   <TableCell className="px-4 py-3">
                     <div className="flex justify-center gap-2">
                       <Button
+                        asChild
                         size="sm"
                         variant="success"
-                        onClick={() => handleOpenPaymentModal(debt)}
-                        className="gap-1 h-7 text-xs font-semibold"
+                        className="gap-1 h-7 text-xs font-semibold cursor-pointer"
                         title="Registrar pago a este proveedor"
                       >
-                        <PlusCircle className="h-3.5 w-3.5" />
-                        Registrar Pago
+                        <Link href={`/purchasing/debts/payment?debtId=${debt.id}`}>
+                          <PlusCircle className="h-3.5 w-3.5" />
+                          Registrar Pago
+                        </Link>
                       </Button>
                       <Button
                         size="sm"
@@ -773,11 +801,48 @@ export default function SupplierDebtsPage() {
                 </div>
               </div>
 
-              {/* Notas / Observaciones */}
-              <div className="space-y-1.5">
-                <Label className="text-xs uppercase">
-                  Notas / Factura Relacionada
-                </Label>
+              {/* Notas y Conceptos Rápidos de Pago */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs uppercase">
+                    Concepto de Pago y Factura Relacionada
+                  </Label>
+                  <span className="text-[11px] text-muted-foreground">
+                    (Haz clic para asociar)
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  {[
+                    { word: "Finiquito", text: "Cancelación total que liquida la deuda pendiente del proveedor", theme: "bg-emerald-50 text-emerald-700 border-emerald-200/90 hover:bg-emerald-100/90" },
+                    { word: "Abono", text: "Abono parcial para amortizar cuenta comercial", theme: "bg-amber-50 text-amber-700 border-amber-200/90 hover:bg-amber-100/90" },
+                    { word: "Factura", text: "Pago correspondiente a factura fiscal entregada", theme: "bg-indigo-50 text-indigo-700 border-indigo-200/90 hover:bg-indigo-100/90" },
+                    { word: "Anticipo", text: "Anticipo comercial para reposición de insumos", theme: "bg-sky-50 text-sky-700 border-sky-200/90 hover:bg-sky-100/90" },
+                    { word: "Urgente", text: "Pago prioritario para desbloqueo de despachos", theme: "bg-rose-50 text-rose-700 border-rose-200/90 hover:bg-rose-100/90" },
+                  ].map((badge) => {
+                    const isSelected = notes.toLowerCase().includes(badge.text.toLowerCase());
+                    return (
+                      <button
+                        key={badge.word}
+                        type="button"
+                        onClick={() => {
+                          if (isSelected) {
+                            setNotes((prev) => prev.split("\n").filter((l) => !l.toLowerCase().includes(badge.text.toLowerCase())).join("\n").trim());
+                          } else {
+                            setNotes((prev) => prev.trim() ? `${prev.trim()}\n• ${badge.text}` : `• ${badge.text}`);
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border cursor-pointer transition-all ${
+                          isSelected ? "bg-primary text-primary-foreground border-primary shadow-xs font-semibold" : badge.theme
+                        }`}
+                        title={badge.text}
+                      >
+                        <span className="font-bold">{badge.word}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <Textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}

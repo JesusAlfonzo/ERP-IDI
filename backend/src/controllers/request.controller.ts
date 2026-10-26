@@ -205,6 +205,78 @@ export const createRequest = async (
   }
 };
 
+export const updateRequest = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    if (!id) {
+      res
+        .status(400)
+        .json({ status: 'BAD_REQUEST', message: 'ID no proporcionado' });
+      return;
+    }
+
+    if (!req.user?.id) {
+      res
+        .status(401)
+        .json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const {
+      priority,
+      departmentId,
+      departmentSection,
+      justification,
+      notes,
+      items,
+    } = req.body;
+
+    let formattedItems;
+    if (Array.isArray(items)) {
+      formattedItems = items.map((it: any) => {
+        const qty = Number(it.requestedQuantity ?? it.quantityRequested);
+        if (!it.productId || !Number.isFinite(qty) || qty <= 0) {
+          throw new Error(
+            'Cada ítem requiere productId y requestedQuantity mayor que 0'
+          );
+        }
+        return {
+          productId: Number(it.productId),
+          quantityRequested: qty,
+        };
+      });
+    }
+
+    const updated = await RequestService.updateRequest(
+      BigInt(id),
+      req.user.id,
+      req.user.roles ?? [],
+      {
+        priority,
+        departmentId: departmentId ? Number(departmentId) : undefined,
+        departmentSection: departmentSection ? String(departmentSection).trim() : undefined,
+        justification: justification ? String(justification).trim() : undefined,
+        notes: notes !== undefined ? (notes ? String(notes).trim() : null) : undefined,
+        items: formattedItems,
+      }
+    );
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Solicitud actualizada exitosamente',
+      data: serializeBigInt(updated),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const approveRequest = async (
   req: Request,
   res: Response,

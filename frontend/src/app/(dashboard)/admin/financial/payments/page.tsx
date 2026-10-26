@@ -316,9 +316,9 @@ export default function DirectPaymentsPage() {
       case "EFECTIVO":
         return <Badge variant="success">Efectivo</Badge>;
       case "ZELLE":
-        return <Badge variant="secondary">Zelle</Badge>;
+        return <Badge variant="indigo">Zelle</Badge>;
       default:
-        return <Badge variant="outline">{m}</Badge>;
+        return <Badge variant="outline" className="border-border/60 bg-muted/20 text-muted-foreground">{m}</Badge>;
     }
   };
 
@@ -353,13 +353,21 @@ export default function DirectPaymentsPage() {
             <Wallet className="w-6 h-6" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-[10px] font-mono">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant="indigo" className="text-xs">
                 Gestión Financiera
               </Badge>
-              <span className="text-xs font-mono font-medium text-muted-foreground">
-                Sin Orden Previa
-              </span>
+              <Badge variant="outline" className="border-border/60 bg-muted/20 text-xs text-muted-foreground">
+                Pagos Directos ({totalCount})
+              </Badge>
+              <Badge variant="success" className="text-xs font-mono">
+                ${totalUsdEquivalent.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Total
+              </Badge>
+              {bcvRates?.USD && (
+                <Badge variant="purple" className="text-xs font-mono">
+                  Tasa: Bs. {bcvRates.USD.toFixed(2)}
+                </Badge>
+              )}
             </div>
             <h1 className="text-xl font-bold tracking-tight text-foreground mt-0.5">
               Registro de Egresos / Pagos Directos
@@ -367,9 +375,11 @@ export default function DirectPaymentsPage() {
           </div>
         </div>
 
-        <Button onClick={handleOpenModal} className="gap-1.5 self-start sm:self-auto">
-          <Plus className="w-4 h-4" />
-          Registrar Nuevo Egreso
+        <Button asChild className="gap-1.5 self-start sm:self-auto cursor-pointer">
+          <Link href="/admin/financial/payments/new">
+            <Plus className="w-4 h-4" />
+            Registrar Nuevo Egreso
+          </Link>
         </Button>
       </div>
 
@@ -590,8 +600,10 @@ export default function DirectPaymentsPage() {
                 previa.
               </p>
             </div>
-            <Button onClick={handleOpenModal} size="sm" className="gap-1.5">
-              <Plus className="w-3.5 h-3.5" /> Registrar Primer Egreso
+            <Button asChild size="sm" className="gap-1.5 cursor-pointer">
+              <Link href="/admin/financial/payments/new">
+                <Plus className="w-3.5 h-3.5" /> Registrar Primer Egreso
+              </Link>
             </Button>
           </div>
         ) : (
@@ -1022,10 +1034,49 @@ export default function DirectPaymentsPage() {
             </Card>
 
             {/* Notas / Observaciones */}
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase">
-                Notas / Observaciones (Opcional)
-              </Label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs uppercase">
+                  Concepto Rápido y Observaciones
+                </Label>
+                <span className="text-[11px] text-muted-foreground">
+                  (Haz clic para asociar)
+                </span>
+              </div>
+
+              {/* Badges de 1 palabra para clasificar egreso */}
+              <div className="flex flex-wrap gap-2 pt-0.5">
+                {[
+                  { word: "Servicios", text: "Pago de servicios básicos y telecomunicaciones", theme: "bg-sky-50 text-sky-700 border-sky-200/90 hover:bg-sky-100/90" },
+                  { word: "Nómina", text: "Honorarios profesionales o desembolso directo de nómina", theme: "bg-emerald-50 text-emerald-700 border-emerald-200/90 hover:bg-emerald-100/90" },
+                  { word: "Mantenimiento", text: "Servicio técnico preventivo/correctivo e infraestructura", theme: "bg-amber-50 text-amber-700 border-amber-200/90 hover:bg-amber-100/90" },
+                  { word: "Alquiler", text: "Canon de arrendamiento de instalaciones operativas", theme: "bg-purple-50 text-purple-700 border-purple-200/90 hover:bg-purple-100/90" },
+                  { word: "Suministros", text: "Insumos menores y gastos operativos de oficina", theme: "bg-indigo-50 text-indigo-700 border-indigo-200/90 hover:bg-indigo-100/90" },
+                  { word: "Urgencia", text: "Egreso de contingencia para continuidad de operaciones", theme: "bg-rose-50 text-rose-700 border-rose-200/90 hover:bg-rose-100/90" },
+                ].map((badge) => {
+                  const isSelected = notes.toLowerCase().includes(badge.text.toLowerCase());
+                  return (
+                    <button
+                      key={badge.word}
+                      type="button"
+                      onClick={() => {
+                        if (isSelected) {
+                          setNotes((prev) => prev.split("\n").filter((l) => !l.toLowerCase().includes(badge.text.toLowerCase())).join("\n").trim());
+                        } else {
+                          setNotes((prev) => prev.trim() ? `${prev.trim()}\n• ${badge.text}` : `• ${badge.text}`);
+                        }
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border cursor-pointer transition-all ${
+                        isSelected ? "bg-primary text-primary-foreground border-primary shadow-xs font-semibold" : badge.theme
+                      }`}
+                      title={badge.text}
+                    >
+                      <span className="font-bold">{badge.word}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}

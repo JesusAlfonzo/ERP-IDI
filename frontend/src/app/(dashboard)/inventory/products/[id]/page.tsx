@@ -46,6 +46,7 @@ import {
   Loader2,
   Pencil,
   AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 
 export default function ProductDetailPage() {
@@ -240,21 +241,19 @@ export default function ProductDetailPage() {
       ? product.stockBatches
       : product.batches) || [];
 
-  const getStatusBadge = (status: string) => {
+  const getBatchStatusVariant = (status: string): "success" | "warning" | "destructive" | "secondary" => {
     switch (status) {
       case "DISPONIBLE":
-        return "bg-emerald-50 text-emerald-700 border-emerald-200";
+        return "success";
       case "EN_CUARENTENA":
       case "CUARENTENA":
-        return "bg-amber-50 text-amber-700 border-amber-200";
+        return "warning";
       case "DEFECTUOSO":
       case "RECHAZADO":
       case "VENCIDO":
-        return "bg-rose-50 text-rose-700 border-rose-200";
-      case "AGOTADO":
-        return "bg-muted text-muted-foreground border-border";
+        return "destructive";
       default:
-        return "bg-muted text-muted-foreground border-border";
+        return "secondary";
     }
   };
 
@@ -276,17 +275,30 @@ export default function ProductDetailPage() {
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="font-mono text-xs font-bold bg-blue-50 text-blue-700 border-blue-200">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant="indigo" className="font-mono text-xs font-bold">
                 {product.sku}
               </Badge>
-              {product.isReagent && (
-                <Badge variant="outline" className="gap-1 text-[11px] font-semibold bg-indigo-50 text-indigo-700 border-indigo-200">
+              {product.isReagent ? (
+                <Badge variant="purple" className="gap-1 text-xs">
                   <Thermometer className="w-3 h-3" /> Reactivo Clínico
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="border-border/60 bg-muted/20 text-muted-foreground text-xs">
+                  Insumo General
+                </Badge>
+              )}
+              {isBelowMinStock ? (
+                <Badge variant="destructive" className="gap-1 text-xs">
+                  <AlertTriangle className="w-3 h-3" /> Reponer Existencias
+                </Badge>
+              ) : (
+                <Badge variant="success" className="gap-1 text-xs">
+                  <CheckCircle2 className="w-3 h-3" /> Stock Óptimo
                 </Badge>
               )}
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 mt-1">
+            <h1 className="text-2xl font-bold text-foreground mt-1">
               {product.name}
             </h1>
           </div>
@@ -576,10 +588,8 @@ export default function ProductDetailPage() {
                         </TableCell>
                         <TableCell className="py-2.5 px-3 text-center">
                           <Badge
-                            variant="outline"
-                            className={`text-[10px] font-bold ${getStatusBadge(
-                              batch.status,
-                            )}`}
+                            variant={getBatchStatusVariant(batch.status)}
+                            className="text-[10px] font-bold"
                           >
                             {batch.status}
                           </Badge>

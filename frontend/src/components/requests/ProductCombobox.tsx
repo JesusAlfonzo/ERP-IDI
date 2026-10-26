@@ -34,7 +34,12 @@ export function ProductCombobox({
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const selectedProduct = useMemo(
-    () => products.find((p) => p.id === selectedProductId),
+    () =>
+      products.find(
+        (p) =>
+          String(p.id) === String(selectedProductId) &&
+          Number(selectedProductId) > 0
+      ),
     [products, selectedProductId]
   );
 
@@ -237,7 +242,7 @@ export function ProductCombobox({
             </div>
           ) : (
             filteredProducts.map((p, index) => {
-              const isSelected = p.id === selectedProductId;
+              const isSelected = String(p.id) === String(selectedProductId);
               const unit =
                 p.unitOfMeasure || p.baseUnit?.abbreviation || "UND";
               const stock = p.totalStock ?? 0;
@@ -246,7 +251,7 @@ export function ProductCombobox({
               return (
                 <div
                   key={`${p.id}-${index}`}
-                  onClick={() => handleSelect(p.id)}
+                  onClick={() => handleSelect(Number(p.id))}
                   className={cn(
                     "p-2.5 flex items-center justify-between cursor-pointer transition-colors",
                     isSelected

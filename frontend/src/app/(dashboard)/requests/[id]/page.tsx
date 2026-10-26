@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { RequestClientService } from "@/services/request.service";
 import { AuthService } from "@/services/auth.service";
 import type { InternalRequest, RequestStatus } from "@/types/requests";
@@ -22,6 +23,7 @@ import {
   Ban,
   AlertCircle,
   CheckCircle2,
+  Pencil,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -241,6 +243,23 @@ export default function RequestDetailPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Botón Editar antes de aprobación */}
+          {request.status === "PENDIENTE" && (
+            <Button
+              asChild
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100 border-indigo-200/80 cursor-pointer"
+              title="Modificar insumos o justificación antes de ser aprobada"
+            >
+              <Link href={`/requests/${request.id}/edit`}>
+                <Pencil className="w-3.5 h-3.5" />
+                Editar Solicitud
+              </Link>
+            </Button>
+          )}
+
           {/* Acciones de Almacén / Administración */}
           {isWarehouseStaff && (
             <>
@@ -278,7 +297,7 @@ export default function RequestDetailPage() {
                 <Button
                   type="button"
                   size="sm"
-                  onClick={() => router.push(`/requests?dispatch=${request.id}`)}
+                  onClick={() => router.push(`/requests/dispatch?id=${request.id}`)}
                   className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer"
                 >
                   <Check className="w-3.5 h-3.5" /> Despachar

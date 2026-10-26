@@ -3,6 +3,7 @@ import type { ApiResponse } from "@/types/api";
 import type {
   InternalRequest,
   CreateInternalRequestPayload,
+  UpdateInternalRequestPayload,
   DispatchRequestPayload,
   RequestWindowStatus,
   RequestWindowConfigData,
@@ -104,6 +105,27 @@ export const RequestClientService = {
     if (!response.data.data) {
       throw new Error(
         response.data.message || "Error al procesar la requisición"
+      );
+    }
+
+    return response.data.data;
+  },
+
+  /**
+   * Actualiza una requisición en estado PENDIENTE antes de ser aprobada
+   */
+  async updateRequest(
+    id: string | number,
+    payload: UpdateInternalRequestPayload
+  ): Promise<InternalRequest> {
+    const response = await apiClient.put<ApiResponse<InternalRequest>>(
+      `/requests/${id}`,
+      payload
+    );
+
+    if (!response.data.data) {
+      throw new Error(
+        response.data.message || "Error al actualizar la solicitud"
       );
     }
 

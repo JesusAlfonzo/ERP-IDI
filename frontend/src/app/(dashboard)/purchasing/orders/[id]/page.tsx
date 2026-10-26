@@ -703,12 +703,28 @@ export default function OrderDetailPage() {
           </Button>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="font-mono text-xs font-bold bg-blue-50 text-blue-700 border-blue-200">
+              <Badge variant="indigo" className="font-mono text-xs font-bold">
                 {order.orderNumber || `#${order.id}`}
               </Badge>
-              <Badge variant="outline" className="text-[11px] font-bold">
+              <Badge
+                variant={
+                  order.status === "COMPLETADA" || order.status === "RECIBIDO"
+                    ? "success"
+                    : order.status === "PARCIAL" || order.status === "EN_PROCESO" || order.status === "APROBADA"
+                      ? "info"
+                      : order.status === "CANCELADA" || order.status === "CANCELADO"
+                        ? "destructive"
+                        : "warning"
+                }
+                className="text-[11px] font-bold"
+              >
                 {order.status}
               </Badge>
+              {isFullyPaid ? (
+                <Badge variant="success">Solvente</Badge>
+              ) : (
+                <Badge variant="rose">Saldo: ${remainingDebtUsd.toFixed(2)} USD</Badge>
+              )}
               {order.requisition && (
                 <Link
                   href="/purchasing/requisitions"

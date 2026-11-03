@@ -118,7 +118,7 @@ export default function NewDirectPaymentPage() {
     if (curr === "VED") {
       setExchangeRate(bcvRates.USD.toString());
     } else if (curr === "EUR") {
-      setExchangeRate((bcvRates.EUR / bcvRates.USD).toFixed(4));
+      setExchangeRate(bcvRates.EUR.toString());
     } else {
       setExchangeRate("");
     }
@@ -146,13 +146,9 @@ export default function NewDirectPaymentPage() {
       return rate > 0 ? amt / rate : 0;
     }
     if (transactionCurrency === "EUR") {
-      const eurRate = bcvRates.EUR || 1;
+      const eurRate = parseFloat(exchangeRate) || bcvRates.EUR || 1;
       const usdRate = bcvRates.USD || 1;
-      const parsedRate = parseFloat(exchangeRate);
-      if (!isNaN(parsedRate) && parsedRate > 0) {
-        return amt * parsedRate;
-      }
-      return amt * (eurRate / usdRate);
+      return usdRate > 0 ? (amt * eurRate) / usdRate : amt;
     }
     return 0;
   }, [amountPaid, transactionCurrency, exchangeRate, bcvRates]);
@@ -216,7 +212,7 @@ export default function NewDirectPaymentPage() {
       if (transactionCurrency === "VED") {
         finalRate = parseFloat(exchangeRate) || bcvRates.USD;
       } else if (transactionCurrency === "EUR") {
-        finalRate = parseFloat(exchangeRate) || bcvRates.EUR / bcvRates.USD;
+        finalRate = parseFloat(exchangeRate) || bcvRates.EUR;
       }
 
       await BankAccountService.createDirectPayment({
@@ -450,7 +446,7 @@ export default function NewDirectPaymentPage() {
                 min="0.0001"
                 placeholder={
                   transactionCurrency === "EUR"
-                    ? (bcvRates.EUR / bcvRates.USD).toFixed(4)
+                    ? bcvRates.EUR.toFixed(2)
                     : bcvRates.USD.toFixed(2)
                 }
                 value={exchangeRate}

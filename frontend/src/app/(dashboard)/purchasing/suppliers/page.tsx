@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { AuthService } from "@/services/auth.service";
+import { useDebounce } from "@/hooks/use-debounce";
+import { usePagination } from "@/hooks/use-pagination";
+import { TablePagination } from "@/components/common/TablePagination";
 import type { Supplier } from "@/types/purchasing";
 import {
   Building2,
@@ -21,6 +24,7 @@ import {
   Pencil,
   Trash2,
   AlertTriangle,
+  X,
 } from "lucide-react";
 
 import {
@@ -53,6 +57,7 @@ export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
   const [isAdmin] = useState(() => {
     if (typeof window === "undefined") return false;
     return (
@@ -135,12 +140,20 @@ export default function SuppliersPage() {
   }, [router]);
 
   const filteredSuppliers = suppliers.filter((s) => {
-    const term = search.toLowerCase();
+    const term = debouncedSearch.toLowerCase().trim();
     const rif = (s.rifOrId || s.rif || "").toLowerCase();
     const name = s.name.toLowerCase();
     const contact = (s.contactName || "").toLowerCase();
     return rif.includes(term) || name.includes(term) || contact.includes(term);
   });
+
+  // Paginación
+  const pagination = usePagination(filteredSuppliers, { initialPageSize: 10 });
+  const { resetPage } = pagination;
+
+  useEffect(() => {
+    resetPage();
+  }, [debouncedSearch, resetPage]);
 
   const handleCreateSupplier = async (e: FormEvent) => {
     e.preventDefault();
@@ -309,16 +322,41 @@ export default function SuppliersPage() {
 
       {/* Barra de Filtros */}
       <Card>
-        <CardContent className="p-4 flex items-center justify-between gap-4">
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="Buscar por RIF, Razón Social o Contacto..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 text-xs"
-            />
+        <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 flex-1">
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Buscar por RIF, Razón Social o Contacto..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 pr-8 text-xs h-9"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                  title="Borrar búsqueda"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {search && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSearch("")}
+                className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-9 cursor-pointer"
+                title="Limpiar filtros"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Limpiar filtros</span>
+              </Button>
+            )}
           </div>
 
           <Button
@@ -326,6 +364,7 @@ export default function SuppliersPage() {
             size="icon"
             onClick={() => void loadSuppliers()}
             title="Actualizar listado"
+            className="cursor-pointer"
           >
             <RefreshCw
               className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
@@ -365,7 +404,7 @@ export default function SuppliersPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredSuppliers.map((sup) => (
+                pagination.paginatedItems.map((sup) => (
                   <TableRow
                     key={sup.id}
                     className="hover:bg-muted/50 transition-colors"
@@ -451,6 +490,16 @@ export default function SuppliersPage() {
               )}
             </TableBody>
           </Table>
+          <TablePagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            pageSize={pagination.pageSize}
+            totalItems={pagination.totalItems}
+            onPageChange={pagination.onPageChange}
+            onPageSizeChange={pagination.onPageSizeChange}
+            pageSizeOptions={[10, 25, 50, 100]}
+            entityName="proveedores"
+          />
         </div>
       </Card>
 

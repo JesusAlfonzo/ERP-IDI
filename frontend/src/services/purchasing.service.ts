@@ -136,7 +136,7 @@ export const PurchasingClientService = {
     payload:
       | CreatePurchaseOrderPayload
       | {
-          supplierId?: number | null;
+          supplierId: number;
           currencyId?: number;
           currency?: string;
           exchangeRate?: number;
@@ -146,6 +146,7 @@ export const PurchasingClientService = {
             unitId: number;
             quantityOrdered: number;
             unitPrice: number;
+            isExempt?: boolean;
           }[];
         },
   ): Promise<PurchaseOrder> => {
@@ -155,6 +156,41 @@ export const PurchasingClientService = {
     );
     const data = res.data.data;
     if (!data) throw new Error("Error al registrar orden de compra");
+    return data;
+  },
+
+  updateOrder: async (
+    id: string | number,
+    payload: {
+      supplierId: number;
+      currencyId?: number;
+      currency?: string;
+      exchangeRate?: number;
+      notes?: string | null;
+      items: {
+        productId: string | number;
+        unitId: number;
+        quantityOrdered: number;
+        unitPrice: number;
+        isExempt?: boolean;
+      }[];
+    },
+  ): Promise<PurchaseOrder> => {
+    const res = await apiClient.put<ApiResponse<PurchaseOrder>>(
+      `/orders/${id}`,
+      payload,
+    );
+    const data = res.data.data;
+    if (!data) throw new Error("Error al actualizar orden de compra");
+    return data;
+  },
+
+  sendOrder: async (id: string | number): Promise<PurchaseOrder> => {
+    const res = await apiClient.patch<ApiResponse<PurchaseOrder>>(
+      `/orders/${id}/send`,
+    );
+    const data = res.data.data;
+    if (!data) throw new Error("Error al enviar orden de compra al proveedor");
     return data;
   },
 

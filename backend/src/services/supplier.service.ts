@@ -59,31 +59,88 @@ export class SupplierService {
 
   private static summarizeOrder(order: {
     total: unknown;
+    totalAmount?: unknown;
+    totalAmountBs?: unknown;
+    totalAmountUsd?: unknown;
+    currency?: string | null;
     currencyId: number;
     exchangeRate: unknown;
     payments: {
       amount: unknown;
+      amountPaid?: unknown;
       currencyId: number | null;
+      transactionCurrency?: string | null;
       exchangeRate: unknown;
       paymentDate?: Date;
     }[];
   }) {
-    const totalUsd = this.normalizePaymentToUsd(
-      Number(order.total),
-      order.currencyId,
-      Number(order.exchangeRate)
+    let orderCurrency = (order.currency || 'USD').trim().toUpperCase();
+    if (orderCurrency === 'VES') orderCurrency = 'VED';
+
+    // Monto pactado en su propia moneda
+    const totalAgreed = Number(
+      orderCurrency === 'VED'
+        ? (order.totalAmountBs ?? order.total ?? 0)
+        : orderCurrency === 'EUR'
+          ? (order.total ?? 0)
+          : (order.totalAmountUsd ?? order.total ?? 0)
     );
-    const paidUsd = order.payments.reduce(
-      (sum, payment) =>
-        sum +
-        this.normalizePaymentToUsd(
-          Number(payment.amount),
-          payment.currencyId,
-          Number(payment.exchangeRate)
-        ),
-      0
+
+    // Total en USD referencial
+    const totalUsd = Number(
+      order.totalAmountUsd != null && Number(order.totalAmountUsd) > 0
+        ? order.totalAmountUsd
+        : orderCurrency === 'USD'
+          ? totalAgreed
+          : Number(order.exchangeRate) > 0
+            ? totalAgreed / Number(order.exchangeRate)
+            : totalAgreed
     );
-    return { totalUsd, paidUsd, balanceUsd: Math.max(0, totalUsd - paidUsd) };
+
+    // Calcular cuánto se ha abonado en la moneda pactada
+    let paidAgreed = 0;
+    let paidUsd = 0;
+
+    for (const p of order.payments) {
+      let pCurr = (p.transactionCurrency || (p.currencyId === 1 ? 'USD' : 'VED')).trim().toUpperCase();
+      if (pCurr === 'VES') pCurr = 'VED';
+
+      const pAmt = Number(p.amountPaid ?? p.amount ?? 0);
+      const pRate = Number(p.exchangeRate || 1.0);
+
+      // Conversión a la moneda de la orden
+      if (pCurr === orderCurrency) {
+        paidAgreed += pAmt;
+      } else if (orderCurrency === 'VED' && pCurr === 'USD') {
+        paidAgreed += pRate > 0 ? pAmt * pRate : pAmt;
+      } else if (orderCurrency === 'USD' && pCurr === 'VED') {
+        paidAgreed += pRate > 0 ? pAmt / pRate : pAmt;
+      } else {
+        paidAgreed += pAmt;
+      }
+
+      // Conversión a USD referencial
+      if (pCurr === 'USD') {
+        paidUsd += pAmt;
+      } else if (pRate > 0) {
+        paidUsd += pAmt / pRate;
+      } else {
+        paidUsd += pAmt;
+      }
+    }
+
+    const balanceAgreed = Math.max(0, Math.round((totalAgreed - paidAgreed) * 100) / 100);
+    const balanceUsd = Math.max(0, Math.round((totalUsd - paidUsd) * 100) / 100);
+
+    return {
+      orderCurrency,
+      totalAgreed: Math.round(totalAgreed * 100) / 100,
+      paidAgreed: Math.round(paidAgreed * 100) / 100,
+      balanceAgreed,
+      totalUsd: Math.round(totalUsd * 100) / 100,
+      paidUsd: Math.round(paidUsd * 100) / 100,
+      balanceUsd,
+    };
   }
 
   static async listDebts() {
@@ -95,7 +152,11 @@ export class SupplierService {
           select: {
             id: true,
             orderNumber: true,
+            currency: true,
             total: true,
+            totalAmount: true,
+            totalAmountBs: true,
+            totalAmountUsd: true,
             currencyId: true,
             exchangeRate: true,
             paymentStatus: true,
@@ -103,7 +164,9 @@ export class SupplierService {
             payments: {
               select: {
                 amount: true,
+                amountPaid: true,
                 currencyId: true,
+                transactionCurrency: true,
                 exchangeRate: true,
                 paymentDate: true,
               },
@@ -115,48 +178,57 @@ export class SupplierService {
     });
 
     return suppliers.map((supplier) => {
-      const orders = supplier.orders.map((order) => ({
-        ...order,
-        ...this.summarizeOrder(order),
-      }));
-      const totalPurchasedUsd = orders.reduce(
-        (sum, order) => sum + order.totalUsd,
-        0
-      );
-      const totalPaidUsd = orders.reduce(
-        (sum, order) => sum + order.paidUsd,
-        0
-      );
-      const now = new Date();
-      const totalPaidThisMonthUsd = orders.reduce(
-        (sum, order) =>
-          sum +
-          order.payments.reduce(
-            (paymentSum, payment) =>
-              paymentSum +
-              (payment.paymentDate &&
-              payment.paymentDate.getMonth() === now.getMonth() &&
-              payment.paymentDate.getFullYear() === now.getFullYear()
-                ? this.normalizePaymentToUsd(
-                    Number(payment.amount),
-                    payment.currencyId,
-                    Number(payment.exchangeRate)
-                  )
-                : 0),
-            0
-          ),
-        0
-      );
-      const balanceUsd = Math.max(0, totalPurchasedUsd - totalPaidUsd);
+      let totalPurchasedBs = 0;
+      let totalPaidBs = 0;
+      let balanceBs = 0;
+
+      let totalPurchasedUsd = 0;
+      let totalPaidUsd = 0;
+      let balanceUsd = 0;
+
+      let totalPurchasedEur = 0;
+      let totalPaidEur = 0;
+      let balanceEur = 0;
+
+      const orders = supplier.orders.map((order) => {
+        const sum = this.summarizeOrder(order);
+        if (sum.orderCurrency === 'VED') {
+          totalPurchasedBs += sum.totalAgreed;
+          totalPaidBs += sum.paidAgreed;
+          balanceBs += sum.balanceAgreed;
+        } else if (sum.orderCurrency === 'EUR') {
+          totalPurchasedEur += sum.totalAgreed;
+          totalPaidEur += sum.paidAgreed;
+          balanceEur += sum.balanceAgreed;
+        } else {
+          totalPurchasedUsd += sum.totalAgreed;
+          totalPaidUsd += sum.paidAgreed;
+          balanceUsd += sum.balanceAgreed;
+        }
+        return {
+          ...order,
+          ...sum,
+        };
+      });
+
+      const hasDebt = balanceBs > 0.01 || balanceUsd > 0.01 || balanceEur > 0.01;
+
       return {
         id: supplier.id,
         name: supplier.name,
         rifOrId: supplier.rifOrId,
-        totalPurchasedUsd,
-        totalPaidUsd,
-        totalPaidThisMonthUsd,
-        balanceUsd,
-        status: balanceUsd > 0.009 ? 'CON_DEUDA' : 'SOLVENTE',
+        // Balances separados en las 3 Monedas
+        balanceBs: Math.round(balanceBs * 100) / 100,
+        balanceUsd: Math.round(balanceUsd * 100) / 100,
+        balanceEur: Math.round(balanceEur * 100) / 100,
+        totalPurchasedBs: Math.round(totalPurchasedBs * 100) / 100,
+        totalPaidBs: Math.round(totalPaidBs * 100) / 100,
+        totalPurchasedUsd: Math.round(totalPurchasedUsd * 100) / 100,
+        totalPaidUsd: Math.round(totalPaidUsd * 100) / 100,
+        totalPurchasedEur: Math.round(totalPurchasedEur * 100) / 100,
+        totalPaidEur: Math.round(totalPaidEur * 100) / 100,
+        totalPaidThisMonthUsd: 0,
+        status: hasDebt ? 'CON_DEUDA' : 'SOLVENTE',
       };
     });
   }
@@ -182,10 +254,40 @@ export class SupplierService {
       },
     });
     if (!supplier) throw new Error('Proveedor no encontrado');
-    const orders = supplier.orders.map((order) => ({
-      ...order,
-      ...this.summarizeOrder(order),
-    }));
+
+    let totalPurchasedBs = 0;
+    let totalPaidBs = 0;
+    let balanceBs = 0;
+
+    let totalPurchasedUsd = 0;
+    let totalPaidUsd = 0;
+    let balanceUsd = 0;
+
+    let totalPurchasedEur = 0;
+    let totalPaidEur = 0;
+    let balanceEur = 0;
+
+    const orders = supplier.orders.map((order) => {
+      const sum = this.summarizeOrder(order);
+      if (sum.orderCurrency === 'VED') {
+        totalPurchasedBs += sum.totalAgreed;
+        totalPaidBs += sum.paidAgreed;
+        balanceBs += sum.balanceAgreed;
+      } else if (sum.orderCurrency === 'EUR') {
+        totalPurchasedEur += sum.totalAgreed;
+        totalPaidEur += sum.paidAgreed;
+        balanceEur += sum.balanceAgreed;
+      } else {
+        totalPurchasedUsd += sum.totalAgreed;
+        totalPaidUsd += sum.paidAgreed;
+        balanceUsd += sum.balanceAgreed;
+      }
+      return {
+        ...order,
+        ...sum,
+      };
+    });
+
     return {
       supplier: {
         id: supplier.id,
@@ -193,12 +295,15 @@ export class SupplierService {
         rifOrId: supplier.rifOrId,
       },
       orders,
-      totalPurchasedUsd: orders.reduce((sum, order) => sum + order.totalUsd, 0),
-      totalPaidUsd: orders.reduce((sum, order) => sum + order.paidUsd, 0),
-      balanceUsd: Math.max(
-        0,
-        orders.reduce((sum, order) => sum + order.balanceUsd, 0)
-      ),
+      balanceBs: Math.round(balanceBs * 100) / 100,
+      balanceUsd: Math.round(balanceUsd * 100) / 100,
+      balanceEur: Math.round(balanceEur * 100) / 100,
+      totalPurchasedBs: Math.round(totalPurchasedBs * 100) / 100,
+      totalPaidBs: Math.round(totalPaidBs * 100) / 100,
+      totalPurchasedUsd: Math.round(totalPurchasedUsd * 100) / 100,
+      totalPaidUsd: Math.round(totalPaidUsd * 100) / 100,
+      totalPurchasedEur: Math.round(totalPurchasedEur * 100) / 100,
+      totalPaidEur: Math.round(totalPaidEur * 100) / 100,
     };
   }
 
@@ -226,9 +331,21 @@ export class SupplierService {
     });
     if (!supplier) throw new Error('Proveedor no encontrado');
 
-    const target = supplier.orders.find(
-      (order) => this.summarizeOrder(order).balanceUsd > 0.009
-    );
+    const targetCurr = (data.transactionCurrency || 'USD').trim().toUpperCase() === 'VES' ? 'VED' : (data.transactionCurrency || 'USD').trim().toUpperCase();
+
+    // Buscar primero una orden pendiente en la misma moneda del pago
+    let target = supplier.orders.find((order) => {
+      const summary = this.summarizeOrder(order);
+      return summary.orderCurrency === targetCurr && summary.balanceAgreed > 0.009;
+    });
+
+    // Si no hay en la misma moneda, tomar la primera con saldo pendiente
+    if (!target) {
+      target = supplier.orders.find((order) => {
+        const summary = this.summarizeOrder(order);
+        return summary.balanceAgreed > 0.009;
+      });
+    }
     if (!target) throw new Error('El proveedor no tiene saldo pendiente');
 
     return PurchaseFinanceService.registerPayment({

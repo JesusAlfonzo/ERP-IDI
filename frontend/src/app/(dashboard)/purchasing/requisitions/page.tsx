@@ -25,10 +25,14 @@ import type {
 import type { Product, Category } from "@/types/inventory";
 import { ProductPackagingSelector } from "@/components/purchasing/ProductPackagingSelector";
 import { ProtocolBadgeSelector } from "@/components/requests/ProtocolBadgeSelector";
+import { useDebounce } from "@/hooks/use-debounce";
+import { usePagination } from "@/hooks/use-pagination";
+import { TablePagination } from "@/components/common/TablePagination";
 import {
   FileText,
   Plus,
   Filter,
+  Search,
   RefreshCw,
   CheckCircle2,
   AlertCircle,
@@ -132,6 +136,15 @@ export default function PurchaseRequisitionsPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [searchFilter, setSearchFilter] = useState<string>("");
+  const debouncedSearchFilter = useDebounce(searchFilter, 350);
+
+  // Paginación
+  const pagination = usePagination(requisitions, { initialPageSize: 10 });
+  const { resetPage } = pagination;
+
+  useEffect(() => {
+    resetPage();
+  }, [statusFilter, debouncedSearchFilter, resetPage]);
 
   // Modal Crear Preorden
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
@@ -174,7 +187,7 @@ export default function PurchaseRequisitionsPage() {
       const [reqs, sups, currs, prods, cats, rates, deps, concepts] = await Promise.all([
         PurchasingClientService.getRequisitions({
           status: statusFilter || undefined,
-          search: searchFilter || undefined,
+          search: debouncedSearchFilter || undefined,
         }).catch(() => []),
         PurchasingClientService.getSuppliers().catch(() => []),
         PurchasingClientService.getCurrencies().catch(() => []),
@@ -204,17 +217,33 @@ export default function PurchaseRequisitionsPage() {
           VED: 1.0,
         };
         setBcvRates(ratesObj);
-        setAdjudicateExchangeRate((prev) =>
-          prev === 75.0 ? ratesObj.USD : prev
-        );
+        setAdjudicateExchangeRate((prev) => {
+          if (adjudicateCurrency === "EUR") return ratesObj.EUR;
+          if (adjudicateCurrency === "VED") return 1.0;
+          return prev === 75.0 ? ratesObj.USD : prev;
+        });
       }
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, searchFilter]);
+  }, [statusFilter, debouncedSearchFilter, adjudicateCurrency]);
 
   useEffect(() => {
     loadData();
+
+    const handleRateUpdated = () => {
+      loadData();
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("idi:exchange-rate-updated", handleRateUpdated);
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("idi:exchange-rate-updated", handleRateUpdated);
+      }
+    };
   }, [loadData]);
 
   // Manejadores del Formulario Crear Preorden
@@ -404,11 +433,18 @@ export default function PurchaseRequisitionsPage() {
     const iva16 = Math.round(taxableAmount * 0.16 * 100) / 100;
     const totalAmount = Math.round((taxableAmount + exemptAmount + iva16) * 100) / 100;
 
-    const rate = Number(adjudicateExchangeRate) || 1;
+    const rate = Number(adjudicateExchangeRate) || (adjudicateCurrency === "EUR" ? bcvRates.EUR : bcvRates.USD) || 1;
     const totalBs =
       adjudicateCurrency === "VED"
         ? totalAmount
         : Math.round(totalAmount * rate * 100) / 100;
+
+    const totalUsd =
+      adjudicateCurrency === "USD"
+        ? totalAmount
+        : adjudicateCurrency === "VED"
+          ? (rate > 0 ? Math.round((totalAmount / rate) * 100) / 100 : totalAmount)
+          : (bcvRates.USD > 0 ? Math.round(((totalAmount * rate) / bcvRates.USD) * 100) / 100 : totalAmount);
 
     return {
       taxableAmount,
@@ -416,8 +452,9 @@ export default function PurchaseRequisitionsPage() {
       iva16,
       totalAmount,
       totalBs,
+      totalUsd,
     };
-  }, [conversionItems, adjudicateExchangeRate, adjudicateCurrency]);
+  }, [conversionItems, adjudicateExchangeRate, adjudicateCurrency, bcvRates]);
 
   // Enviar Adjudicación
   const handleConfirmConversion = async (e: FormEvent) => {
@@ -573,8 +610,29 @@ export default function PurchaseRequisitionsPage() {
       <Card className="p-4 shadow-2xs">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Buscar por N° requisición, área o solicitante..."
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                className="pl-9 pr-8 text-xs h-9"
+              />
+              {searchFilter && (
+                <button
+                  type="button"
+                  onClick={() => setSearchFilter("")}
+                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                  title="Borrar búsqueda"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
             <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-muted-foreground" />
+              <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
@@ -588,13 +646,21 @@ export default function PurchaseRequisitionsPage() {
               </select>
             </div>
 
-            <Input
-              type="text"
-              placeholder="Buscar por correlativo o área..."
-              value={searchFilter}
-              onChange={(e) => setSearchFilter(e.target.value)}
-              className="text-xs flex-1 max-w-sm"
-            />
+            {(searchFilter || statusFilter) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearchFilter("");
+                  setStatusFilter("");
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-9 cursor-pointer"
+                title="Limpiar filtros"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Limpiar filtros</span>
+              </Button>
+            )}
           </div>
 
           <Button
@@ -602,7 +668,7 @@ export default function PurchaseRequisitionsPage() {
             size="icon"
             onClick={() => loadData()}
             title="Actualizar listado"
-            className="self-end sm:self-auto"
+            className="self-end sm:self-auto cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           </Button>
@@ -637,7 +703,7 @@ export default function PurchaseRequisitionsPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              requisitions.map((req) => {
+              pagination.paginatedItems.map((req) => {
                 const badge = STATUS_BADGES[req.status] || {
                   label: req.status,
                   variant: "secondary" as const,
@@ -718,6 +784,16 @@ export default function PurchaseRequisitionsPage() {
             )}
           </TableBody>
         </Table>
+        <TablePagination
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          pageSize={pagination.pageSize}
+          totalItems={pagination.totalItems}
+          onPageChange={pagination.onPageChange}
+          onPageSizeChange={pagination.onPageSizeChange}
+          pageSizeOptions={[10, 25, 50, 100]}
+          entityName="preórdenes"
+        />
       </Card>
 
       {/* Modal: Crear Preorden con shadcn Dialog */}
@@ -1252,6 +1328,9 @@ export default function PurchaseRequisitionsPage() {
                       {adjudicateCurrency === "VED" ? "1.00" : adjudicateCurrency === "EUR" ? "Bs./€" : "Bs./$"}
                     </span>
                   </div>
+                  <span className="text-[10px] text-muted-foreground block font-mono mt-0.5">
+                    Oficial BCV: {bcvRates.USD.toFixed(2)} Bs./$ · {bcvRates.EUR.toFixed(2)} Bs./€
+                  </span>
                 </div>
               </div>
 
@@ -1433,6 +1512,17 @@ export default function PurchaseRequisitionsPage() {
                           })}
                         </span>
                       </div>
+                      {adjudicateCurrency === "EUR" && (
+                        <div className="flex justify-between text-muted-foreground font-mono text-[11px]">
+                          <span className="font-semibold text-foreground">Contravalor USD:</span>
+                          <span className="font-bold text-foreground">
+                            $ {fiscalSummary.totalUsd.toLocaleString("es-VE", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })} USD
+                          </span>
+                        </div>
+                      )}
                       <p className="text-[10px] text-muted-foreground italic">
                         Calculado a la tasa oficial BCV de {adjudicateExchangeRate.toFixed(2)} Bs./{adjudicateCurrency === "EUR" ? "€" : "$"}
                       </p>

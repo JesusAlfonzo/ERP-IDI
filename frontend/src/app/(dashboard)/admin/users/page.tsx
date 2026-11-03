@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useTransition, useMemo } from "react";
 import { UserService, UserItem, UserRole } from "@/services/user.service";
 import { AuthService } from "@/services/auth.service";
+import { useDebounce } from "@/hooks/use-debounce";
 import type { AuthUser } from "@/types/auth";
 import {
   Users,
@@ -47,6 +48,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "@/utils/toast";
+import { TablePagination } from "@/components/common/TablePagination";
 
 export default function AdminUsersPage() {
   const [currentUser] = useState<AuthUser | null>(() =>
@@ -59,6 +61,7 @@ export default function AdminUsersPage() {
 
   // Filtros y búsqueda
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [roleFilter, setRoleFilter] = useState<string>("all");
 
@@ -113,7 +116,7 @@ export default function AdminUsersPage() {
 
   // Filtrado reactivo de usuarios
   const filteredUsers = useMemo(() => {
-    const q = search.toLowerCase().trim();
+    const q = debouncedSearch.toLowerCase().trim();
     return users.filter((u) => {
       const matchesSearch =
         !q ||
@@ -133,7 +136,7 @@ export default function AdminUsersPage() {
 
       return matchesSearch && matchesStatus && matchesRole;
     });
-  }, [users, search, statusFilter, roleFilter]);
+  }, [users, debouncedSearch, statusFilter, roleFilter]);
 
   // Cálculos de paginación
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
@@ -392,6 +395,25 @@ export default function AdminUsersPage() {
               </option>
             ))}
           </select>
+
+          {(search || statusFilter !== "all" || roleFilter !== "all") && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("all");
+                setRoleFilter("all");
+                setCurrentPage(1);
+              }}
+              className="text-xs text-slate-500 hover:text-slate-800 gap-1.5 h-9 cursor-pointer"
+              title="Limpiar filtros"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Limpiar filtros</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -582,112 +604,19 @@ export default function AdminUsersPage() {
           </div>
 
           {/* Barra de Paginación */}
-          {!loading && filteredUsers.length > 0 && (
-            <div className="bg-slate-50/70 border-t border-slate-200 px-6 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-              <div className="flex items-center gap-4 flex-wrap">
-                <span>
-                  Mostrando <strong className="font-semibold text-slate-800">{startRecord}</strong> - <strong className="font-semibold text-slate-800">{endRecord}</strong> de{" "}
-                  <strong className="font-semibold text-slate-800">{filteredUsers.length}</strong> usuarios
-                </span>
-
-                <div className="flex items-center gap-1.5 pl-3 border-l border-slate-200">
-                  <span>Filas por página:</span>
-                  <select
-                    value={pageSize}
-                    onChange={(e) => {
-                      setPageSize(Number(e.target.value));
-                      setCurrentPage(1);
-                    }}
-                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-700 font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none cursor-pointer"
-                  >
-                    <option value={5}>5</option>
-                    <option value={10}>10</option>
-                    <option value={20}>20</option>
-                    <option value={50}>50</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <span className="mr-2">
-                  Página <strong className="font-semibold text-slate-800">{safeCurrentPage}</strong> de{" "}
-                  <strong className="font-semibold text-slate-800">{totalPages}</strong>
-                </span>
-
-                <button
-                  type="button"
-                  disabled={safeCurrentPage <= 1}
-                  onClick={() => setCurrentPage(1)}
-                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                  title="Primera página"
-                >
-                  <ChevronsLeft className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  disabled={safeCurrentPage <= 1}
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                  title="Página anterior"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-
-                {/* Páginas numéricas */}
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: totalPages }, (_, idx) => idx + 1)
-                    .filter((p) => {
-                      return (
-                        p === 1 ||
-                        p === totalPages ||
-                        Math.abs(p - safeCurrentPage) <= 1
-                      );
-                    })
-                    .map((p, idx, arr) => {
-                      const prev = arr[idx - 1];
-                      const hasGap = prev && p - prev > 1;
-                      return (
-                        <React.Fragment key={p}>
-                          {hasGap && <span className="px-1 text-slate-400">...</span>}
-                          <button
-                            type="button"
-                            onClick={() => setCurrentPage(p)}
-                            className={`min-w-[28px] h-7 px-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                              p === safeCurrentPage
-                                ? "bg-blue-600 text-white shadow-xs"
-                                : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                            }`}
-                          >
-                            {p}
-                          </button>
-                        </React.Fragment>
-                      );
-                    })}
-                </div>
-
-                <button
-                  type="button"
-                  disabled={safeCurrentPage >= totalPages}
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                  title="Página siguiente"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  disabled={safeCurrentPage >= totalPages}
-                  onClick={() => setCurrentPage(totalPages)}
-                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                  title="Última página"
-                >
-                  <ChevronsRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
+          <TablePagination
+            currentPage={safeCurrentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredUsers.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setCurrentPage(1);
+            }}
+            pageSizeOptions={[5, 10, 20, 50]}
+            entityName="usuarios"
+          />
         </Card>
       )}
 

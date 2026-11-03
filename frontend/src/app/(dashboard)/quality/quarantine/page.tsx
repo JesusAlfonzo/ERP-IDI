@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useTransition, type FormEvent } from "react";
+import { useState, useEffect, useCallback, useMemo, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { QualityClientService } from "@/services/quality.service";
 import { AuthService } from "@/services/auth.service";
+import { useDebounce } from "@/hooks/use-debounce";
+import { usePagination } from "@/hooks/use-pagination";
+import { TablePagination } from "@/components/common/TablePagination";
 import type { AuthUser } from "@/types/auth";
 import type {
   QuarantineBatch,
@@ -21,6 +24,8 @@ import {
   Package,
   AlertTriangle,
   Building,
+  Search,
+  X,
 } from "lucide-react";
 
 import {
@@ -33,6 +38,7 @@ import {
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -71,6 +77,8 @@ export default function QualityQuarantinePage() {
   const [activeStatus, setActiveStatus] = useState<
     "EN_CUARENTENA" | "DEFECTUOSO"
   >("EN_CUARENTENA");
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
 
   // Modal / Formulario de Dictamen
   const [selectedBatch, setSelectedBatch] = useState<QuarantineBatch | null>(
@@ -185,6 +193,25 @@ export default function QualityQuarantinePage() {
     }
   };
 
+  const filteredBatches = useMemo(() => {
+    const q = debouncedSearch.toLowerCase().trim();
+    if (!q) return batches;
+    return batches.filter((b) => {
+      const lot = b.lotNumber?.toLowerCase() || "";
+      const prodName = b.product?.name?.toLowerCase() || "";
+      const sku = b.product?.sku?.toLowerCase() || "";
+      const loc = b.location?.name?.toLowerCase() || "";
+      return lot.includes(q) || prodName.includes(q) || sku.includes(q) || loc.includes(q);
+    });
+  }, [batches, debouncedSearch]);
+
+  const pagination = usePagination(filteredBatches, { initialPageSize: 10 });
+  const { resetPage } = pagination;
+
+  useEffect(() => {
+    resetPage();
+  }, [debouncedSearch, activeStatus, resetPage]);
+
   return (
     <div className="space-y-6">
       {/* Encabezado */}
@@ -237,6 +264,46 @@ export default function QualityQuarantinePage() {
         </TabsList>
       </Tabs>
 
+      {/* Barra de Búsqueda y Filtros */}
+      <Card className="p-3.5 shadow-2xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 flex-1">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por lote, producto, SKU o ubicación..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 pr-8 text-xs h-9"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                  title="Borrar búsqueda"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {search && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSearch("")}
+                className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-9 cursor-pointer"
+                title="Limpiar filtros"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Limpiar filtros</span>
+              </Button>
+            )}
+          </div>
+        </div>
+      </Card>
+
       {/* Tabla de Cuarentena */}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
@@ -260,7 +327,7 @@ export default function QualityQuarantinePage() {
                     Consultando lotes en auditoría...
                   </TableCell>
                 </TableRow>
-              ) : batches.length === 0 ? (
+              ) : filteredBatches.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
                     <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
@@ -270,7 +337,7 @@ export default function QualityQuarantinePage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                batches.map((batch) => (
+                pagination.paginatedItems.map((batch) => (
                   <TableRow
                     key={String(batch.id)}
                     className="hover:bg-muted/50 transition-colors"
@@ -332,6 +399,16 @@ export default function QualityQuarantinePage() {
               )}
             </TableBody>
           </Table>
+          <TablePagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            pageSize={pagination.pageSize}
+            totalItems={pagination.totalItems}
+            onPageChange={pagination.onPageChange}
+            onPageSizeChange={pagination.onPageSizeChange}
+            pageSizeOptions={[5, 10, 25, 50]}
+            entityName="lotes"
+          />
         </div>
       </Card>
 

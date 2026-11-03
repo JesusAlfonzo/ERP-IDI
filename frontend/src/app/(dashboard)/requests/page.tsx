@@ -15,8 +15,10 @@ import Link from "next/link";
 import { RequestClientService } from "@/services/request.service";
 import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
+import { useDebounce } from "@/hooks/use-debounce";
 import { toast } from "@/utils/toast";
 import { RequestWindowAdminCard } from "@/components/requests/RequestWindowAdminCard";
+import { TablePagination } from "@/components/common/TablePagination";
 import type {
   InternalRequest,
   RequestStatus,
@@ -134,6 +136,7 @@ function RequestsContent() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const debouncedSearchTerm = useDebounce(searchTerm, 350);
   const [, startTransition] = useTransition();
 
   // Permisos basados en Roles (RBAC estricto)
@@ -327,9 +330,9 @@ function RequestsContent() {
     };
   }, [router, statusFilter, isWarehouseStaff, dispatchQueryId, openDispatchModal]);
 
-  // Filtrado reactivo en cliente (Búsqueda libre + Filtro de Estado)
+  // Filtrado reactivo en cliente (Búsqueda libre con retardo/debounce + Filtro de Estado)
   const filteredRequests = useMemo(() => {
-    const term = searchTerm.toLowerCase().trim();
+    const term = debouncedSearchTerm.toLowerCase().trim();
 
     return requests.filter((req) => {
       if (statusFilter && req.status !== statusFilter) {
@@ -359,7 +362,7 @@ function RequestsContent() {
         justification.includes(term)
       );
     });
-  }, [requests, statusFilter, searchTerm]);
+  }, [requests, statusFilter, debouncedSearchTerm]);
 
   // Estados de Paginación
   const [currentPage, setCurrentPage] = useState(1);
@@ -368,7 +371,7 @@ function RequestsContent() {
   // Reiniciar a la primera página si cambian los filtros
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, searchTerm]);
+  }, [statusFilter, debouncedSearchTerm]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRequests.length / pageSize));
   const paginatedRequests = useMemo(() => {
@@ -769,6 +772,22 @@ function RequestsContent() {
                 <option value="RECHAZADA">Rechazadas</option>
               </select>
             </div>
+
+            {(searchTerm || statusFilter) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearchTerm("");
+                  setStatusFilter("");
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-9"
+                title="Restablecer búsqueda y filtros"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Limpiar filtros</span>
+              </Button>
+            )}
           </div>
 
           <Button
@@ -947,95 +966,19 @@ function RequestsContent() {
         </Table>
 
         {/* Barra de Paginación */}
-        {filteredRequests.length > 0 && (
-          <div className="p-3.5 border-t border-border bg-muted/20 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-            {/* Contador de registros */}
-            <div className="text-muted-foreground font-medium">
-              Mostrando{" "}
-              <span className="font-bold text-foreground font-mono">
-                {(currentPage - 1) * pageSize + 1}
-              </span>{" "}
-              a{" "}
-              <span className="font-bold text-foreground font-mono">
-                {Math.min(currentPage * pageSize, filteredRequests.length)}
-              </span>{" "}
-              de{" "}
-              <span className="font-bold text-foreground font-mono">
-                {filteredRequests.length}
-              </span>{" "}
-              solicitudes
-            </div>
-
-            {/* Controles de navegación y tamaño de página */}
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <span className="text-muted-foreground">Por página:</span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                  className="h-8 bg-background border border-input rounded-md px-2 text-xs font-semibold text-foreground focus:ring-2 focus:ring-ring cursor-pointer"
-                >
-                  <option value={5}>5</option>
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  onClick={() => setCurrentPage(1)}
-                  disabled={currentPage === 1}
-                  className="h-8 w-8 cursor-pointer"
-                  title="Primera página"
-                >
-                  <ChevronsLeft className="w-3.5 h-3.5" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="h-8 w-8 cursor-pointer"
-                  title="Página anterior"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </Button>
-
-                <div className="px-2 font-mono font-medium text-foreground text-xs">
-                  Página <strong className="font-bold">{currentPage}</strong> de{" "}
-                  <strong className="font-bold">{totalPages}</strong>
-                </div>
-
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  className="h-8 w-8 cursor-pointer"
-                  title="Página siguiente"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  onClick={() => setCurrentPage(totalPages)}
-                  disabled={currentPage === totalPages}
-                  className="h-8 w-8 cursor-pointer"
-                  title="Última página"
-                >
-                  <ChevronsRight className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
+        <TablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={filteredRequests.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setCurrentPage(1);
+          }}
+          pageSizeOptions={[5, 10, 25, 50]}
+          entityName="solicitudes"
+        />
       </Card>
 
       {/* Modal: Despacho Multi-Lote y Despacho Parcial (Solo Almacén) */}

@@ -109,6 +109,10 @@ function SupplierPaymentContent() {
             if (found) {
               setSelectedSupplierId(String(found.id));
               setIsLockedSupplier(true);
+              if ((found.balanceBs || 0) > 0.01 && (!found.balanceUsd || found.balanceUsd <= 0.01)) {
+                setTransactionCurrency("VED");
+                setExchangeRate(ratesData ? (ratesData.USD || ratesData.rates?.USD || 75.0).toString() : "75.0");
+              }
             }
           }
         }
@@ -135,7 +139,7 @@ function SupplierPaymentContent() {
     if (curr === "VED") {
       setExchangeRate(bcvRates.USD.toString());
     } else if (curr === "EUR") {
-      setExchangeRate((bcvRates.EUR / bcvRates.USD).toFixed(4));
+      setExchangeRate(bcvRates.EUR.toString());
     } else {
       setExchangeRate("1.0");
     }
@@ -155,28 +159,59 @@ function SupplierPaymentContent() {
     dynamicEquivalentUsd = parsedRate > 0 ? parsedAmount / parsedRate : 0;
     dynamicEquivalentBs = parsedAmount;
   } else if (transactionCurrency === "EUR") {
-    dynamicEquivalentUsd = parsedAmount * parsedRate;
-    dynamicEquivalentBs = dynamicEquivalentUsd * bcvRates.USD;
+    const rateEur = parsedRate > 0 ? parsedRate : bcvRates.EUR;
+    dynamicEquivalentBs = parsedAmount * rateEur;
+    dynamicEquivalentUsd = bcvRates.USD > 0 ? dynamicEquivalentBs / bcvRates.USD : parsedAmount;
   }
 
-  const supplierBalance = currentSupplier ? currentSupplier.balanceUsd : 0;
-  const isOverpaying =
-    supplierBalance > 0 && dynamicEquivalentUsd > supplierBalance + 0.01;
-  const remainingDebtEstimated = Math.max(
-    0,
-    supplierBalance - dynamicEquivalentUsd
-  );
+  const supplierBalanceBs = currentSupplier ? (currentSupplier.balanceBs || 0) : 0;
+  const supplierBalanceUsd = currentSupplier ? (currentSupplier.balanceUsd || 0) : 0;
+  const supplierBalanceEur = currentSupplier ? (currentSupplier.balanceEur || 0) : 0;
 
-  const handleFillTotalDebt = () => {
+  const effectiveRateForBs =
+    transactionCurrency === "VED" && parsedRate > 1
+      ? parsedRate
+      : bcvRates.USD > 0
+        ? bcvRates.USD
+        : 75.0;
+
+  const rateUsd = effectiveRateForBs;
+  const rateEur =
+    (transactionCurrency === "EUR" && parsedRate > 0 ? parsedRate : bcvRates.EUR) ||
+    (bcvRates.EUR > 0 ? bcvRates.EUR : 81.5);
+
+  const effectiveDebtBs =
+    supplierBalanceBs +
+    supplierBalanceUsd * rateUsd +
+    supplierBalanceEur * rateEur;
+
+  const effectiveDebtUsd =
+    supplierBalanceUsd +
+    (rateUsd > 0 ? supplierBalanceBs / rateUsd : 0) +
+    (rateUsd > 0 ? (supplierBalanceEur * rateEur) / rateUsd : 0);
+
+  const effectiveDebtEur =
+    supplierBalanceEur +
+    (rateEur > 0 ? (supplierBalanceBs + supplierBalanceUsd * rateUsd) / rateEur : 0);
+
+  const remainingDebtEstimatedBs = Math.max(0, effectiveDebtBs - dynamicEquivalentBs);
+  const remainingDebtEstimatedUsd = Math.max(0, effectiveDebtUsd - dynamicEquivalentUsd);
+
+  const isOverpaying =
+    effectiveDebtUsd > 0 && dynamicEquivalentUsd > effectiveDebtUsd + 0.05;
+
+  const handleFillTotalDebt = (overrideCurr?: "USD" | "VED" | "EUR") => {
     if (!currentSupplier) return;
-    if (transactionCurrency === "USD") {
-      setAmountPaid(currentSupplier.balanceUsd.toFixed(2));
-    } else if (transactionCurrency === "VED") {
-      const vedTotal = currentSupplier.balanceUsd * (parsedRate || bcvRates.USD);
-      setAmountPaid(vedTotal.toFixed(2));
-    } else if (transactionCurrency === "EUR") {
-      const eurTotal = parsedRate > 0 ? currentSupplier.balanceUsd / parsedRate : currentSupplier.balanceUsd;
-      setAmountPaid(eurTotal.toFixed(2));
+    const targetCurr = overrideCurr || transactionCurrency;
+    if (overrideCurr && overrideCurr !== transactionCurrency) {
+      handleCurrencyChange(overrideCurr);
+    }
+    if (targetCurr === "USD") {
+      setAmountPaid(effectiveDebtUsd.toFixed(2));
+    } else if (targetCurr === "VED") {
+      setAmountPaid(effectiveDebtBs.toFixed(2));
+    } else if (targetCurr === "EUR") {
+      setAmountPaid(effectiveDebtEur.toFixed(2));
     }
   };
 
@@ -295,10 +330,10 @@ function SupplierPaymentContent() {
               </Badge>
               {currentSupplier && (
                 <Badge
-                  variant={currentSupplier.balanceUsd <= 0.009 ? "success" : "rose"}
+                  variant={effectiveDebtUsd <= 0.009 ? "success" : "rose"}
                   className="text-xs font-mono font-bold"
                 >
-                  Saldo: ${currentSupplier.balanceUsd.toFixed(2)} USD
+                  Deuda: Bs. {effectiveDebtBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (≈ ${effectiveDebtUsd.toFixed(2)} USD)
                 </Badge>
               )}
             </div>
@@ -397,43 +432,81 @@ function SupplierPaymentContent() {
             )}
           </div>
 
-          {/* Tarjeta Informativa del Saldo del Proveedor */}
+          {/* Tarjeta Informativa del Saldo del Proveedor con las 3 Cuentas y Equivalente en Bs. */}
           {currentSupplier && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-              <div className="p-3 bg-background rounded-lg border border-border">
-                <span className="text-[11px] text-muted-foreground font-medium block">
-                  Total Facturado
-                </span>
-                <span className="text-sm font-bold font-mono text-foreground">
-                  $ {currentSupplier.totalPurchasedUsd.toLocaleString("es-VE", { minimumFractionDigits: 2 })} USD
-                </span>
+            <div className="space-y-3 pt-2">
+              {/* Banner Destacado: Deuda Total en Bolívares */}
+              <div className="p-4 bg-gradient-to-r from-emerald-500/15 via-emerald-500/5 to-transparent border border-emerald-500/30 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-900 dark:text-emerald-300">
+                      Deuda Total Equivalente en Bolívares (Bs.)
+                    </span>
+                  </div>
+                  <div className="text-2xl font-black font-mono text-emerald-950 dark:text-emerald-200 mt-1">
+                    Bs. {effectiveDebtBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    Calculado a tasa oficial/acordada: {effectiveRateForBs.toFixed(2)} Bs./$
+                  </span>
+                </div>
+                <div className="sm:text-right">
+                  <span className="text-[11px] uppercase font-bold text-muted-foreground block">
+                    Equivalente Consolidado USD
+                  </span>
+                  <div className="text-base font-bold font-mono text-foreground">
+                    $ {effectiveDebtUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                  </div>
+                  <div className="mt-1">
+                    {effectiveDebtUsd <= 0.009 ? (
+                      <Badge variant="success">Solvente en todas las cuentas</Badge>
+                    ) : (
+                      <Badge variant="destructive">Saldo comercial pendiente</Badge>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div className="p-3 bg-background rounded-lg border border-border">
-                <span className="text-[11px] text-muted-foreground font-medium block">
-                  Total Amortizado
-                </span>
-                <span className="text-sm font-bold font-mono text-emerald-700">
-                  $ {currentSupplier.totalPaidUsd.toLocaleString("es-VE", { minimumFractionDigits: 2 })} USD
-                </span>
-              </div>
-              <div className="p-3 bg-rose-500/10 rounded-lg border border-rose-500/30">
-                <span className="text-[11px] text-rose-800 dark:text-rose-300 font-bold block">
-                  Saldo Pendiente Actual
-                </span>
-                <span className="text-base font-bold font-mono text-rose-700 dark:text-rose-400">
-                  $ {currentSupplier.balanceUsd.toLocaleString("es-VE", { minimumFractionDigits: 2 })} USD
-                </span>
-              </div>
-              <div className="p-3 bg-background rounded-lg border border-border flex flex-col justify-center">
-                <span className="text-[11px] text-muted-foreground font-medium block">
-                  Estado Contable
-                </span>
-                <div className="mt-1">
-                  {currentSupplier.status === "SOLVENTE" ? (
-                    <Badge variant="success">Solvente</Badge>
-                  ) : (
-                    <Badge variant="destructive">Con saldo pendiente</Badge>
-                  )}
+
+              {/* Las 3 Cuentas por Moneda */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 bg-emerald-50/40 dark:bg-emerald-950/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">Cuenta Bolívares (Bs.)</span>
+                    <Badge variant="success" className="text-[10px] font-mono py-0">Bs.</Badge>
+                  </div>
+                  <span className="text-base font-bold font-mono text-emerald-950 dark:text-emerald-200 block mt-1">
+                    Bs. {(currentSupplier.balanceBs || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground font-mono block mt-0.5">
+                    Pagado: Bs. {(currentSupplier.totalPaidBs || 0).toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-blue-50/40 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-blue-800 dark:text-blue-300">Cuenta Dólares (USD)</span>
+                    <Badge variant="indigo" className="text-[10px] font-mono py-0">USD</Badge>
+                  </div>
+                  <span className="text-base font-bold font-mono text-blue-950 dark:text-blue-200 block mt-1">
+                    $ {(currentSupplier.balanceUsd || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground font-mono block mt-0.5">
+                    Pagado: $ {(currentSupplier.totalPaidUsd || 0).toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-purple-50/40 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-purple-800 dark:text-purple-300">Cuenta Euros (EUR)</span>
+                    <Badge variant="purple" className="text-[10px] font-mono py-0">EUR</Badge>
+                  </div>
+                  <span className="text-base font-bold font-mono text-purple-950 dark:text-purple-200 block mt-1">
+                    € {(currentSupplier.balanceEur || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground font-mono block mt-0.5">
+                    Pagado: € {(currentSupplier.totalPaidEur || 0).toFixed(2)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -492,63 +565,77 @@ function SupplierPaymentContent() {
                 <Label className="text-xs uppercase font-semibold">
                   Monto a Pagar ({transactionCurrency === "VED" ? "Bs." : transactionCurrency === "EUR" ? "€" : "$"}) *
                 </Label>
-                {currentSupplier && currentSupplier.balanceUsd > 0 && (
+                {effectiveDebtUsd > 0 && (
                   <button
                     type="button"
-                    onClick={handleFillTotalDebt}
-                    className="text-[10px] text-primary hover:underline font-semibold cursor-pointer"
+                    onClick={() => handleFillTotalDebt(transactionCurrency)}
+                    className="text-xs text-primary hover:underline font-bold cursor-pointer"
                   >
-                    Pagar Saldo Total
+                    Pagar saldo total ({transactionCurrency === "VED" ? `Bs. ${effectiveDebtBs.toFixed(2)}` : transactionCurrency === "EUR" ? `€ ${effectiveDebtEur.toFixed(2)}` : `$ ${effectiveDebtUsd.toFixed(2)}`})
                   </button>
                 )}
               </div>
-              <Input
-                type="number"
-                step="0.01"
-                min="0.01"
-                required
-                placeholder="0.00"
-                value={amountPaid}
-                onChange={(e) => setAmountPaid(e.target.value)}
-                className="font-mono font-bold text-sm"
-              />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  required
+                  placeholder="0.00"
+                  value={amountPaid}
+                  onChange={(e) => setAmountPaid(e.target.value)}
+                  className="font-mono font-bold text-sm"
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Tarjeta Reactiva de Amortización */}
-          <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs">
-              <div>
-                <span className="text-muted-foreground block font-medium">
-                  Equivalente amortizado en USD:
-                </span>
-                <span className="text-lg font-bold font-mono text-emerald-700">
-                  $ {dynamicEquivalentUsd.toFixed(2)} USD
-                </span>
+            {/* Tarjeta Reactiva de Amortización */}
+            <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <span className="text-muted-foreground block font-medium">
+                    Desembolso en Bolívares (Bs.):
+                  </span>
+                  <span className="text-base font-bold font-mono text-emerald-800 dark:text-emerald-400 block mt-0.5">
+                    Bs. {dynamicEquivalentBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-muted-foreground block font-medium">
+                    Equivalente amortizado en USD:
+                  </span>
+                  <span className="text-base font-bold font-mono text-blue-800 dark:text-blue-400 block mt-0.5">
+                    $ {dynamicEquivalentUsd.toFixed(2)} USD
+                  </span>
+                </div>
+
+                {currentSupplier && (
+                  <div>
+                    <span className="text-muted-foreground block font-medium">
+                      Saldo restante estimado:
+                    </span>
+                    <span className="text-base font-bold font-mono text-foreground block mt-0.5">
+                      {transactionCurrency === "VED"
+                        ? `Bs. ${remainingDebtEstimatedBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : `$ ${remainingDebtEstimatedUsd.toFixed(2)} USD`}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-mono block">
+                      (≈ {transactionCurrency === "VED" ? `$${remainingDebtEstimatedUsd.toFixed(2)} USD` : `Bs. ${remainingDebtEstimatedBs.toFixed(2)}`})
+                    </span>
+                  </div>
+                )}
               </div>
 
-              {currentSupplier && (
-                <div className="sm:text-right">
-                  <span className="text-muted-foreground block font-medium">
-                    Saldo restante estimado:
-                  </span>
-                  <span className="text-lg font-bold font-mono text-foreground">
-                    $ {remainingDebtEstimated.toFixed(2)} USD
+              {isOverpaying && (
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 flex items-start gap-2 text-destructive text-xs">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    El monto a amortizar ($ {dynamicEquivalentUsd.toFixed(2)} USD) sobrepasa el saldo pendiente total consolidado del proveedor ($ {effectiveDebtUsd.toFixed(2)} USD).
                   </span>
                 </div>
               )}
             </div>
-
-            {isOverpaying && (
-              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 flex items-start gap-2 text-destructive text-xs">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>
-                  El monto a amortizar ($ {dynamicEquivalentUsd.toFixed(2)} USD) sobrepasa el saldo pendiente del proveedor ($ {supplierBalance.toFixed(2)} USD).
-                </span>
-              </div>
-            )}
-          </div>
-        </Card>
+          </Card>
 
         {/* SECCIÓN 3: Método de Pago e Información Bancaria */}
         <Card className="p-5 shadow-2xs space-y-4">

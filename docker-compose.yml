@@ -28,7 +28,7 @@ services:
       PORT: 3001
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-erp_idi}?schema=public
       JWT_SECRET: ${JWT_SECRET:-erp_idi_jwt_production_secret_key_2026}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-365d}
     ports:
       - "3001:3001"
     depends_on:

@@ -4,7 +4,7 @@ import { prisma } from '../config/prisma.js';
 import type { AuthUserPayload } from '../types/express.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'jwt_default_secret_key';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '365d';
 
 export class AuthService {
   static async changePassword(

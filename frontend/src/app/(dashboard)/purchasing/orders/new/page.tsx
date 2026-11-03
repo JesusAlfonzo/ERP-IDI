@@ -60,6 +60,11 @@ export default function NewPurchaseOrderPage() {
   const [currency, setCurrency] = useState<CurrencyCode>("USD");
   const [currencyId, setCurrencyId] = useState<string>("");
   const [exchangeRate, setExchangeRate] = useState<number | "">(75.0);
+  const [bcvRates, setBcvRates] = useState<{ USD: number; EUR: number; VED: number }>({
+    USD: 75.0,
+    EUR: 81.5,
+    VED: 1.0,
+  });
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("");
   const [items, setItems] = useState<FormRow[]>([
     { productId: 0, unitId: 0, quantityOrdered: 1, unitPrice: 0, isExempt: false },
@@ -95,8 +100,14 @@ export default function NewPurchaseOrderPage() {
           const defaultCurr = currs.find((c) => c.code.toUpperCase() === "USD");
           if (defaultCurr) setCurrencyId(String(defaultCurr.id));
 
-          if (rates?.USD || rates?.rates?.USD) {
-            setExchangeRate(Number(rates.USD || rates.rates?.USD || 75.0));
+          if (rates) {
+            const ratesObj = {
+              USD: Number(rates.USD || rates.rates?.USD || 75.0),
+              EUR: Number(rates.EUR || rates.rates?.EUR || 81.5),
+              VED: 1.0,
+            };
+            setBcvRates(ratesObj);
+            setExchangeRate(ratesObj.USD);
           }
         }
       } catch (err) {
@@ -107,10 +118,38 @@ export default function NewPurchaseOrderPage() {
       }
     })();
 
+    const handleRateUpdated = () => {
+      CurrencyService.getCurrentRates()
+        .then((r) => {
+          if (r) {
+            const ratesObj = {
+              USD: Number(r.USD || r.rates?.USD || 75.0),
+              EUR: Number(r.EUR || r.rates?.EUR || 81.5),
+              VED: 1.0,
+            };
+            setBcvRates(ratesObj);
+            setExchangeRate((prev) => {
+              if (currency === "USD") return ratesObj.USD;
+              if (currency === "EUR") return ratesObj.EUR;
+              if (currency === "VED") return 1.0;
+              return prev || ratesObj.USD;
+            });
+          }
+        })
+        .catch(console.error);
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("idi:exchange-rate-updated", handleRateUpdated);
+    }
+
     return () => {
       ignore = true;
+      if (typeof window !== "undefined") {
+        window.removeEventListener("idi:exchange-rate-updated", handleRateUpdated);
+      }
     };
-  }, []);
+  }, [currency]);
 
   const handleCurrencyChange = (c: CurrencyCode) => {
     setCurrency(c);
@@ -118,6 +157,14 @@ export default function NewPurchaseOrderPage() {
       (cur) => cur.code.toUpperCase() === c.toUpperCase()
     );
     setCurrencyId(matchedCurr ? String(matchedCurr.id) : "");
+
+    if (c === "USD") {
+      setExchangeRate(bcvRates.USD);
+    } else if (c === "EUR") {
+      setExchangeRate(bcvRates.EUR);
+    } else if (c === "VED") {
+      setExchangeRate(1.0);
+    }
   };
 
   const handleAddItem = () => {
@@ -183,11 +230,18 @@ export default function NewPurchaseOrderPage() {
     exemptAmount = Math.round(exemptAmount * 100) / 100;
     const iva16 = Math.round(taxableAmount * 0.16 * 100) / 100;
     const totalAmount = Math.round((taxableAmount + exemptAmount + iva16) * 100) / 100;
-    const rate = Number(exchangeRate) || 1.0;
+    const rate = Number(exchangeRate) || (currency === "EUR" ? bcvRates.EUR : bcvRates.USD) || 1.0;
     const totalBs =
       currency === "VED"
         ? totalAmount
         : Math.round(totalAmount * rate * 100) / 100;
+
+    const totalUsd =
+      currency === "USD"
+        ? totalAmount
+        : currency === "VED"
+          ? (rate > 0 ? Math.round((totalAmount / rate) * 100) / 100 : totalAmount)
+          : (bcvRates.USD > 0 ? Math.round(((totalAmount * rate) / bcvRates.USD) * 100) / 100 : totalAmount);
 
     return {
       taxableAmount,
@@ -195,12 +249,22 @@ export default function NewPurchaseOrderPage() {
       iva16,
       totalAmount,
       totalBs,
+      totalUsd,
     };
-  }, [items, exchangeRate, currency]);
+  }, [items, exchangeRate, currency, bcvRates]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setFeedback(null);
+
+    if (!supplierId || Number(supplierId) <= 0) {
+      setFeedback({
+        status: "error",
+        message: "Debe seleccionar un proveedor registrado para generar la orden de compra.",
+      });
+      toast.error("Debe seleccionar un proveedor obligatorio.");
+      return;
+    }
 
     const hasInvalidItem = items.some(
       (it) => !it.productId || it.quantityOrdered <= 0 || it.unitPrice <= 0
@@ -219,7 +283,7 @@ export default function NewPurchaseOrderPage() {
     setSubmitting(true);
     try {
       const result = await PurchasingClientService.createOrder({
-        supplierId: supplierId ? Number(supplierId) : null,
+        supplierId: Number(supplierId),
         currency,
         currencyId: currencyId ? Number(currencyId) : undefined,
         exchangeRate: Number(exchangeRate),
@@ -291,7 +355,7 @@ export default function NewPurchaseOrderPage() {
               </Badge>
               {exchangeRate && (
                 <Badge variant="purple" className="text-xs font-mono">
-                  Tasa: Bs. {Number(exchangeRate).toFixed(2)}
+                  Tasa: {Number(exchangeRate).toFixed(2)} Bs./{currency === "EUR" ? "€" : "$"}
                 </Badge>
               )}
             </div>
@@ -350,15 +414,16 @@ export default function NewPurchaseOrderPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs uppercase font-semibold">
-                Proveedor Comercial
+              <Label className="text-xs uppercase font-semibold flex items-center gap-1">
+                Proveedor Comercial <span className="text-rose-500 font-bold">*</span>
               </Label>
               <select
                 value={supplierId}
                 onChange={(e) => setSupplierId(e.target.value)}
+                required
                 className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
               >
-                <option value="">-- Proveedor Opcional / Caja Chica --</option>
+                <option value="">-- Seleccione Proveedor Obligatorio --</option>
                 {suppliers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} {s.rifOrId ? `(${s.rifOrId})` : ""}
@@ -386,13 +451,14 @@ export default function NewPurchaseOrderPage() {
 
             <div className="space-y-1.5">
               <Label className="text-xs uppercase font-semibold">
-                Tasa de Cambio Oficial (Bs./$)
+                Tasa de Cambio Oficial ({currency === "EUR" ? "Bs./EUR" : currency === "VED" ? "VED" : "Bs./USD"})
               </Label>
               <Input
                 type="number"
                 step="0.0001"
                 min="0.0001"
                 value={exchangeRate}
+                disabled={currency === "VED"}
                 onChange={(e) =>
                   setExchangeRate(e.target.value ? Number(e.target.value) : "")
                 }
@@ -400,6 +466,9 @@ export default function NewPurchaseOrderPage() {
                 placeholder="Tasa oficial BCV..."
                 required
               />
+              <span className="text-[10px] text-muted-foreground block font-mono">
+                Oficial BCV: {bcvRates.USD.toFixed(2)} Bs./$ · {bcvRates.EUR.toFixed(2)} Bs./€
+              </span>
             </div>
           </div>
         </Card>
@@ -648,11 +717,16 @@ export default function NewPurchaseOrderPage() {
                 Total Orden ({currency})
               </span>
               <span className="text-lg font-bold font-mono text-emerald-700 dark:text-emerald-400">
-                {currentSymbol} {fiscalSummary.totalAmount.toFixed(2)}
+                {currentSymbol} {fiscalSummary.totalAmount.toFixed(2)} {currency}
               </span>
               {currency !== "VED" && (
                 <span className="text-[10px] text-muted-foreground font-mono block mt-0.5">
                   ≈ Bs. {fiscalSummary.totalBs.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                </span>
+              )}
+              {currency !== "USD" && (
+                <span className="text-[10px] text-muted-foreground font-mono block">
+                  ≈ $ {fiscalSummary.totalUsd.toLocaleString("es-VE", { minimumFractionDigits: 2 })} USD
                 </span>
               )}
             </div>

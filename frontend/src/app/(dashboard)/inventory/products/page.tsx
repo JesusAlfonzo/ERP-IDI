@@ -11,6 +11,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
+import { useDebounce } from "@/hooks/use-debounce";
+import { usePagination } from "@/hooks/use-pagination";
+import { TablePagination } from "@/components/common/TablePagination";
 import type { Product, Category, Brand, Unit, StockBatch } from "@/types/inventory";
 import {
   Package,
@@ -66,10 +69,19 @@ export default function ProductsPage() {
 
   // Filtros
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
   const [categoryFilter, setCategoryFilter] = useState("");
   const [reagentFilter, setReagentFilter] = useState<
     "ALL" | "REAGENT" | "NON_REAGENT"
   >("ALL");
+
+  // Paginación
+  const pagination = usePagination(products, { initialPageSize: 10 });
+  const { resetPage } = pagination;
+
+  useEffect(() => {
+    resetPage();
+  }, [debouncedSearch, categoryFilter, reagentFilter, resetPage]);
 
   // Nivel 2: Ficha Detallada / Lotes (Drawer / Modal)
   const [selectedProductForDetail, setSelectedProductForDetail] =
@@ -106,7 +118,7 @@ export default function ProductsPage() {
           units: [],
         })),
         InventoryClientService.getCatalog({
-          search: search || undefined,
+          search: debouncedSearch || undefined,
           categoryId: categoryFilter ? Number(categoryFilter) : undefined,
           isReagent:
             reagentFilter === "ALL" ? undefined : reagentFilter === "REAGENT",
@@ -125,7 +137,7 @@ export default function ProductsPage() {
         setLoading(false);
       });
     }
-  }, [search, categoryFilter, reagentFilter]);
+  }, [debouncedSearch, categoryFilter, reagentFilter]);
 
   useEffect(() => {
     let isMounted = true;
@@ -335,14 +347,24 @@ export default function ProductsPage() {
       <Card className="p-4 shadow-2xs">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 flex-1">
-            <div className="relative w-full sm:w-64">
+            <div className="relative w-full sm:w-72">
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
               <Input
-                placeholder="Buscar por SKU o descripción..."
+                placeholder="Buscar por SKU, nombre o descripción..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 text-xs"
+                className="pl-9 pr-8 text-xs"
               />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                  title="Borrar búsqueda"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             <select
@@ -371,6 +393,23 @@ export default function ProductsPage() {
               <option value="REAGENT">Solo Reactivos</option>
               <option value="NON_REAGENT">Insumos Generales</option>
             </select>
+
+            {(search || categoryFilter || reagentFilter !== "ALL") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearch("");
+                  setCategoryFilter("");
+                  setReagentFilter("ALL");
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-9"
+                title="Restablecer todos los filtros"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Limpiar filtros</span>
+              </Button>
+            )}
           </div>
 
           <Button
@@ -416,7 +455,7 @@ export default function ProductsPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              products.map((p, index) => {
+              pagination.paginatedItems.map((p, index) => {
                 const totalStock = Number(p.totalStock ?? 0);
                 const minAlert = Number(p.minStockAlert ?? 0);
                 const badge = getStockBadge(totalStock, minAlert);
@@ -514,6 +553,16 @@ export default function ProductsPage() {
             )}
           </TableBody>
         </Table>
+        <TablePagination
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          pageSize={pagination.pageSize}
+          totalItems={pagination.totalItems}
+          onPageChange={pagination.onPageChange}
+          onPageSizeChange={pagination.onPageSizeChange}
+          pageSizeOptions={[10, 25, 50, 100]}
+          entityName="insumos"
+        />
       </Card>
 
       {/* NIVEL 2: Ficha Detallada / Lotes (Drawer Slide-over) */}

@@ -126,6 +126,14 @@ export const createOrder = async (
       items,
     } = req.body;
 
+    if (!supplierId || isNaN(Number(supplierId))) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'Debe seleccionar un proveedor registrado para la orden de compra',
+      });
+      return;
+    }
+
     if ((!currencyId && !currency) || !Array.isArray(items) || items.length === 0) {
       res.status(400).json({
         status: 'BAD_REQUEST',
@@ -143,7 +151,7 @@ export const createOrder = async (
     }));
 
     const order = await OrderService.createOrder({
-      supplierId: supplierId ? Number(supplierId) : null,
+      supplierId: Number(supplierId),
       currencyId: currencyId ? Number(currencyId) : undefined,
       currency: currency ? String(currency) : undefined,
       exchangeRate: exchangeRate ? Number(exchangeRate) : undefined,
@@ -245,6 +253,129 @@ export const receiveOrder = async (
       message:
         'Recepción de mercancía asentada en inventario satisfactoriamente',
       data: serializeBigInt(updatedOrder),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateOrder = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    if (!req.user?.id) {
+      res.status(401).json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const userRoles = req.user.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message: 'Acceso denegado: Solo Compras o Administración puede modificar órdenes.',
+      });
+      return;
+    }
+
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!id) {
+      res.status(400).json({ status: 'BAD_REQUEST', message: 'ID de orden no proporcionado' });
+      return;
+    }
+
+    const {
+      supplierId,
+      currencyId,
+      currency,
+      exchangeRate,
+      requisitionId,
+      notes,
+      items,
+    } = req.body;
+
+    if (!supplierId || isNaN(Number(supplierId))) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'Debe seleccionar un proveedor registrado para la orden de compra',
+      });
+      return;
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'La orden debe incluir al menos un renglón/ítem',
+      });
+      return;
+    }
+
+    const formattedItems = items.map((item: any) => ({
+      productId: BigInt(item.productId),
+      unitId: Number(item.unitId),
+      quantityOrdered: Number(item.quantityOrdered),
+      unitPrice: Number(item.unitPrice),
+      isExempt: Boolean(item.isExempt),
+    }));
+
+    const updated = await OrderService.updateOrder(
+      BigInt(id),
+      {
+        supplierId: Number(supplierId),
+        currencyId: currencyId ? Number(currencyId) : undefined,
+        currency: currency ? String(currency) : undefined,
+        exchangeRate: exchangeRate ? Number(exchangeRate) : undefined,
+        requisitionId: requisitionId ? BigInt(requisitionId) : null,
+        notes: notes ? String(notes) : null,
+        items: formattedItems,
+      }
+    );
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Orden de compra actualizada exitosamente',
+      data: serializeBigInt(updated),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const sendOrder = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    if (!req.user?.id) {
+      res.status(401).json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const userRoles = req.user.roles ?? [];
+    if (!isPurchasingOrAdmin(userRoles)) {
+      res.status(403).json({
+        status: 'FORBIDDEN',
+        message: 'Acceso denegado: Solo Compras o Administración puede enviar órdenes.',
+      });
+      return;
+    }
+
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!id) {
+      res.status(400).json({ status: 'BAD_REQUEST', message: 'ID de orden no proporcionado' });
+      return;
+    }
+
+    const updated = await OrderService.sendOrder(BigInt(id));
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Orden de compra enviada al proveedor exitosamente',
+      data: serializeBigInt(updated),
     });
   } catch (error) {
     next(error);

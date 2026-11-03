@@ -15,6 +15,7 @@ import {
   BankAccountItem,
 } from "@/services/bank-account.service";
 import { AuthService } from "@/services/auth.service";
+import { useDebounce } from "@/hooks/use-debounce";
 import type { AuthUser } from "@/types/auth";
 import {
   FolderTree,
@@ -57,6 +58,7 @@ export default function InventorySettingsPage() {
   const [tab, setTab] = useState<TabType>("categories");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -77,7 +79,7 @@ export default function InventorySettingsPage() {
 
   // Cálculo de conteo filtrado para la pestaña activa
   const currentFilteredCount = useMemo(() => {
-    const q = search.toLowerCase().trim();
+    const q = debouncedSearch.toLowerCase().trim();
     if (tab === "categories") {
       return categories.filter(
         (c) =>
@@ -127,7 +129,7 @@ export default function InventorySettingsPage() {
       ).length;
     }
     return 0;
-  }, [tab, search, categories, brands, units, locations, departments, bankAccounts]);
+  }, [tab, debouncedSearch, categories, brands, units, locations, departments, bankAccounts]);
 
   const totalPages = Math.max(1, Math.ceil(currentFilteredCount / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -986,7 +988,8 @@ export default function InventorySettingsPage() {
 
       {/* Buscador y Filtros */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="relative max-w-md w-full">
+        <div className="flex items-center gap-2 max-w-lg w-full">
+          <div className="relative flex-1">
           <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
           <input
             type="text"
@@ -1016,10 +1019,26 @@ export default function InventorySettingsPage() {
                 setSearch("");
                 setCurrentPage(1);
               }}
-              className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+              className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
               title="Limpiar búsqueda"
             >
               <X className="w-4 h-4" />
+            </button>
+          )}
+          </div>
+
+          {search && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setCurrentPage(1);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer shrink-0"
+              title="Limpiar filtros"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Limpiar filtros</span>
             </button>
           )}
         </div>
@@ -1111,10 +1130,10 @@ export default function InventorySettingsPage() {
                   (() => {
                     const filtered = categories.filter(
                       (c) =>
-                        c.name.toLowerCase().includes(search.toLowerCase()) ||
+                        c.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
                         (c.description &&
-                          c.description.toLowerCase().includes(search.toLowerCase())) ||
-                        (c.code && c.code.toLowerCase().includes(search.toLowerCase()))
+                          c.description.toLowerCase().includes(debouncedSearch.toLowerCase())) ||
+                        (c.code && c.code.toLowerCase().includes(debouncedSearch.toLowerCase()))
                     );
                     if (filtered.length === 0) {
                       return (
@@ -1187,9 +1206,9 @@ export default function InventorySettingsPage() {
                   (() => {
                     const filtered = brands.filter(
                       (b) =>
-                        b.name.toLowerCase().includes(search.toLowerCase()) ||
+                        b.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
                         (b.description &&
-                          b.description.toLowerCase().includes(search.toLowerCase()))
+                          b.description.toLowerCase().includes(debouncedSearch.toLowerCase()))
                     );
                     if (filtered.length === 0) {
                       return (
@@ -1254,8 +1273,8 @@ export default function InventorySettingsPage() {
                   (() => {
                     const filtered = units.filter(
                       (u) =>
-                        u.name.toLowerCase().includes(search.toLowerCase()) ||
-                        u.abbreviation.toLowerCase().includes(search.toLowerCase())
+                        u.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+                        u.abbreviation.toLowerCase().includes(debouncedSearch.toLowerCase())
                     );
                     if (filtered.length === 0) {
                       return (
@@ -1326,10 +1345,10 @@ export default function InventorySettingsPage() {
                   (() => {
                     const filtered = locations.filter(
                       (l) =>
-                        l.name.toLowerCase().includes(search.toLowerCase()) ||
+                        l.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
                         (l.description &&
-                          l.description.toLowerCase().includes(search.toLowerCase())) ||
-                        l.type.toLowerCase().includes(search.toLowerCase())
+                          l.description.toLowerCase().includes(debouncedSearch.toLowerCase())) ||
+                        l.type.toLowerCase().includes(debouncedSearch.toLowerCase())
                     );
                     if (filtered.length === 0) {
                       return (
@@ -1399,10 +1418,10 @@ export default function InventorySettingsPage() {
                   (() => {
                     const filtered = departments.filter(
                       (d) =>
-                        d.name.toLowerCase().includes(search.toLowerCase()) ||
-                        d.code.toLowerCase().includes(search.toLowerCase()) ||
+                        d.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+                        d.code.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
                         (d.description &&
-                          d.description.toLowerCase().includes(search.toLowerCase()))
+                          d.description.toLowerCase().includes(debouncedSearch.toLowerCase()))
                     );
                     if (filtered.length === 0) {
                       return (
@@ -1496,12 +1515,12 @@ export default function InventorySettingsPage() {
                   (() => {
                     const filtered = bankAccounts.filter(
                       (a) =>
-                        a.bankName.toLowerCase().includes(search.toLowerCase()) ||
+                        a.bankName.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
                         (a.accountNumber &&
-                          a.accountNumber.toLowerCase().includes(search.toLowerCase())) ||
-                        a.holderName.toLowerCase().includes(search.toLowerCase()) ||
-                        a.holderId.toLowerCase().includes(search.toLowerCase()) ||
-                        a.currency.toLowerCase().includes(search.toLowerCase())
+                          a.accountNumber.toLowerCase().includes(debouncedSearch.toLowerCase())) ||
+                        a.holderName.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+                        a.holderId.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+                        a.currency.toLowerCase().includes(debouncedSearch.toLowerCase())
                     );
                     if (filtered.length === 0) {
                       return (

@@ -95,78 +95,146 @@ export class PurchaseFinanceService {
         throw new Error('El monto del pago debe ser mayor a 0');
       }
 
-      // 2. Determinar moneda de la transacción
+      // 2. Determinar moneda de la transacción y de la orden
       let txCurrency = (data.transactionCurrency || 'USD').toUpperCase();
       if (txCurrency === 'VES') txCurrency = 'VED';
 
-      // 3. Obtener o resolver tasa de cambio aplicada
+      let orderCurrency = (order.currency || 'USD').trim().toUpperCase();
+      if (orderCurrency === 'VES') orderCurrency = 'VED';
+
+      // 3. Obtener o resolver tasas de cambio oficiales
+      const currencies = await tx.currency.findMany({
+        include: {
+          exchanges: {
+            orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }],
+            take: 1,
+          },
+        },
+      });
+      const ves = currencies.find((c) => c.code === 'VES' || c.code === 'VED');
+      const eur = currencies.find((c) => c.code === 'EUR');
+      const bcvUsd = ves?.exchanges[0]?.rate ? Number(ves.exchanges[0].rate) : 75.0;
+      const bcvEur = eur?.exchanges[0]?.rate ? Number(eur.exchanges[0].rate) : 81.5;
+
       let effectiveRate = data.exchangeRate !== undefined && data.exchangeRate !== null ? Number(data.exchangeRate) : null;
       if (!effectiveRate || effectiveRate <= 0) {
-        const currencies = await tx.currency.findMany({
-          include: {
-            exchanges: {
-              orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }],
-              take: 1,
-            },
-          },
-        });
-        const ves = currencies.find((c) => c.code === 'VES' || c.code === 'VED');
-        const eur = currencies.find((c) => c.code === 'EUR');
-
         if (txCurrency === 'VED') {
-          effectiveRate = ves?.exchanges[0]?.rate ? Number(ves.exchanges[0].rate) : 75.0;
+          effectiveRate = bcvUsd;
         } else if (txCurrency === 'EUR') {
-          effectiveRate = eur?.exchanges[0]?.rate ? Number(eur.exchanges[0].rate) : 81.5;
+          effectiveRate = bcvEur;
         } else {
           effectiveRate = 1.0;
         }
       }
 
-      // 4. Calcular amortizedAmountUsd (cuánto descuenta de la deuda en USD)
+      // 4. Calcular amortizedAgreed (en la moneda pactada de la orden) y amortizedAmountUsd (en USD)
+      let amortizedAgreed = rawAmount;
+      if (txCurrency === orderCurrency) {
+        amortizedAgreed = rawAmount;
+      } else if (orderCurrency === 'VED' && txCurrency === 'USD') {
+        amortizedAgreed = effectiveRate > 0 ? rawAmount * effectiveRate : rawAmount * bcvUsd;
+      } else if (orderCurrency === 'USD' && txCurrency === 'VED') {
+        amortizedAgreed = effectiveRate > 0 ? rawAmount / effectiveRate : rawAmount / bcvUsd;
+      } else if (orderCurrency === 'VED' && txCurrency === 'EUR') {
+        const rateEur = effectiveRate > 0 ? effectiveRate : bcvEur;
+        amortizedAgreed = rawAmount * rateEur;
+      } else if (orderCurrency === 'EUR' && txCurrency === 'VED') {
+        const rateEur = bcvEur > 0 ? bcvEur : (effectiveRate > 0 ? effectiveRate : 81.5);
+        amortizedAgreed = rateEur > 0 ? rawAmount / rateEur : rawAmount;
+      } else if (orderCurrency === 'EUR' && txCurrency === 'USD') {
+        amortizedAgreed = bcvEur > 0 ? (rawAmount * bcvUsd) / bcvEur : rawAmount;
+      } else if (orderCurrency === 'USD' && txCurrency === 'EUR') {
+        const rateEur = effectiveRate > 0 ? effectiveRate : bcvEur;
+        amortizedAgreed = bcvUsd > 0 ? (rawAmount * rateEur) / bcvUsd : rawAmount;
+      }
+
+      // Amortización en USD referencial (Tasa EUR es en Bs./EUR)
       let amortizedAmountUsd = rawAmount;
       if (txCurrency === 'VED') {
-        amortizedAmountUsd = effectiveRate > 0 ? rawAmount / effectiveRate : rawAmount;
+        amortizedAmountUsd = effectiveRate > 0 ? rawAmount / effectiveRate : rawAmount / bcvUsd;
       } else if (txCurrency === 'EUR') {
-        // Si la tasa viene en Bs./EUR (ej. 81.5) y BCV USD es 75: amortized = rawAmount * (81.5 / 75.0)
-        if (effectiveRate > 10) {
-          const vesCurrency = await tx.currency.findFirst({
-            where: { code: { in: ['VES', 'VED'] } },
-            include: { exchanges: { orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }], take: 1 } },
-          });
-          const bcvUsd = vesCurrency?.exchanges[0]?.rate ? Number(vesCurrency.exchanges[0].rate) : 75.0;
-          amortizedAmountUsd = bcvUsd > 0 ? (rawAmount * effectiveRate) / bcvUsd : rawAmount;
-        } else {
-          amortizedAmountUsd = rawAmount * effectiveRate;
-        }
+        const rateEur = effectiveRate > 0 ? effectiveRate : bcvEur;
+        amortizedAmountUsd = bcvUsd > 0 ? (rawAmount * rateEur) / bcvUsd : rawAmount;
       } else {
-        // USD
         amortizedAmountUsd = rawAmount;
       }
 
-      // Redondear a 2 decimales para evitar desbordes por coma flotante
+      amortizedAgreed = Math.round(amortizedAgreed * 100) / 100;
       amortizedAmountUsd = Math.round(amortizedAmountUsd * 100) / 100;
 
-      // 5. Validar que no supere la deuda restante en USD
-      const orderTotalUsd = Number(
-        Number(order.totalAmountUsd) > 0 ? order.totalAmountUsd : order.total
+      // 5. Determinar total contratado y acumulado abonado en la moneda de la orden
+      const totalAgreed = Number(
+        orderCurrency === 'VED'
+          ? (Number(order.totalAmountBs) > 0 ? order.totalAmountBs : order.total)
+          : orderCurrency === 'EUR'
+            ? order.total
+            : (Number(order.totalAmountUsd) > 0 ? order.totalAmountUsd : order.total)
       );
-      const alreadyPaidUsd = order.payments.reduce((acc, p) => {
-        const pAmortized = Number(p.amortizedAmountUsd || 0);
-        if (pAmortized > 0) return acc + pAmortized;
 
-        const pAmount = Number(p.amount);
+      const orderTotalUsd = Number(
+        Number(order.totalAmountUsd) > 0
+          ? order.totalAmountUsd
+          : orderCurrency === 'USD'
+            ? totalAgreed
+            : bcvUsd > 0
+              ? totalAgreed / bcvUsd
+              : totalAgreed
+      );
+
+      let alreadyPaidAgreed = 0;
+      let alreadyPaidUsd = 0;
+
+      for (const p of order.payments) {
+        let pCurr = (p.transactionCurrency || (p.currencyId === 1 ? 'USD' : 'VED')).trim().toUpperCase();
+        if (pCurr === 'VES') pCurr = 'VED';
+
+        const pAmt = Number(p.amountPaid ?? p.amount ?? 0);
         const pRate = Number(p.exchangeRate || 1.0);
-        const pCurr = p.transactionCurrency || (p.currencyId === 1 ? 'USD' : 'VED');
-        if (pCurr === 'VED' && pRate > 0) return acc + pAmount / pRate;
-        return acc + pAmount;
-      }, 0);
+        const pAmortUsd = Number(p.amortizedAmountUsd || 0);
 
-      const remainingDebtUsd = Math.max(0, orderTotalUsd - alreadyPaidUsd);
+        // En USD
+        if (pAmortUsd > 0) {
+          alreadyPaidUsd += pAmortUsd;
+        } else if (pCurr === 'USD') {
+          alreadyPaidUsd += pAmt;
+        } else if (pCurr === 'VED' && pRate > 0) {
+          alreadyPaidUsd += pAmt / pRate;
+        } else if (pCurr === 'EUR') {
+          alreadyPaidUsd += bcvUsd > 0 ? (pAmt * (pRate > 10 ? pRate : bcvEur)) / bcvUsd : pAmt;
+        } else {
+          alreadyPaidUsd += pAmt;
+        }
 
-      // Margen de tolerancia de $0.05 para redondeos de tasas
-      if (amortizedAmountUsd > remainingDebtUsd + 0.05) {
+        // En la moneda de la orden
+        if (pCurr === orderCurrency) {
+          alreadyPaidAgreed += pAmt;
+        } else if (orderCurrency === 'VED' && pCurr === 'USD') {
+          alreadyPaidAgreed += pRate > 0 ? pAmt * pRate : pAmt * bcvUsd;
+        } else if (orderCurrency === 'USD' && pCurr === 'VED') {
+          alreadyPaidAgreed += pRate > 0 ? pAmt / pRate : pAmt / bcvUsd;
+        } else if (orderCurrency === 'VED' && pCurr === 'EUR') {
+          alreadyPaidAgreed += pRate > 0 ? pAmt * pRate : pAmt * bcvEur;
+        } else if (orderCurrency === 'EUR' && pCurr === 'VED') {
+          alreadyPaidAgreed += pRate > 0 ? pAmt / pRate : pAmt / bcvEur;
+        } else if (orderCurrency === 'EUR' && pCurr === 'USD') {
+          alreadyPaidAgreed += bcvEur > 0 ? (pAmt * bcvUsd) / bcvEur : pAmt;
+        } else if (orderCurrency === 'USD' && pCurr === 'EUR') {
+          alreadyPaidAgreed += bcvUsd > 0 ? (pAmt * (pRate > 10 ? pRate : bcvEur)) / bcvUsd : pAmt;
+        } else {
+          alreadyPaidAgreed += pAmt;
+        }
+      }
+
+      alreadyPaidAgreed = Math.round(alreadyPaidAgreed * 100) / 100;
+      alreadyPaidUsd = Math.round(alreadyPaidUsd * 100) / 100;
+
+      const remainingAgreed = Math.max(0, Math.round((totalAgreed - alreadyPaidAgreed) * 100) / 100);
+      const tolerance = orderCurrency === 'VED' ? 1.0 : 0.05;
+
+      // Validación de no sobrepasar la deuda
+      if (amortizedAgreed > remainingAgreed + tolerance) {
         throw new Error(
-          `El monto amortizado ($${amortizedAmountUsd.toFixed(2)} USD) supera la deuda restante ($${remainingDebtUsd.toFixed(2)} USD) de la orden`
+          `El monto abonado (${amortizedAgreed.toFixed(2)} ${orderCurrency}) supera la deuda restante (${remainingAgreed.toFixed(2)} ${orderCurrency}) de la orden`
         );
       }
 
@@ -244,8 +312,8 @@ export class PurchaseFinanceService {
       });
 
       // 10. Actualizar PaymentStatus de la Orden
-      const newTotalPaidUsd = alreadyPaidUsd + amortizedAmountUsd;
-      const isFull = newTotalPaidUsd >= orderTotalUsd - 0.05;
+      const newTotalPaidAgreed = Math.round((alreadyPaidAgreed + amortizedAgreed) * 100) / 100;
+      const isFull = newTotalPaidAgreed >= totalAgreed - tolerance;
 
       const nextPaymentStatus = isFull
         ? PaymentStatus.PAGADO
@@ -268,14 +336,19 @@ export class PurchaseFinanceService {
           orderId: data.orderId,
           createdById: data.registeredById,
           productId: null,
-          notes: `Abono a Proveedor ${order.supplier?.name ?? 'Orden #' + order.orderNumber}: ${txCurrency} ${rawAmount.toFixed(2)} (Equiv. $${amortizedAmountUsd.toFixed(2)}) - Ref: ${payment.referenceNumber ?? 'S/R'}`,
+          notes: `Abono a Proveedor ${order.supplier?.name ?? 'Orden #' + order.orderNumber}: ${txCurrency} ${rawAmount.toFixed(2)} (Amortiza ${amortizedAgreed.toFixed(2)} ${orderCurrency} / Equiv. $${amortizedAmountUsd.toFixed(2)}) - Ref: ${payment.referenceNumber ?? 'S/R'}`,
         },
       });
 
+      const newTotalPaidUsd = Math.round((alreadyPaidUsd + amortizedAmountUsd) * 100) / 100;
       return {
         payment,
+        orderCurrency,
+        totalAgreed,
+        alreadyPaidAgreed: newTotalPaidAgreed,
+        remainingDebtAgreed: Math.max(0, Math.round((totalAgreed - newTotalPaidAgreed) * 100) / 100),
         orderTotalUsd,
-        alreadyPaidUsd: Math.round(newTotalPaidUsd * 100) / 100,
+        alreadyPaidUsd: newTotalPaidUsd,
         remainingDebtUsd: Math.max(0, Math.round((orderTotalUsd - newTotalPaidUsd) * 100) / 100),
         paymentStatus: nextPaymentStatus,
       };
@@ -305,32 +378,105 @@ export class PurchaseFinanceService {
       throw new Error('Orden de compra no encontrada');
     }
 
-    const orderTotalUsd = Number(
-      Number(order.totalAmountUsd) > 0 ? order.totalAmountUsd : order.total
+    let orderCurrency = (order.currency || 'USD').trim().toUpperCase();
+    if (orderCurrency === 'VES') orderCurrency = 'VED';
+
+    const currencies = await prisma.currency.findMany({
+      include: {
+        exchanges: {
+          orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }],
+          take: 1,
+        },
+      },
+    });
+    const ves = currencies.find((c) => c.code === 'VES' || c.code === 'VED');
+    const eur = currencies.find((c) => c.code === 'EUR');
+    const bcvUsd = ves?.exchanges[0]?.rate ? Number(ves.exchanges[0].rate) : 75.0;
+    const bcvEur = eur?.exchanges[0]?.rate ? Number(eur.exchanges[0].rate) : 81.5;
+
+    const totalAgreed = Number(
+      orderCurrency === 'VED'
+        ? (Number(order.totalAmountBs) > 0 ? order.totalAmountBs : order.total)
+        : orderCurrency === 'EUR'
+          ? order.total
+          : (Number(order.totalAmountUsd) > 0 ? order.totalAmountUsd : order.total)
     );
 
-    const totalPaidUsd = order.payments.reduce((acc, p) => {
-      const pAmortized = Number(p.amortizedAmountUsd || 0);
-      if (pAmortized > 0) return acc + pAmortized;
+    const orderTotalUsd = Number(
+      Number(order.totalAmountUsd) > 0
+        ? order.totalAmountUsd
+        : orderCurrency === 'USD'
+          ? totalAgreed
+          : orderCurrency === 'EUR'
+            ? (bcvUsd > 0 ? (totalAgreed * bcvEur) / bcvUsd : totalAgreed)
+            : bcvUsd > 0
+              ? totalAgreed / bcvUsd
+              : totalAgreed
+    );
 
-      const pAmount = Number(p.amount);
+    let alreadyPaidAgreed = 0;
+    let totalPaidUsd = 0;
+
+    for (const p of order.payments) {
+      let pCurr = (p.transactionCurrency || (p.currencyId === 1 ? 'USD' : 'VED')).trim().toUpperCase();
+      if (pCurr === 'VES') pCurr = 'VED';
+
+      const pAmt = Number(p.amountPaid ?? p.amount ?? 0);
       const pRate = Number(p.exchangeRate || 1.0);
-      const pCurr = p.transactionCurrency || (p.currencyId === 1 ? 'USD' : 'VED');
-      if (pCurr === 'VED' && pRate > 0) return acc + pAmount / pRate;
-      return acc + pAmount;
-    }, 0);
+      const pAmortUsd = Number(p.amortizedAmountUsd || 0);
 
-    const remainingDebtUsd = Math.max(0, orderTotalUsd - totalPaidUsd);
+      if (pAmortUsd > 0) {
+        totalPaidUsd += pAmortUsd;
+      } else if (pCurr === 'USD') {
+        totalPaidUsd += pAmt;
+      } else if (pCurr === 'VED' && pRate > 0) {
+        totalPaidUsd += pAmt / pRate;
+      } else if (pCurr === 'EUR') {
+        const rateEur = pRate > 0 ? pRate : bcvEur;
+        totalPaidUsd += bcvUsd > 0 ? (pAmt * rateEur) / bcvUsd : pAmt;
+      } else {
+        totalPaidUsd += pAmt;
+      }
+
+      if (pCurr === orderCurrency) {
+        alreadyPaidAgreed += pAmt;
+      } else if (orderCurrency === 'VED' && pCurr === 'USD') {
+        alreadyPaidAgreed += pRate > 0 ? pAmt * pRate : pAmt * bcvUsd;
+      } else if (orderCurrency === 'USD' && pCurr === 'VED') {
+        alreadyPaidAgreed += pRate > 0 ? pAmt / pRate : pAmt / bcvUsd;
+      } else if (orderCurrency === 'VED' && pCurr === 'EUR') {
+        const rateEur = pRate > 0 ? pRate : bcvEur;
+        alreadyPaidAgreed += pAmt * rateEur;
+      } else if (orderCurrency === 'EUR' && pCurr === 'VED') {
+        const rateEur = bcvEur > 0 ? bcvEur : (pRate > 0 ? pRate : 81.5);
+        alreadyPaidAgreed += rateEur > 0 ? pAmt / rateEur : pAmt;
+      } else if (orderCurrency === 'EUR' && pCurr === 'USD') {
+        alreadyPaidAgreed += bcvEur > 0 ? (pAmt * bcvUsd) / bcvEur : pAmt;
+      } else if (orderCurrency === 'USD' && pCurr === 'EUR') {
+        const rateEur = pRate > 0 ? pRate : bcvEur;
+        alreadyPaidAgreed += bcvUsd > 0 ? (pAmt * rateEur) / bcvUsd : pAmt;
+      } else {
+        alreadyPaidAgreed += pAmt;
+      }
+    }
+
+    alreadyPaidAgreed = Math.round(alreadyPaidAgreed * 100) / 100;
+    totalPaidUsd = Math.round(totalPaidUsd * 100) / 100;
+    const remainingAgreed = Math.max(0, Math.round((totalAgreed - alreadyPaidAgreed) * 100) / 100);
+    const remainingDebtUsd = Math.max(0, Math.round((orderTotalUsd - totalPaidUsd) * 100) / 100);
 
     return {
       orderId: order.id,
       orderNumber: order.orderNumber,
-      currency: order.currency,
+      currency: orderCurrency,
       exchangeRate: Number(order.exchangeRate),
+      totalAgreed,
+      alreadyPaidAgreed,
+      remainingAgreed,
       totalAmountUsd: orderTotalUsd,
       totalAmountBs: Number(order.totalAmountBs),
-      totalPaidUsd: Math.round(totalPaidUsd * 100) / 100,
-      remainingDebtUsd: Math.round(remainingDebtUsd * 100) / 100,
+      totalPaidUsd,
+      remainingDebtUsd,
       paymentStatus: order.paymentStatus,
       paymentsCount: order.payments.length,
       invoicesCount: order.invoices.length,

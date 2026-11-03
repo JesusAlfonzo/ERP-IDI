@@ -1,5 +1,4 @@
 "use client";
-
 import React, { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
 import {
@@ -8,8 +7,12 @@ import {
 } from "@/services/bank-account.service";
 import { CurrencyService } from "@/services/currency.service";
 import { AuthService } from "@/services/auth.service";
+import type { AuthUser } from "@/types/auth";
+import { useDebounce } from "@/hooks/use-debounce";
+import { usePagination } from "@/hooks/use-pagination";
+import { TablePagination } from "@/components/common/TablePagination";
 import { PurchasingClientService } from "@/services/purchasing.service";
-import type { DirectPayment, Supplier } from "@/types/purchasing";
+import type { DirectPayment, Supplier, SupplierDebt } from "@/types/purchasing";
 import { SearchableSelect, type SearchableOption } from "@/components/common/SearchableSelect";
 import { toast } from "@/utils/toast";
 import {
@@ -25,8 +28,9 @@ import {
   Calendar,
   Eye,
   X,
+  ShieldAlert,
+  AlertTriangle,
 } from "lucide-react";
-
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -48,27 +52,44 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-
 export default function DirectPaymentsPage() {
   const [payments, setPayments] = useState<DirectPayment[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccountItem[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierDebts, setSupplierDebts] = useState<SupplierDebt[]>([]);
   const [loading, setLoading] = useState(true);
   const [, startTransition] = useTransition();
-
   // Roles & Permisos
-  const [currentUser] = useState(() => AuthService.getCurrentUser());
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+
+  useEffect(() => {
+    setCurrentUser(AuthService.getCurrentUser());
+  }, []);
+
   const userRoles = currentUser?.roles || [];
   const isAdmin = userRoles.includes("ADMINISTRADOR");
 
+  // Estado para modal de anulación y reverso (exclusivo Administrador)
+  const [paymentToDelete, setPaymentToDelete] = useState<DirectPayment | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
   // Filtros
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
   const [methodFilter, setMethodFilter] = useState("");
   const [currencyFilter, setCurrencyFilter] = useState("");
   const [sourceAccountFilter, setSourceAccountFilter] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
+  // Paginación
+  const pagination = usePagination(payments, { initialPageSize: 10 });
+  const { resetPage } = pagination;
+
+  useEffect(() => {
+    resetPage();
+  }, [debouncedSearch, methodFilter, currencyFilter, sourceAccountFilter, startDate, endDate, resetPage]);
   // Tasas de cambio
   const [bcvRates, setBcvRates] = useState<{
     USD: number;
@@ -79,15 +100,15 @@ export default function DirectPaymentsPage() {
     EUR: 81.5,
     VED: 1.0,
   });
-
   // Modal de Nuevo Egreso
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
-
   // Formulario
   const [concept, setConcept] = useState("");
   const [beneficiary, setBeneficiary] = useState("");
+  const [beneficiaryRif, setBeneficiaryRif] = useState("");
+  const [selectedSupplierId, setSelectedSupplierId] = useState("");
   const [method, setMethod] = useState<
     "TRANSFERENCIA" | "PAGO_MOVIL" | "EFECTIVO" | "ZELLE"
   >("TRANSFERENCIA");
@@ -106,14 +127,13 @@ export default function DirectPaymentsPage() {
   const [reviewedBy, setReviewedBy] = useState("");
   const [authorizedBy, setAuthorizedBy] = useState("");
   const [approvedBy, setApprovedBy] = useState("");
-
   const loadData = () => {
     startTransition(() => {
       void (async () => {
         try {
-          const [paymentsData, accountsData, ratesData, suppliersData] = await Promise.all([
+          const [paymentsData, accountsData, ratesData, suppliersData, debtsData] = await Promise.all([
             BankAccountService.getDirectPayments({
-              search: search || undefined,
+              search: debouncedSearch || undefined,
               method: methodFilter || undefined,
               currency: currencyFilter || undefined,
               startDate: startDate || undefined,
@@ -123,11 +143,12 @@ export default function DirectPaymentsPage() {
             BankAccountService.getBankAccounts(true).catch(() => []),
             CurrencyService.getCurrentRates().catch(() => null),
             PurchasingClientService.getSuppliers().catch(() => []),
+            PurchasingClientService.getSupplierDebts().catch(() => []),
           ]);
           setPayments(paymentsData);
           setBankAccounts(accountsData);
           setSuppliers(suppliersData);
-
+          setSupplierDebts(debtsData);
           if (ratesData) {
             const usdR = Number(ratesData.USD || ratesData.rates?.USD || 75.0);
             const eurR = Number(ratesData.EUR || ratesData.rates?.EUR || 81.5);
@@ -142,20 +163,19 @@ export default function DirectPaymentsPage() {
       })();
     });
   };
-
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [methodFilter, currencyFilter, sourceAccountFilter, startDate, endDate]);
-
+  }, [debouncedSearch, methodFilter, currencyFilter, sourceAccountFilter, startDate, endDate]);
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     loadData();
   };
-
   const handleOpenModal = async () => {
     setConcept("");
     setBeneficiary("");
+    setBeneficiaryRif("");
+    setSelectedSupplierId("");
     setMethod("TRANSFERENCIA");
     setSourceAccountId("");
     setDestinationAccount("");
@@ -168,7 +188,6 @@ export default function DirectPaymentsPage() {
     setReviewedBy("");
     setAuthorizedBy("");
     setApprovedBy("");
-
     setShowModal(true);
     setLoadingAccounts(true);
     try {
@@ -180,56 +199,69 @@ export default function DirectPaymentsPage() {
       setLoadingAccounts(false);
     }
   };
-
   const handleCurrencyChange = (curr: "USD" | "VED" | "EUR") => {
     setTransactionCurrency(curr);
     if (curr === "VED") {
       setExchangeRate(bcvRates.USD.toString());
     } else if (curr === "EUR") {
-      setExchangeRate((bcvRates.EUR / bcvRates.USD).toFixed(4));
+      setExchangeRate(bcvRates.EUR.toString());
     } else {
       setExchangeRate("");
     }
   };
+  const selectedSupplierDebt = supplierDebts.find(
+    (d) => String(d.id) === selectedSupplierId
+  );
+  const parsedAmt = parseFloat(amountPaid) || 0;
+  const parsedRate = parseFloat(exchangeRate) || 0;
 
-  const computeEquivalentUsd = (): number => {
-    const amt = parseFloat(amountPaid) || 0;
-    if (amt <= 0) return 0;
+  let dynamicEquivalentBs = 0;
+  let dynamicEquivalentUsd = 0;
+  let dynamicEquivalentEur = 0;
 
-    if (transactionCurrency === "USD") {
-      return amt;
-    }
-
-    if (transactionCurrency === "VED") {
-      const rate = parseFloat(exchangeRate) || bcvRates.USD || 1;
-      return rate > 0 ? amt / rate : 0;
-    }
-
-    if (transactionCurrency === "EUR") {
-      const eurRate = bcvRates.EUR || 1;
-      const usdRate = bcvRates.USD || 1;
-      const parsedRate = parseFloat(exchangeRate);
-      if (!isNaN(parsedRate) && parsedRate > 0) {
-        return amt * parsedRate;
-      }
-      return amt * (eurRate / usdRate);
-    }
-
-    return amt;
-  };
-
-  const dynamicEquivalentUsd = computeEquivalentUsd();
-
+  // En Venezuela la tasa EUR es en Bolívares por Euro (Bs./EUR), idéntico a USD (Bs./USD)
+  if (transactionCurrency === "USD") {
+    const rateUsd = parsedRate > 0 ? parsedRate : bcvRates.USD;
+    dynamicEquivalentUsd = parsedAmt;
+    dynamicEquivalentBs = parsedAmt * rateUsd;
+    dynamicEquivalentEur = bcvRates.EUR > 0 ? dynamicEquivalentBs / bcvRates.EUR : 0;
+  } else if (transactionCurrency === "VED") {
+    const rateUsd = parsedRate > 0 ? parsedRate : bcvRates.USD;
+    dynamicEquivalentBs = parsedAmt;
+    dynamicEquivalentUsd = rateUsd > 0 ? parsedAmt / rateUsd : 0;
+    dynamicEquivalentEur = bcvRates.EUR > 0 ? parsedAmt / bcvRates.EUR : 0;
+  } else if (transactionCurrency === "EUR") {
+    const rateEur = parsedRate > 0 ? parsedRate : bcvRates.EUR;
+    dynamicEquivalentEur = parsedAmt;
+    dynamicEquivalentBs = parsedAmt * rateEur;
+    dynamicEquivalentUsd = bcvRates.USD > 0 ? dynamicEquivalentBs / bcvRates.USD : parsedAmt;
+  }
+  const dynamicEquivalentUsdVal = dynamicEquivalentUsd;
   const handleSubmitPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!concept.trim()) {
       toast.error("Debe ingresar el concepto del pago.");
       return;
     }
     if (!beneficiary.trim()) {
-      toast.error("Debe especificar el beneficiario.");
+      toast.error("Debe especificar la razón social o nombre del beneficiario.");
       return;
+    }
+    const cleanRif = beneficiaryRif.trim().toUpperCase();
+    const rifPattern = /^[JVEGPjvegp]-?\d{6,9}(-?\d)?$/;
+    // Verificar si es proveedor registrado o si se debe exigir RIF obligatorio
+    const isRegistered = suppliers.some(
+      (s) => String(s.id) === selectedSupplierId || s.name.toLowerCase() === beneficiary.trim().toLowerCase()
+    );
+    if (!isRegistered) {
+      if (!cleanRif) {
+        toast.error("El RIF o documento de identidad fiscal es obligatorio para proveedores no registrados.");
+        return;
+      }
+      if (!rifPattern.test(cleanRif)) {
+        toast.error("El RIF es inválido. Debe comenzar con J, V, E, G o P seguido de números (ej. J-12345678-9, V-12345678).");
+        return;
+      }
     }
     const parsedAmount = parseFloat(amountPaid);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
@@ -247,19 +279,20 @@ export default function DirectPaymentsPage() {
       toast.error("Debe seleccionar la cuenta bancaria de origen.");
       return;
     }
-
     setSubmitting(true);
     try {
       let finalRate: number | undefined;
       if (transactionCurrency === "VED") {
         finalRate = parseFloat(exchangeRate) || bcvRates.USD;
       } else if (transactionCurrency === "EUR") {
-        finalRate = parseFloat(exchangeRate) || bcvRates.EUR / bcvRates.USD;
+        finalRate = parseFloat(exchangeRate) || bcvRates.EUR;
       }
-
+      const formattedBeneficiary = cleanRif && !beneficiary.toUpperCase().includes(cleanRif)
+        ? `${beneficiary.trim()} (RIF: ${cleanRif})`
+        : beneficiary.trim();
       await BankAccountService.createDirectPayment({
         concept: concept.trim(),
-        beneficiary: beneficiary.trim(),
+        beneficiary: formattedBeneficiary,
         method,
         sourceAccountId:
           method === "TRANSFERENCIA" || method === "PAGO_MOVIL"
@@ -276,7 +309,6 @@ export default function DirectPaymentsPage() {
         authorizedBy: authorizedBy.trim() || undefined,
         approvedBy: approvedBy.trim() || undefined,
       });
-
       toast.success("Pago directo registrado exitosamente");
       setShowModal(false);
       loadData();
@@ -288,25 +320,27 @@ export default function DirectPaymentsPage() {
       setSubmitting(false);
     }
   };
-
-  const handleDelete = async (payment: DirectPayment) => {
-    if (!isAdmin) return;
-    const confirm = window.confirm(
-      `¿Está seguro de eliminar el pago directo "${payment.concept}" por ${payment.transactionCurrency} ${payment.amountPaid}? Esta acción devolverá los fondos a la cuenta institucional si aplica.`
-    );
-    if (!confirm) return;
-
+  const handleConfirmDelete = async () => {
+    if (!isAdmin || !paymentToDelete) return;
+    if (!deleteReason.trim()) {
+      toast.error("Debe ingresar el motivo o justificación de la anulación para la auditoría contable.");
+      return;
+    }
+    setDeleting(true);
     try {
-      await BankAccountService.deleteDirectPayment(payment.id);
-      toast.success("Pago directo eliminado correctamente");
+      await BankAccountService.deleteDirectPayment(paymentToDelete.id, deleteReason.trim());
+      toast.success("Pago directo anulado y fondos reintegrados en auditoría contable.");
+      setPaymentToDelete(null);
+      setDeleteReason("");
       loadData();
     } catch (err: unknown) {
       const msg =
-        err instanceof Error ? err.message : "Error al eliminar pago directo";
+        err instanceof Error ? err.message : "Error al anular pago directo";
       toast.error(msg);
+    } finally {
+      setDeleting(false);
     }
   };
-
   const getMethodBadge = (m: string) => {
     switch (m) {
       case "TRANSFERENCIA":
@@ -321,7 +355,6 @@ export default function DirectPaymentsPage() {
         return <Badge variant="outline" className="border-border/60 bg-muted/20 text-muted-foreground">{m}</Badge>;
     }
   };
-
   // Opciones de autocompletado inteligente de proveedores
   const supplierOptions = React.useMemo<SearchableOption<Supplier>[]>(() => {
     return suppliers.map((s) => ({
@@ -333,7 +366,6 @@ export default function DirectPaymentsPage() {
       data: s,
     }));
   }, [suppliers]);
-
   // Cálculos estadísticos
   const totalCount = payments.length;
   const totalUsdEquivalent = payments.reduce(
@@ -343,7 +375,6 @@ export default function DirectPaymentsPage() {
   const totalVedPaid = payments
     .filter((p) => p.transactionCurrency === "VED")
     .reduce((acc, p) => acc + (Number(p.amountPaid) || 0), 0);
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -374,15 +405,10 @@ export default function DirectPaymentsPage() {
             </h1>
           </div>
         </div>
-
-        <Button asChild className="gap-1.5 self-start sm:self-auto cursor-pointer">
-          <Link href="/admin/financial/payments/new">
-            <Plus className="w-4 h-4" />
-            Registrar Nuevo Egreso
-          </Link>
+        <Button onClick={handleOpenModal} className="gap-1.5 self-start sm:self-auto cursor-pointer">
+          <Plus className="w-4 h-4" /> Registrar Nuevo Egreso
         </Button>
       </div>
-
       {/* Tarjetas Estadísticas */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <Card className="p-4 space-y-1 shadow-2xs">
@@ -397,7 +423,6 @@ export default function DirectPaymentsPage() {
             Desembolsos registrados
           </span>
         </Card>
-
         <Card className="p-4 space-y-1 shadow-2xs">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
             <DollarSign className="w-4 h-4 text-emerald-600" />
@@ -414,7 +439,6 @@ export default function DirectPaymentsPage() {
             Valor consolidado en divisas
           </span>
         </Card>
-
         <Card className="p-4 space-y-1 shadow-2xs">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
             <Coins className="w-4 h-4 text-amber-600" />
@@ -431,7 +455,6 @@ export default function DirectPaymentsPage() {
             Pagos en moneda nacional
           </span>
         </Card>
-
         <Card className="p-4 space-y-1 shadow-2xs">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
             <Building2 className="w-4 h-4 text-purple-600" />
@@ -445,7 +468,6 @@ export default function DirectPaymentsPage() {
           </span>
         </Card>
       </div>
-
       {/* Barra de Filtros */}
       <Card className="p-4 space-y-3 shadow-2xs">
         <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
@@ -487,7 +509,6 @@ export default function DirectPaymentsPage() {
               </button>
             )}
           </form>
-
           <div className="flex flex-wrap items-center gap-2">
             {/* Cuenta Bancaria Origen */}
             <select
@@ -503,7 +524,6 @@ export default function DirectPaymentsPage() {
                 </option>
               ))}
             </select>
-
             {/* Método */}
             <select
               value={methodFilter}
@@ -516,7 +536,6 @@ export default function DirectPaymentsPage() {
               <option value="EFECTIVO">Efectivo</option>
               <option value="ZELLE">Zelle</option>
             </select>
-
             {/* Moneda */}
             <select
               value={currencyFilter}
@@ -530,7 +549,6 @@ export default function DirectPaymentsPage() {
             </select>
           </div>
         </div>
-
         {/* Rango de Fechas (Desde / Hasta) */}
         <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border text-xs">
           <div className="flex items-center gap-1.5 text-foreground font-semibold">
@@ -558,7 +576,7 @@ export default function DirectPaymentsPage() {
           {(startDate || endDate || sourceAccountFilter || methodFilter || currencyFilter || search) && (
             <Button
               type="button"
-              variant="link"
+              variant="ghost"
               size="sm"
               onClick={() => {
                 setStartDate("");
@@ -568,13 +586,24 @@ export default function DirectPaymentsPage() {
                 setCurrencyFilter("");
                 setSearch("");
               }}
-              className="ml-auto text-xs h-auto p-0 text-primary"
+              className="ml-auto text-xs h-8 text-muted-foreground hover:text-foreground gap-1.5 cursor-pointer"
+              title="Restablecer todos los filtros"
             >
-              Limpiar Filtros
+              <X className="w-3.5 h-3.5" />
+              <span>Limpiar filtros</span>
             </Button>
           )}
         </div>
       </Card>
+      {/* Banner de Auditoría Informativo para Operadores No Administradores */}
+      {!isAdmin && (
+        <div className="flex items-center gap-2.5 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-900 dark:text-amber-300">
+          <ShieldAlert className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>
+            <strong>Control de Auditoría:</strong> La anulación o reversión de egresos asentados está restringida exclusivamente a usuarios con rol <strong>ADMINISTRADOR</strong>. Si requiere anular un pago, el encargado del módulo debe solicitar la intervención de un Administrador o Coordinador para asentar la justificación formal y generar el reporte contable.
+          </span>
+        </div>
+      )}
 
       {/* Tabla del Historial */}
       <Card className="overflow-hidden shadow-2xs">
@@ -600,14 +629,13 @@ export default function DirectPaymentsPage() {
                 previa.
               </p>
             </div>
-            <Button asChild size="sm" className="gap-1.5 cursor-pointer">
-              <Link href="/admin/financial/payments/new">
-                <Plus className="w-3.5 h-3.5" /> Registrar Primer Egreso
-              </Link>
+            <Button onClick={handleOpenModal} size="sm" className="gap-1.5 cursor-pointer">
+              <Plus className="w-3.5 h-3.5" /> Registrar Primer Egreso
             </Button>
           </div>
         ) : (
-          <Table>
+          <>
+            <Table>
             <TableHeader>
               <TableRow className="bg-muted/30">
                 <TableHead className="py-3 px-4 text-left">Fecha</TableHead>
@@ -623,7 +651,7 @@ export default function DirectPaymentsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {payments.map((p) => {
+              {pagination.paginatedItems.map((p) => {
                 const pSymbol =
                   p.transactionCurrency === "VED"
                     ? "Bs."
@@ -633,7 +661,6 @@ export default function DirectPaymentsPage() {
                 const pAmount = Number(p.amountPaid || 0);
                 const pEquivUsd = Number(p.equivalentAmountUsd || 0);
                 const pRate = Number(p.exchangeRate || 0);
-
                 return (
                   <TableRow key={String(p.id)} className="hover:bg-muted/40 transition-colors">
                     <TableCell className="py-3 px-4 font-mono text-foreground whitespace-nowrap">
@@ -730,7 +757,7 @@ export default function DirectPaymentsPage() {
                     <TableCell className="py-3 px-4 text-center font-mono text-[11px] text-muted-foreground whitespace-nowrap">
                       {p.transactionCurrency === "USD"
                         ? "1.00"
-                        : `${pRate.toFixed(2)} Bs.`}
+                        : `${pRate.toFixed(2)} Bs./${p.transactionCurrency === "EUR" ? "€" : "$"}`}
                     </TableCell>
                     <TableCell className="py-3 px-4 text-right font-mono font-bold text-emerald-700 whitespace-nowrap">
                       ${" "}
@@ -757,9 +784,12 @@ export default function DirectPaymentsPage() {
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            onClick={() => handleDelete(p)}
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                            title="Eliminar registro de pago directo"
+                            onClick={() => {
+                              setPaymentToDelete(p);
+                              setDeleteReason("");
+                            }}
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                            title="Anular y revertir pago directo (Solo Administrador)"
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -771,12 +801,22 @@ export default function DirectPaymentsPage() {
               })}
             </TableBody>
           </Table>
+          <TablePagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            pageSize={pagination.pageSize}
+            totalItems={pagination.totalItems}
+            onPageChange={pagination.onPageChange}
+            onPageSizeChange={pagination.onPageSizeChange}
+            pageSizeOptions={[10, 25, 50, 100]}
+            entityName="egresos registrados"
+          />
+        </>
         )}
       </Card>
-
       {/* Modal Registrar Nuevo Egreso con shadcn Dialog */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl md:max-w-4xl w-[95vw] max-h-[92vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
@@ -792,7 +832,6 @@ export default function DirectPaymentsPage() {
               </div>
             </div>
           </DialogHeader>
-
           <form onSubmit={handleSubmitPayment} className="space-y-4">
             {/* Concepto del Pago */}
             <div className="space-y-1.5">
@@ -808,16 +847,15 @@ export default function DirectPaymentsPage() {
                 className="text-xs"
               />
             </div>
-
-            {/* Beneficiario / Proveedor con selector inteligente */}
-            <div className="space-y-1.5">
+            {/* Beneficiario / Proveedor con selector inteligente y validación obligatoria de RIF */}
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-xs uppercase">
-                  Beneficiario / Proveedor / RIF *
+                  Beneficiario / Proveedor *
                 </Label>
                 {suppliers.length > 0 && (
                   <span className="text-[10px] text-muted-foreground font-normal">
-                    Seleccione un proveedor para autocompletar o escriba libremente
+                    Seleccione un proveedor para autocompletar o ingrese manualmente
                   </span>
                 )}
               </div>
@@ -825,99 +863,157 @@ export default function DirectPaymentsPage() {
                 <div className="mb-1">
                   <SearchableSelect<Supplier>
                     options={supplierOptions}
-                    value=""
-                    onChange={(_val, opt) => {
+                    value={selectedSupplierId}
+                    onChange={(val, opt) => {
+                      setSelectedSupplierId(String(val));
                       if (opt?.data) {
                         const s = opt.data;
-                        const label = (s.rifOrId || s.rif) ? `${s.name} (${s.rifOrId || s.rif})` : s.name;
-                        setBeneficiary(label);
+                        setBeneficiary(s.name);
+                        setBeneficiaryRif(s.rifOrId || s.rif || "");
                       }
                     }}
-                    placeholder="🔍 Buscar proveedor registrado para autocompletar datos..."
+                    placeholder="🔍 Buscar proveedor registrado para autocompletar..."
                     emptyMessage="No se encontró ningún proveedor registrado."
                     itemTypeLabel="proveedor(es)"
                     icon={<Building2 className="w-4 h-4 text-muted-foreground shrink-0" />}
                   />
                 </div>
               )}
-              <Input
-                type="text"
-                required
-                value={beneficiary}
-                onChange={(e) => setBeneficiary(e.target.value)}
-                placeholder="Ej. Comercializadora Médica C.A. (RIF J-12345678-9)..."
-                className="text-xs"
-              />
-            </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground uppercase">
+                    Razón Social / Beneficiario *
+                  </Label>
+                  <Input
+                    type="text"
+                    required
+                    value={beneficiary}
+                    onChange={(e) => {
+                      setBeneficiary(e.target.value);
+                      if (selectedSupplierId) setSelectedSupplierId("");
+                    }}
+                    placeholder="Ej. Servicios de Refrigeración Andina C.A."
+                    className="text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[11px] text-muted-foreground uppercase">
+                      RIF / Cédula Fiscal *
+                    </Label>
+                    {!selectedSupplierId && (
+                      <Badge variant="rose" className="text-[9px] py-0 px-1 font-mono">
+                        Obligatorio
+                      </Badge>
+                    )}
+                  </div>
+                  <Input
+                    type="text"
+                    required={!selectedSupplierId}
+                    value={beneficiaryRif}
+                    onChange={(e) => setBeneficiaryRif(e.target.value.toUpperCase())}
+                    placeholder="Ej. J-12345678-9, V-12345678"
+                    className="text-xs font-mono"
+                  />
+                </div>
+              </div>
 
-            {/* Método de Pago */}
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase">
-                Método de Pago *
-              </Label>
-              <select
-                value={method}
-                onChange={(e) =>
-                  setMethod(
-                    e.target.value as
-                      | "TRANSFERENCIA"
-                      | "PAGO_MOVIL"
-                      | "EFECTIVO"
-                      | "ZELLE"
-                  )
-                }
-                className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
-              >
-                <option value="TRANSFERENCIA">Transferencia Bancaria</option>
-                <option value="PAGO_MOVIL">Pago Móvil Interbancario</option>
-                <option value="EFECTIVO">Efectivo (Dólares / Bolívares)</option>
-                <option value="ZELLE">Zelle (USD)</option>
-              </select>
+              {/* Deuda comercial pendiente si el proveedor tiene órdenes previas */}
+              {selectedSupplierDebt && ((selectedSupplierDebt.balanceUsd || 0) > 0.01 || (selectedSupplierDebt.balanceBs || 0) > 0.01 || (selectedSupplierDebt.balanceEur || 0) > 0.01) && (
+                <div className="p-3 bg-muted/40 rounded-xl border border-border space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
+                    <span className="flex items-center gap-1.5 text-foreground">
+                      <Building2 className="w-3.5 h-3.5 text-primary" />
+                      Deuda Comercial Registrada de este Proveedor
+                    </span>
+                    <Badge variant="rose" className="text-[10px] font-mono py-0">En Cartera</Badge>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                    <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                      <span className="text-[10px] text-emerald-800 dark:text-emerald-300 font-semibold block uppercase">Cuenta Bs.</span>
+                      <strong className="text-sm font-mono text-emerald-950 dark:text-emerald-200">
+                        Bs. {(selectedSupplierDebt.balanceBs || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </strong>
+                    </div>
+                    <div className="p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                      <span className="text-[10px] text-blue-800 dark:text-blue-300 font-semibold block uppercase">Cuenta USD</span>
+                      <strong className="text-sm font-mono text-blue-950 dark:text-blue-200">
+                        $ {(selectedSupplierDebt.balanceUsd || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </strong>
+                    </div>
+                    <div className="p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                      <span className="text-[10px] text-purple-800 dark:text-purple-300 font-semibold block uppercase">Cuenta EUR</span>
+                      <strong className="text-sm font-mono text-purple-950 dark:text-purple-200">
+                        € {(selectedSupplierDebt.balanceEur || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-
-            {/* Selector de Cuenta Origen */}
-            {(method === "TRANSFERENCIA" || method === "PAGO_MOVIL") && (
+            {/* Método de Pago y Cuenta Bancaria Origen en 2 columnas */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="directSourceAccountId" className="text-xs uppercase">
-                  Cuenta Bancaria Origen *
+                <Label className="text-xs uppercase">
+                  Método de Pago *
                 </Label>
                 <select
-                  id="directSourceAccountId"
-                  required
-                  value={sourceAccountId}
-                  onChange={(e) => setSourceAccountId(e.target.value)}
-                  className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer font-mono"
+                  value={method}
+                  onChange={(e) =>
+                    setMethod(
+                      e.target.value as
+                        | "TRANSFERENCIA"
+                        | "PAGO_MOVIL"
+                        | "EFECTIVO"
+                        | "ZELLE"
+                    )
+                  }
+                  className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
                 >
-                  <option value="">
-                    {loadingAccounts
-                      ? "Cargando cuentas bancarias activas..."
-                      : "-- Seleccionar Cuenta Bancaria Origen * --"}
-                  </option>
-                  {bankAccounts
-                    .filter((acc) => acc.isActive)
-                    .map((acc) => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.bankName} - {acc.accountNumber || "S/N"} (
-                        {acc.type} - {acc.currency})
-                      </option>
-                    ))}
+                  <option value="TRANSFERENCIA">Transferencia Bancaria</option>
+                  <option value="PAGO_MOVIL">Pago Móvil Interbancario</option>
+                  <option value="EFECTIVO">Efectivo (Dólares / Bolívares)</option>
+                  <option value="ZELLE">Zelle (USD)</option>
                 </select>
-                {bankAccounts.filter((acc) => acc.isActive).length === 0 &&
-                  !loadingAccounts && (
-                    <p className="mt-1 text-[11px] text-amber-700">
-                      No hay cuentas bancarias activas registradas. Puede
-                      crear cuentas en{" "}
-                      <Link
-                        href="/inventory/settings"
-                        className="font-bold underline text-amber-900"
-                      >
-                        Configuración &gt; Cuentas Institucionales
-                      </Link>
-                      .
-                    </p>
-                  )}
               </div>
-            )}
+
+              {(method === "TRANSFERENCIA" || method === "PAGO_MOVIL") ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="directSourceAccountId" className="text-xs uppercase">
+                    Cuenta Bancaria Origen *
+                  </Label>
+                  <select
+                    id="directSourceAccountId"
+                    required
+                    value={sourceAccountId}
+                    onChange={(e) => setSourceAccountId(e.target.value)}
+                    className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer font-mono"
+                  >
+                    <option value="">
+                      {loadingAccounts
+                        ? "Cargando cuentas bancarias activas..."
+                        : "-- Seleccionar Cuenta Bancaria Origen * --"}
+                    </option>
+                    {bankAccounts
+                      .filter((acc) => acc.isActive)
+                      .map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.bankName} - {acc.accountNumber || "S/N"} ({acc.type} - {acc.currency})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label className="text-xs uppercase text-muted-foreground">
+                    Instrumento de Liquidación
+                  </Label>
+                  <div className="h-9 px-3 py-2 bg-muted/30 border border-input rounded-lg text-xs text-muted-foreground flex items-center">
+                    {method === "EFECTIVO" ? "Desembolso directo por Caja Chica / Efectivo" : "Transferencia externa Zelle"}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* N° Referencia y Fecha de Pago */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -952,86 +1048,119 @@ export default function DirectPaymentsPage() {
               </div>
             </div>
 
-            {/* Moneda y Monto Pagado */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Moneda del Pago y Tasa de Cambio */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs uppercase">
                   Moneda del Pago *
                 </Label>
-                <select
-                  value={transactionCurrency}
-                  onChange={(e) =>
-                    handleCurrencyChange(
-                      e.target.value as "USD" | "VED" | "EUR"
-                    )
-                  }
-                  className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
-                >
-                  <option value="USD">USD ($)</option>
-                  <option value="VED">VED (Bs.)</option>
-                  <option value="EUR">EUR (€)</option>
-                </select>
-              </div>
-              <div className="sm:col-span-2 space-y-1.5">
-                <Label className="text-xs uppercase">
-                  Monto Pagado (
-                  {transactionCurrency === "VED"
-                    ? "Bs."
-                    : transactionCurrency === "EUR"
-                      ? "€"
-                      : "$"}
-                  ) *
-                </Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)}
-                  placeholder="0.00"
-                  className="font-mono font-bold text-xs"
-                />
-              </div>
-            </div>
-
-            {/* Tasa de Cambio */}
-            {(transactionCurrency === "VED" ||
-              transactionCurrency === "EUR") && (
-              <Card className="p-3 bg-muted/30 border-border space-y-2">
-                <div className="flex justify-between items-center">
-                  <Label className="text-xs font-semibold">
-                    Tasa de Cambio a aplicar (Bs./
-                    {transactionCurrency === "EUR" ? "€" : "$"})
-                  </Label>
-                  <span className="text-[10px] text-muted-foreground font-mono">
-                    BCV Oficial:{" "}
-                    {transactionCurrency === "VED"
-                      ? bcvRates.USD.toFixed(2)
-                      : bcvRates.EUR.toFixed(2)}{" "}
-                    Bs.
-                  </span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(["USD", "VED", "EUR"] as const).map((curr) => (
+                    <Button
+                      key={curr}
+                      type="button"
+                      size="sm"
+                      variant={transactionCurrency === curr ? "default" : "outline"}
+                      onClick={() => handleCurrencyChange(curr)}
+                      className={`text-xs font-bold ${
+                        transactionCurrency === curr
+                          ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                          : ""
+                      }`}
+                    >
+                      {curr === "VED" ? "Bs." : curr}
+                    </Button>
+                  ))}
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase">
+                  Tasa de Cambio (Bs./Divisa) *
+                </Label>
                 <Input
                   type="number"
                   step="0.0001"
                   min="0.0001"
+                  required
                   value={exchangeRate}
                   onChange={(e) => setExchangeRate(e.target.value)}
-                  className="font-mono text-xs"
+                  placeholder="Tasa BCV del día..."
+                  className="font-mono font-bold text-xs"
                 />
+                <span className="text-[10px] text-muted-foreground block font-mono">
+                  Oficial BCV: {bcvRates.USD.toFixed(2)} Bs./$ · {bcvRates.EUR.toFixed(2)} Bs./€
+                </span>
+              </div>
+            </div>
+
+            {/* Monto Pagado */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs uppercase font-bold text-foreground">
+                  Monto a Pagar ({transactionCurrency === "VED" ? "Bs." : transactionCurrency === "EUR" ? "€" : "$"}) *
+                </Label>
+                {selectedSupplierDebt && ((selectedSupplierDebt.balanceUsd || 0) > 0.01 || (selectedSupplierDebt.balanceBs || 0) > 0.01) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (transactionCurrency === "VED") {
+                        const totalBs = (selectedSupplierDebt.balanceBs || 0) + (selectedSupplierDebt.balanceUsd || 0) * (parseFloat(exchangeRate) || bcvRates.USD);
+                        setAmountPaid(totalBs.toFixed(2));
+                      } else if (transactionCurrency === "USD") {
+                        const totalUsd = (selectedSupplierDebt.balanceUsd || 0) + ((selectedSupplierDebt.balanceBs || 0) / (parseFloat(exchangeRate) || bcvRates.USD));
+                        setAmountPaid(totalUsd.toFixed(2));
+                      } else {
+                        setAmountPaid((selectedSupplierDebt.balanceEur || 0).toFixed(2));
+                      }
+                    }}
+                    className="text-xs text-primary hover:underline font-bold cursor-pointer"
+                  >
+                    Cargar saldo pendiente del proveedor ({transactionCurrency === "VED" ? `Bs. ${((selectedSupplierDebt.balanceBs || 0) + (selectedSupplierDebt.balanceUsd || 0) * (parseFloat(exchangeRate) || bcvRates.USD)).toFixed(2)}` : `$ ${((selectedSupplierDebt.balanceUsd || 0) + ((selectedSupplierDebt.balanceBs || 0) / (parseFloat(exchangeRate) || bcvRates.USD))).toFixed(2)}`})
+                  </button>
+                )}
+              </div>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                required
+                value={amountPaid}
+                onChange={(e) => setAmountPaid(e.target.value)}
+                placeholder="0.00"
+                className="text-base font-mono font-bold"
+              />
+            </div>
+
+            {/* Indicador Reactivo Multi-Moneda */}
+            {parsedAmt > 0 && (
+              <Card className="p-3.5 bg-muted/40 border-border grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                <div>
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block">
+                    Desembolso en Bolívares (Bs.):
+                  </span>
+                  <strong className="text-sm font-bold font-mono text-emerald-800 dark:text-emerald-400 block mt-0.5">
+                    Bs. {dynamicEquivalentBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block">
+                    Equivalente en Dólares (USD):
+                  </span>
+                  <strong className="text-sm font-bold font-mono text-blue-800 dark:text-blue-400 block mt-0.5">
+                    $ {dynamicEquivalentUsd.toFixed(2)} USD
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block">
+                    Equivalente en Euros (EUR):
+                  </span>
+                  <strong className="text-sm font-bold font-mono text-purple-800 dark:text-purple-400 block mt-0.5">
+                    € {dynamicEquivalentEur.toFixed(2)} EUR
+                  </strong>
+                </div>
               </Card>
             )}
-
-            {/* Indicador Reactivo de Equivalente USD */}
-            <Card className="p-3.5 bg-emerald-50/60 border-emerald-200 flex justify-between items-center text-xs">
-              <span className="font-semibold text-emerald-900">
-                Equivalente estimado en USD:
-              </span>
-              <span className="font-mono text-sm font-bold text-emerald-800">
-                $ {dynamicEquivalentUsd.toFixed(2)} USD
-              </span>
-            </Card>
 
             {/* Notas / Observaciones */}
             <div className="space-y-2">
@@ -1043,7 +1172,6 @@ export default function DirectPaymentsPage() {
                   (Haz clic para asociar)
                 </span>
               </div>
-
               {/* Badges de 1 palabra para clasificar egreso */}
               <div className="flex flex-wrap gap-2 pt-0.5">
                 {[
@@ -1076,7 +1204,6 @@ export default function DirectPaymentsPage() {
                   );
                 })}
               </div>
-
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
@@ -1085,7 +1212,6 @@ export default function DirectPaymentsPage() {
                 rows={2}
               />
             </div>
-
             {/* Firmas de Autorización */}
             <div className="border-t border-border pt-3 space-y-2">
               <CardTitle className="text-xs font-bold uppercase tracking-wide">
@@ -1124,7 +1250,6 @@ export default function DirectPaymentsPage() {
                 </div>
               </div>
             </div>
-
             {/* Botones de Acción */}
             <DialogFooter className="pt-3">
               <Button
@@ -1157,6 +1282,126 @@ export default function DirectPaymentsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Anulación y Reversión de Pago (Exclusivo Administrador) */}
+      <Dialog
+        open={Boolean(paymentToDelete && isAdmin)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPaymentToDelete(null);
+            setDeleteReason("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg w-[95vw] p-5 sm:p-6">
+          <DialogHeader>
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-destructive/10 border border-destructive/20 flex items-center justify-center text-destructive">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-foreground">
+                  Anular y Revertir Egreso de Tesorería
+                </DialogTitle>
+                <p className="text-xs text-muted-foreground">
+                  Operación autorizada exclusivamente para Administradores
+                </p>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {paymentToDelete && (
+            <div className="space-y-4 pt-1">
+              {/* Resumen del Pago a Anular */}
+              <div className="p-3.5 bg-muted/40 border border-border rounded-xl space-y-1.5 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground font-medium">Concepto:</span>
+                  <span className="font-bold text-foreground text-right">{paymentToDelete.concept}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground font-medium">Beneficiario:</span>
+                  <span className="font-semibold text-foreground text-right">{paymentToDelete.beneficiary}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground font-medium">Monto Pagado:</span>
+                  <span className="font-mono font-bold text-destructive text-right">
+                    {paymentToDelete.transactionCurrency === "VED" ? "Bs." : paymentToDelete.transactionCurrency === "EUR" ? "€" : "$"} {Number(paymentToDelete.amountPaid).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-[11px] text-muted-foreground">
+                  <span>Equiv. USD:</span>
+                  <span className="font-mono font-semibold">${Number(paymentToDelete.equivalentAmountUsd || 0).toFixed(2)} USD</span>
+                </div>
+              </div>
+
+              {/* Advertencia de Auditoría */}
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                <div className="font-semibold flex items-center gap-1.5">
+                  <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Protocolo de Control y Auditoría:</span>
+                </div>
+                <p className="text-[11px] leading-relaxed">
+                  Esta acción revertirá los fondos contables y asentará un registro formal de anulación en el Kardex institucional. Es obligatorio documentar la causa del reverso para el reporte de auditoría de tesorería.
+                </p>
+              </div>
+
+              {/* Justificación obligatoria */}
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase font-bold text-foreground">
+                  Motivo o Justificación de la Anulación *
+                </Label>
+                <Textarea
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  placeholder="Ej. Duplicidad de comprobante bancario, error en monto reportado por el operador, pago devuelto por el banco..."
+                  rows={3}
+                  className="text-xs"
+                  required
+                />
+                <span className="text-[10px] text-muted-foreground block">
+                  Esta justificación quedará registrada junto con su usuario ({currentUser?.fullName || currentUser?.username}) y fecha en el historial contable.
+                </span>
+              </div>
+
+              <DialogFooter className="gap-2 sm:gap-0 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setPaymentToDelete(null);
+                    setDeleteReason("");
+                  }}
+                  disabled={deleting}
+                  className="cursor-pointer"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleConfirmDelete}
+                  disabled={deleting || !deleteReason.trim()}
+                  className="gap-1.5 cursor-pointer"
+                >
+                  {deleting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Anulando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Confirmar Anulación</span>
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

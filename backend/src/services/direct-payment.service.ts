@@ -117,6 +117,28 @@ export class DirectPaymentService {
       throw new Error('El beneficiario del pago es obligatorio');
     }
 
+    const cleanBeneficiary = data.beneficiary.trim();
+    const rifPattern = /[JVEGPjvegp]-?\d{6,9}(-?\d)?/i;
+    const hasRif = rifPattern.test(cleanBeneficiary);
+
+    if (!hasRif) {
+      // Verificar si coincide con un proveedor registrado en la base de datos
+      const registeredSupplier = await prisma.supplier.findFirst({
+        where: {
+          OR: [
+            { name: { equals: cleanBeneficiary, mode: 'insensitive' } },
+            { contactName: { equals: cleanBeneficiary, mode: 'insensitive' } },
+          ],
+        },
+      });
+
+      if (!registeredSupplier) {
+        throw new Error(
+          'Para beneficiarios o proveedores no registrados, es obligatorio suministrar el RIF o documento de identidad fiscal (ej. J-12345678-9, V-12345678, G-20000000-1).'
+        );
+      }
+    }
+
     const amount = Number(data.amountPaid);
     if (isNaN(amount) || amount <= 0) {
       throw new Error('El monto del pago debe ser mayor a 0');
@@ -167,24 +189,21 @@ export class DirectPaymentService {
     if (txCurrency === 'VED') {
       equivalentAmountUsd = effectiveRate > 0 ? amount / effectiveRate : amount;
     } else if (txCurrency === 'EUR') {
-      if (effectiveRate > 10) {
-        const vesCurrency = await prisma.currency.findFirst({
-          where: { code: { in: ['VES', 'VED'] } },
-          include: {
-            exchanges: {
-              orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }],
-              take: 1,
-            },
+      const vesCurrency = await prisma.currency.findFirst({
+        where: { code: { in: ['VES', 'VED'] } },
+        include: {
+          exchanges: {
+            orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }],
+            take: 1,
           },
-        });
-        const bcvUsd = vesCurrency?.exchanges[0]?.rate
-          ? Number(vesCurrency.exchanges[0].rate)
-          : 75.0;
-        equivalentAmountUsd =
-          bcvUsd > 0 ? (amount * effectiveRate) / bcvUsd : amount;
-      } else {
-        equivalentAmountUsd = amount * effectiveRate;
-      }
+        },
+      });
+      const bcvUsd = vesCurrency?.exchanges[0]?.rate
+        ? Number(vesCurrency.exchanges[0].rate)
+        : 75.0;
+      // La tasa EUR es en Bolívares por Euro (Bs./EUR), idéntico a USD (Bs./USD)
+      equivalentAmountUsd =
+        bcvUsd > 0 ? (amount * effectiveRate) / bcvUsd : amount;
     } else {
       equivalentAmountUsd = amount;
     }
@@ -259,15 +278,30 @@ export class DirectPaymentService {
   /**
    * Eliminar un pago directo (solo Administrador)
    */
-  static async deleteDirectPayment(id: bigint) {
+  static async deleteDirectPayment(id: bigint, deletedById?: number, reason?: string) {
     const payment = await prisma.directPayment.findUnique({
       where: { id },
     });
     if (!payment) {
       throw new Error('Pago directo no encontrado');
     }
-    return prisma.directPayment.delete({
-      where: { id },
+    return prisma.$transaction(async (tx) => {
+      // Registrar asiento de anulación/reverso en Kardex
+      const movCount = await tx.stockMovement.count();
+      const refNum = `REV-EGRESO-${new Date().getFullYear()}-${String(movCount + 1).padStart(5, '0')}`;
+      await tx.stockMovement.create({
+        data: {
+          referenceNumber: refNum,
+          type: 'EGRESO_DIRECTO',
+          createdById: deletedById ?? payment.registeredById ?? 1,
+          productId: null,
+          notes: `ANULACIÓN/REVERSO DE EGRESO DIRECTO #${payment.id}: "${payment.concept}" (${payment.beneficiary}) - Monto: ${payment.transactionCurrency} ${Number(payment.amountPaid).toFixed(2)} (Equiv. ${Number(payment.equivalentAmountUsd || 0).toFixed(2)}). Motivo: ${reason ? reason.trim() : 'Autorizado por Administrador'}.`,
+        },
+      });
+
+      return tx.directPayment.delete({
+        where: { id },
+      });
     });
   }
 }

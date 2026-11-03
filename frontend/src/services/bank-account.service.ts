@@ -250,7 +250,9 @@ export const BankAccountService = {
     return res.data?.data;
   },
 
-  deleteDirectPayment: async (id: string | number): Promise<void> => {
-    await apiClient.delete(`/financial/direct-payments/${id}`);
+  deleteDirectPayment: async (id: string | number, reason?: string): Promise<void> => {
+    await apiClient.delete(`/financial/direct-payments/${id}`, {
+      data: { reason },
+    });
   },
 };

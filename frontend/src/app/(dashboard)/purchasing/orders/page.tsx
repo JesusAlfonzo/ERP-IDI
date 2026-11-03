@@ -22,6 +22,9 @@ import type {
 } from "@/types/purchasing";
 import type { Product, Category } from "@/types/inventory";
 import { ProductPackagingSelector } from "@/components/purchasing/ProductPackagingSelector";
+import { useDebounce } from "@/hooks/use-debounce";
+import { usePagination } from "@/hooks/use-pagination";
+import { TablePagination } from "@/components/common/TablePagination";
 import {
   ShoppingCart,
   Plus,
@@ -35,6 +38,10 @@ import {
   PackageCheck,
   Eye,
   ShieldCheck,
+  Search,
+  X,
+  Edit3,
+  Send,
 } from "lucide-react";
 
 import {
@@ -108,6 +115,8 @@ export default function PurchaseOrdersPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [search, setSearch] = useState<string>("");
+  const debouncedSearch = useDebounce(search, 350);
 
   // Modal de Creación
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -278,11 +287,18 @@ export default function PurchaseOrdersPage() {
     exemptAmount = Math.round(exemptAmount * 100) / 100;
     const iva16 = Math.round(taxableAmount * 0.16 * 100) / 100;
     const totalAmount = Math.round((taxableAmount + exemptAmount + iva16) * 100) / 100;
-    const rate = Number(exchangeRate) || 1.0;
+    const rate = Number(exchangeRate) || (currency === "EUR" ? bcvRates.EUR : bcvRates.USD) || 1.0;
     const totalBs =
       currency === "VED"
         ? totalAmount
         : Math.round(totalAmount * rate * 100) / 100;
+
+    const totalUsd =
+      currency === "USD"
+        ? totalAmount
+        : currency === "VED"
+          ? (rate > 0 ? Math.round((totalAmount / rate) * 100) / 100 : totalAmount)
+          : (bcvRates.USD > 0 ? Math.round(((totalAmount * rate) / bcvRates.USD) * 100) / 100 : totalAmount);
 
     return {
       taxableAmount,
@@ -290,10 +306,45 @@ export default function PurchaseOrdersPage() {
       iva16,
       totalAmount,
       totalBs,
+      totalUsd,
     };
-  }, [items, exchangeRate, currency]);
+  }, [items, exchangeRate, currency, bcvRates]);
+
+  const [sendingOrderId, setSendingOrderId] = useState<string | number | null>(null);
+
+  const handleSendOrder = async (order: PurchaseOrder) => {
+    if (!confirm(`¿Desea formalizar y marcar la Orden de Compra #${order.orderNumber || order.id} como ENVIADA al proveedor? Una vez enviada, los renglones y precios quedan formalizados para proceder a recibir mercancía.`)) {
+      return;
+    }
+    setSendingOrderId(order.id);
+    try {
+      await PurchasingClientService.sendOrder(order.id);
+      setFeedback({
+        status: "success",
+        message: `Orden #${order.orderNumber || order.id} enviada exitosamente al proveedor.`,
+      });
+      await loadData();
+    } catch (err: unknown) {
+      setFeedback({
+        status: "error",
+        message: err instanceof Error ? err.message : "Error al enviar la orden al proveedor.",
+      });
+    } finally {
+      setSendingOrderId(null);
+    }
+  };
 
   const handleSubmitOrder = async (e: FormEvent) => {
+    e.preventDefault();
+    setFeedback(null);
+
+    if (!supplierId || Number(supplierId) <= 0) {
+      setFeedback({
+        status: "error",
+        message: "Debe seleccionar un proveedor registrado para la orden de compra.",
+      });
+      return;
+    }
     e.preventDefault();
     setFeedback(null);
 
@@ -313,7 +364,7 @@ export default function PurchaseOrdersPage() {
     setSubmitting(true);
     try {
       await PurchasingClientService.createOrder({
-        supplierId: supplierId ? Number(supplierId) : null,
+        supplierId: Number(supplierId),
         currency,
         currencyId: currencyId ? Number(currencyId) : undefined,
         exchangeRate: Number(exchangeRate),
@@ -354,6 +405,26 @@ export default function PurchaseOrdersPage() {
   };
 
   const currentSymbol = getCurrencySymbol(currency);
+
+  const filteredOrders = useMemo(() => {
+    const term = debouncedSearch.toLowerCase().trim();
+    if (!term) return orders;
+    return orders.filter((order) => {
+      const num = order.orderNumber?.toLowerCase() || "";
+      const sup = order.supplier?.name?.toLowerCase() || "";
+      const rif = order.supplier?.rifOrId?.toLowerCase() || "";
+      const notes = order.notes?.toLowerCase() || "";
+      return num.includes(term) || sup.includes(term) || rif.includes(term) || notes.includes(term);
+    });
+  }, [orders, debouncedSearch]);
+
+  // Paginación
+  const pagination = usePagination(filteredOrders, { initialPageSize: 10 });
+  const { resetPage } = pagination;
+
+  useEffect(() => {
+    resetPage();
+  }, [statusFilter, debouncedSearch, resetPage]);
 
   return (
     <div className="space-y-6">
@@ -414,26 +485,64 @@ export default function PurchaseOrdersPage() {
         </Alert>
       )}
 
-      {/* Barra de Filtros */}
+      {/* Barra de Filtros con Buscador y Retardo */}
       <Card>
-        <CardContent className="p-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-muted-foreground" />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-muted/50 border border-input rounded-md px-3 py-1.5 text-xs text-foreground focus:ring-2 focus:ring-ring outline-none"
-            >
-              <option value="">Todos los estados</option>
-              <option value="BORRADOR">Borradores</option>
-              <option value="PENDIENTE">Pendientes</option>
-              <option value="APROBADA">Aprobadas</option>
-              <option value="EN_PROCESO">En Tránsito</option>
-              <option value="PARCIAL">Entregas Parciales</option>
-              <option value="COMPLETADA">Completadas</option>
-              <option value="RECIBIDO">Recibidos</option>
-              <option value="CANCELADA">Canceladas</option>
-            </select>
+        <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 flex-1">
+            <div className="relative w-full sm:w-72">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por N° orden, proveedor o RIF..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 pr-8 text-xs h-9"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                  title="Borrar búsqueda"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-muted-foreground" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="bg-muted/50 border border-input rounded-md px-3 py-1.5 text-xs text-foreground focus:ring-2 focus:ring-ring outline-none h-9 cursor-pointer"
+              >
+                <option value="">Todos los estados</option>
+                <option value="BORRADOR">Borradores</option>
+                <option value="PENDIENTE">Pendientes</option>
+                <option value="APROBADA">Aprobadas</option>
+                <option value="EN_PROCESO">En Tránsito</option>
+                <option value="PARCIAL">Entregas Parciales</option>
+                <option value="COMPLETADA">Completadas</option>
+                <option value="RECIBIDO">Recibidos</option>
+                <option value="CANCELADA">Canceladas</option>
+              </select>
+            </div>
+
+            {(search || statusFilter) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearch("");
+                  setStatusFilter("");
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-9 cursor-pointer"
+                title="Limpiar filtros"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Limpiar filtros</span>
+              </Button>
+            )}
           </div>
 
           <Button
@@ -442,6 +551,7 @@ export default function PurchaseOrdersPage() {
             size="icon"
             onClick={() => loadData()}
             title="Actualizar listado"
+            className="cursor-pointer"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
@@ -458,7 +568,7 @@ export default function PurchaseOrdersPage() {
                 <TableHead className="py-3 px-4">Proveedor</TableHead>
                 <TableHead className="py-3 px-4">Fecha Emisión</TableHead>
                 <TableHead className="py-3 px-4 text-center">Moneda / Tasa</TableHead>
-                <TableHead className="py-3 px-4 text-right">Total USD</TableHead>
+                <TableHead className="py-3 px-4 text-right">Total Pactado</TableHead>
                 <TableHead className="py-3 px-4 text-center">Renglones</TableHead>
                 <TableHead className="py-3 px-4 text-center">Estado</TableHead>
                 <TableHead className="py-3 px-4 text-center">Acciones</TableHead>
@@ -472,19 +582,21 @@ export default function PurchaseOrdersPage() {
                     Cargando órdenes de compra...
                   </TableCell>
                 </TableRow>
-              ) : orders.length === 0 ? (
+              ) : filteredOrders.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
                     No se encontraron órdenes de compra registradas.
                   </TableCell>
                 </TableRow>
               ) : (
-                orders.map((order) => {
+                pagination.paginatedItems.map((order) => {
                   const badge = STATUS_BADGES[order.status] || {
                     label: order.status,
                     variant: "secondary" as const,
                   };
+                  const isDraft = order.status === "BORRADOR";
                   const canReceive =
+                    !isDraft &&
                     order.status !== "RECIBIDO" &&
                     order.status !== "COMPLETADA" &&
                     order.status !== "CANCELADA" &&
@@ -542,19 +654,51 @@ export default function PurchaseOrdersPage() {
                       </TableCell>
                       <TableCell className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          <Button variant="outline" size="sm" asChild className="h-7 text-[11px] gap-1">
+                          <Button variant="outline" size="sm" asChild className="h-7 text-[11px] gap-1 cursor-pointer">
                             <Link href={`/purchasing/orders/${order.id}`}>
                               <Eye className="w-3.5 h-3.5" />
                               Detalle
                             </Link>
                           </Button>
-                          {canReceive && (
-                            <Button variant="outline" size="sm" asChild className="h-7 text-[11px] gap-1 border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100">
-                              <Link href={`/purchasing/orders/${order.id}/receive`}>
-                                <PackageCheck className="w-3.5 h-3.5" />
-                                Recibir
-                              </Link>
-                            </Button>
+                          {isDraft ? (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                asChild
+                                className="h-7 text-[11px] gap-1 border-indigo-300 text-indigo-700 bg-indigo-50/50 hover:bg-indigo-100 cursor-pointer"
+                                title="Editar borrador de orden"
+                              >
+                                <Link href={`/purchasing/orders/${order.id}/edit`}>
+                                  <Edit3 className="w-3 h-3" />
+                                  Editar
+                                </Link>
+                              </Button>
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => handleSendOrder(order)}
+                                disabled={sendingOrderId === order.id}
+                                className="h-7 text-[11px] gap-1 bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer shadow-2xs"
+                                title="Marcar orden como enviada al proveedor"
+                              >
+                                {sendingOrderId === order.id ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Send className="w-3 h-3" />
+                                )}
+                                Enviar
+                              </Button>
+                            </>
+                          ) : (
+                            canReceive && (
+                              <Button variant="outline" size="sm" asChild className="h-7 text-[11px] gap-1 border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 cursor-pointer">
+                                <Link href={`/purchasing/orders/${order.id}/receive`}>
+                                  <PackageCheck className="w-3.5 h-3.5" />
+                                  Recibir
+                                </Link>
+                              </Button>
+                            )
                           )}
                         </div>
                       </TableCell>
@@ -564,6 +708,16 @@ export default function PurchaseOrdersPage() {
               )}
             </TableBody>
           </Table>
+          <TablePagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            pageSize={pagination.pageSize}
+            totalItems={pagination.totalItems}
+            onPageChange={pagination.onPageChange}
+            onPageSizeChange={pagination.onPageSizeChange}
+            pageSizeOptions={[10, 25, 50, 100]}
+            entityName="órdenes de compra"
+          />
         </div>
       </Card>
 
@@ -592,15 +746,16 @@ export default function PurchaseOrdersPage() {
               {/* Datos Comerciales */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-muted/40 p-4 rounded-xl border border-border">
                 <div className="space-y-1">
-                  <Label className="text-xs font-semibold text-foreground uppercase tracking-wider">
-                    Proveedor Comercial
+                  <Label className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-1">
+                    Proveedor Comercial <span className="text-rose-500 font-bold">*</span>
                   </Label>
                   <select
                     value={supplierId}
                     onChange={(e) => setSupplierId(e.target.value)}
+                    required
                     className="w-full bg-background border border-input rounded-md px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium"
                   >
-                    <option value="">-- Proveedor Opcional / Caja Chica --</option>
+                    <option value="">-- Seleccione Proveedor Obligatorio --</option>
                     {suppliers.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name} ({s.rifOrId || s.rif || "N/A"})
@@ -648,6 +803,9 @@ export default function PurchaseOrdersPage() {
                       {currency === "VED" ? "1.00" : currency === "EUR" ? "Bs./€" : "Bs./$"}
                     </span>
                   </div>
+                  <span className="text-[10px] text-muted-foreground block font-mono mt-0.5">
+                    Oficial BCV: {bcvRates.USD.toFixed(2)} Bs./$ · {bcvRates.EUR.toFixed(2)} Bs./€
+                  </span>
                 </div>
               </div>
 
@@ -882,6 +1040,17 @@ export default function PurchaseOrdersPage() {
                           })}
                         </span>
                       </div>
+                      {currency === "EUR" && (
+                        <div className="flex justify-between text-muted-foreground font-mono text-[11px]">
+                          <span className="font-semibold text-foreground">Contravalor USD:</span>
+                          <span className="font-bold text-foreground">
+                            $ {fiscalSummary.totalUsd.toLocaleString("es-VE", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })} USD
+                          </span>
+                        </div>
+                      )}
                       <p className="text-[10px] text-muted-foreground italic">
                         Calculado a la tasa oficial BCV de {exchangeRate.toFixed(2)} Bs./{currency === "EUR" ? "€" : "$"}
                       </p>

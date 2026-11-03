@@ -3,6 +3,8 @@ import {
   getOrders,
   getOrderById,
   createOrder,
+  updateOrder,
+  sendOrder,
   receiveOrder,
 } from '../controllers/order.controller.js';
 import { authenticateJWT } from '../middlewares/auth.middleware.js';
@@ -24,8 +26,10 @@ router.get(
   getOrderById
 );
 
-// Creación de órdenes: Exclusivo para Compras y Dirección
+// Creación, edición y envío de órdenes: Exclusivo para Compras y Dirección
 router.post('/', requireRoles(['ADMINISTRADOR', 'COMPRAS']), createOrder);
+router.put('/:id', requireRoles(['ADMINISTRADOR', 'COMPRAS']), updateOrder);
+router.patch('/:id/send', requireRoles(['ADMINISTRADOR', 'COMPRAS']), sendOrder);
 
 // Recepción física de insumos en almacén: Exclusivo Almacén y Dirección
 router.post(

@@ -6,6 +6,8 @@ import { LabFridgeService } from "@/services/lab-fridge.service";
 import { LaboratoryClientService } from "@/services/laboratory.service";
 import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
+import { usePagination } from "@/hooks/use-pagination";
+import { TablePagination } from "@/components/common/TablePagination";
 import {
   SearchableSelect,
   type SearchableOption,
@@ -88,6 +90,7 @@ export default function FridgesPage() {
     userRoles.includes("LABORATORIO");
 
   const [fridges, setFridges] = useState<LabFridge[]>([]);
+  const pagination = usePagination(fridges, { initialPageSize: 6 });
   const [locations, setLocations] = useState<Location[]>([]);
   const [availableReagents, setAvailableReagents] = useState<
     ReagentBatchOption[]
@@ -454,7 +457,7 @@ export default function FridgesPage() {
             </p>
           </Card>
         ) : (
-          fridges.map((fridge) => {
+          pagination.paginatedItems.map((fridge) => {
             const statusConfig = FRIDGE_STATUS_CONFIG[fridge.status] || {
               label: fridge.status,
               variant: "secondary" as const,
@@ -564,6 +567,18 @@ export default function FridgesPage() {
           })
         )}
       </div>
+
+      <TablePagination
+        currentPage={pagination.currentPage}
+        totalPages={pagination.totalPages}
+        pageSize={pagination.pageSize}
+        totalItems={pagination.totalItems}
+        onPageChange={pagination.onPageChange}
+        onPageSizeChange={pagination.onPageSizeChange}
+        pageSizeOptions={[6, 9, 12, 24]}
+        entityName="equipos de frío"
+        className="rounded-lg border bg-card shadow-2xs"
+      />
 
       {/* Modal Ingresar Lote de Reactivo a la Nevera */}
       <Dialog

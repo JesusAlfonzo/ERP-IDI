@@ -34,6 +34,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Landmark,
+  Send,
+  Edit3,
   Clock,
   X,
   Plus,
@@ -67,6 +69,7 @@ export default function OrderDetailPage() {
   // Modal de Pago
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [submittingPayment, setSubmittingPayment] = useState(false);
+  const [sendingOrder, setSendingOrder] = useState(false);
 
   // Formulario de Pago
   const [paymentMethod, setPaymentMethod] = useState<
@@ -91,30 +94,48 @@ export default function OrderDetailPage() {
   useEffect(() => {
     if (!orderId) return;
 
-    startTransition(() => {
-      void (async () => {
-        try {
-          const [orderData, accountsData, ratesData] = await Promise.all([
-            PurchasingClientService.getOrderById(orderId),
-            BankAccountService.getBankAccounts(true).catch(() => []),
-            CurrencyService.getCurrentRates().catch(() => null),
-          ]);
-          setOrder(orderData);
-          setBankAccounts(accountsData);
-          if (ratesData) {
-            setBcvRates({
-              USD: Number(ratesData.USD || ratesData.rates?.USD || 75.0),
-              EUR: Number(ratesData.EUR || ratesData.rates?.EUR || 81.5),
-              VED: 1.0,
-            });
+    const fetchOrderAndRates = () => {
+      startTransition(() => {
+        void (async () => {
+          try {
+            const [orderData, accountsData, ratesData] = await Promise.all([
+              PurchasingClientService.getOrderById(orderId),
+              BankAccountService.getBankAccounts(true).catch(() => []),
+              CurrencyService.getCurrentRates().catch(() => null),
+            ]);
+            setOrder(orderData);
+            setBankAccounts(accountsData);
+            if (ratesData) {
+              setBcvRates({
+                USD: Number(ratesData.USD || ratesData.rates?.USD || 75.0),
+                EUR: Number(ratesData.EUR || ratesData.rates?.EUR || 81.5),
+                VED: 1.0,
+              });
+            }
+          } catch (err) {
+            console.error("Error cargando orden de compra", err);
+          } finally {
+            setLoading(false);
           }
-        } catch (err) {
-          console.error("Error cargando orden de compra", err);
-        } finally {
-          setLoading(false);
-        }
-      })();
-    });
+        })();
+      });
+    };
+
+    fetchOrderAndRates();
+
+    const handleRateUpdated = () => {
+      fetchOrderAndRates();
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("idi:exchange-rate-updated", handleRateUpdated);
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("idi:exchange-rate-updated", handleRateUpdated);
+      }
+    };
   }, [orderId]);
 
   // Carga asíncrona de cuentas bancarias activas al abrir el modal de pago
@@ -183,11 +204,30 @@ export default function OrderDetailPage() {
     );
   }
 
+  const isDraft = order.status === "BORRADOR";
   const canReceive =
+    !isDraft &&
     order.status !== "RECIBIDO" &&
     order.status !== "COMPLETADA" &&
     order.status !== "CANCELADA" &&
     order.status !== "CANCELADO";
+
+  const handleSendOrder = async () => {
+    if (!order) return;
+    if (!confirm(`¿Desea formalizar y marcar la Orden de Compra #${order.orderNumber || order.id} como ENVIADA al proveedor? Una vez enviada, los renglones y precios quedan bloqueados para habilitar la recepción física.`)) {
+      return;
+    }
+    setSendingOrder(true);
+    try {
+      const updated = await PurchasingClientService.sendOrder(order.id);
+      setOrder(updated);
+      toast.success(`Orden #${order.orderNumber || order.id} enviada al proveedor exitosamente.`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Error al enviar la orden al proveedor.");
+    } finally {
+      setSendingOrder(false);
+    }
+  };
 
   const currCode = normalizeCurrencyCode(order.currency);
   const symbol = getCurrencySymbol(order.currency);
@@ -245,15 +285,33 @@ export default function OrderDetailPage() {
           ? Math.round(totalAmount * rate * 100) / 100
           : null;
 
-  // Cálculos financieros de la orden y amortización de deuda
+  // Tasa de cambio oficial aplicable según la moneda de la orden
+  const effectiveBcvRate =
+    currCode === "EUR"
+      ? (rate > 0 ? rate : bcvRates.EUR || 81.5)
+      : (rate > 0 ? rate : bcvRates.USD || 75.0);
+
+  // Contravalor total en USD de la orden
   const orderTotalUsd = Number(
     order.totalAmountUsd != null && Number(order.totalAmountUsd) > 0
       ? order.totalAmountUsd
-      : order.total || totalAmount
+      : currCode === "VED"
+        ? (Number(order.totalAmountBs) > 0 ? Number(order.totalAmountBs) : totalAmount) / (rate > 0 ? rate : bcvRates.USD || 75.0)
+        : currCode === "EUR"
+          ? (totalAmount * (rate > 0 ? rate : bcvRates.EUR)) / (bcvRates.USD || 75.0)
+          : order.total || totalAmount
   );
+
+  const totalOrderBs =
+    totalAmountBs != null
+      ? totalAmountBs
+      : currCode === "VED"
+        ? totalAmount
+        : Math.round(totalAmount * effectiveBcvRate * 100) / 100;
 
   const payments = (order.payments ?? []) as SupplierPayment[];
 
+  // Acumulado pagado en USD
   const totalPaidUsd = payments.reduce((acc, p) => {
     const pAmortized = Number(p.amortizedAmountUsd || 0);
     if (pAmortized > 0) return acc + pAmortized;
@@ -261,6 +319,11 @@ export default function OrderDetailPage() {
     const pRate = Number(p.exchangeRate || 1.0);
     const pCurr = p.transactionCurrency || "USD";
     if (pCurr === "VED" && pRate > 0) return acc + pAmount / pRate;
+    if (pCurr === "EUR") {
+      const pRateEur = pRate > 0 ? pRate : bcvRates.EUR;
+      const bcvUsd = bcvRates.USD > 0 ? bcvRates.USD : 75.0;
+      return acc + (bcvUsd > 0 ? (pAmount * pRateEur) / bcvUsd : pAmount);
+    }
     return acc + pAmount;
   }, 0);
 
@@ -268,6 +331,9 @@ export default function OrderDetailPage() {
     0,
     Math.round((orderTotalUsd - totalPaidUsd) * 100) / 100
   );
+
+  const remainingDebtBs = Math.round(remainingDebtUsd * (bcvRates.USD || 75.0) * 100) / 100;
+  const remainingDebtEur = bcvRates.EUR > 0 ? Math.round((remainingDebtBs / bcvRates.EUR) * 100) / 100 : 0;
 
   const isFullyPaid =
     order.paymentStatus === "PAGADO" ||
@@ -278,15 +344,7 @@ export default function OrderDetailPage() {
     order.status !== "CANCELADO" &&
     !isFullyPaid;
 
-  const effectiveBcvRate = rate > 0 ? rate : bcvRates.USD || 75.0;
-  const totalOrderBs =
-    totalAmountBs != null
-      ? totalAmountBs
-      : currCode === "VED"
-        ? totalAmount
-        : orderTotalUsd * effectiveBcvRate;
-  const totalPaidBs = totalPaidUsd * effectiveBcvRate;
-  const remainingDebtBs = remainingDebtUsd * effectiveBcvRate;
+  const totalPaidBs = Math.round(totalPaidUsd * (bcvRates.USD || 75.0) * 100) / 100;
 
   // Cálculos del Modal de Pago
   const parsedAmountPaid = parseFloat(amountPaid) || 0;
@@ -305,12 +363,9 @@ export default function OrderDetailPage() {
     dynamicAmortizedUsd =
       parsedAppliedRate > 0 ? parsedAmountPaid / parsedAppliedRate : 0;
   } else if (transactionCurrency === "EUR") {
-    if (parsedAppliedRate > 10 && bcvRates.USD > 0) {
-      dynamicAmortizedUsd =
-        (parsedAmountPaid * parsedAppliedRate) / bcvRates.USD;
-    } else {
-      dynamicAmortizedUsd = parsedAmountPaid * parsedAppliedRate;
-    }
+    const rateEur = parsedAppliedRate > 0 ? parsedAppliedRate : bcvRates.EUR;
+    const bcvUsd = bcvRates.USD > 0 ? bcvRates.USD : 75.0;
+    dynamicAmortizedUsd = (parsedAmountPaid * rateEur) / bcvUsd;
   } else {
     dynamicAmortizedUsd = parsedAmountPaid;
   }
@@ -378,22 +433,30 @@ export default function OrderDetailPage() {
     }
   };
 
-  const handleFillRemainingDebt = () => {
+  const handleFillRemainingDebt = (overrideCurr?: "USD" | "VED" | "EUR") => {
     if (remainingDebtUsd <= 0) return;
-    if (transactionCurrency === "USD") {
+    const targetCurr = overrideCurr || transactionCurrency;
+    if (overrideCurr && overrideCurr !== transactionCurrency) {
+      handleCurrencyChange(overrideCurr);
+    }
+    const rateToUse =
+      (overrideCurr || transactionCurrency) === "VED"
+        ? (parseFloat(paymentExchangeRate) || (rate > 0 ? rate : bcvRates.USD))
+        : parsedAppliedRate;
+
+    if (targetCurr === "USD") {
       setAmountPaid(remainingDebtUsd.toFixed(2));
-    } else if (transactionCurrency === "VED") {
+    } else if (targetCurr === "VED") {
       const neededBs =
-        Math.round(remainingDebtUsd * parsedAppliedRate * 100) / 100;
+        Math.round(remainingDebtUsd * rateToUse * 100) / 100;
       setAmountPaid(neededBs.toFixed(2));
-    } else if (transactionCurrency === "EUR") {
+    } else if (targetCurr === "EUR") {
       const bcvUsd = bcvRates.USD > 0 ? bcvRates.USD : 75.0;
+      const rateEur = rateToUse > 0 ? rateToUse : bcvRates.EUR;
       const neededEur =
-        parsedAppliedRate > 10
-          ? Math.round(
-              ((remainingDebtUsd * bcvUsd) / parsedAppliedRate) * 100
-            ) / 100
-          : Math.round((remainingDebtUsd / parsedAppliedRate) * 100) / 100;
+        rateEur > 0
+          ? Math.round(((remainingDebtUsd * bcvUsd) / rateEur) * 100) / 100
+          : remainingDebtUsd;
       setAmountPaid(neededEur.toFixed(2));
     }
   };
@@ -723,7 +786,9 @@ export default function OrderDetailPage() {
               {isFullyPaid ? (
                 <Badge variant="success">Solvente</Badge>
               ) : (
-                <Badge variant="rose">Saldo: ${remainingDebtUsd.toFixed(2)} USD</Badge>
+                <Badge variant="rose">
+                  Saldo: {currCode === "VED" ? `Bs. ${remainingDebtBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${remainingDebtUsd.toFixed(2)} USD`}
+                </Badge>
               )}
               {order.requisition && (
                 <Link
@@ -744,6 +809,37 @@ export default function OrderDetailPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {isDraft && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                asChild
+                className="gap-1.5 cursor-pointer shadow-xs border-indigo-300 text-indigo-700 bg-indigo-50/50 hover:bg-indigo-100"
+              >
+                <Link href={`/purchasing/orders/${order.id}/edit`}>
+                  <Edit3 className="w-3.5 h-3.5" />
+                  Editar Borrador
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleSendOrder}
+                disabled={sendingOrder}
+                className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer"
+                title="Marcar orden como enviada para habilitar recepción"
+              >
+                {sendingOrder ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Send className="w-3.5 h-3.5" />
+                )}
+                {sendingOrder ? "Enviando..." : "Marcar como Enviada"}
+              </Button>
+            </>
+          )}
           {canPay && (
             <Button
               type="button"
@@ -793,6 +889,19 @@ export default function OrderDetailPage() {
           <PrintActionButton label="Descargar / Imprimir PDF" />
         </div>
       </div>
+
+      {/* Banner Informativo de Borrador */}
+      {isDraft && (
+        <div className="no-print print:hidden p-4 rounded-xl border border-indigo-200 bg-indigo-50/60 dark:bg-indigo-950/20 text-indigo-950 dark:text-indigo-200 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+          <div className="text-xs space-y-1">
+            <p className="font-bold">Orden en Estado Borrador</p>
+            <p className="text-indigo-800 dark:text-indigo-300">
+              Esta orden aún no ha sido formalizada frente al proveedor. Puede modificar el proveedor, la moneda pactada, cantidades y precios haciendo clic en <strong>&quot;Editar Borrador&quot;</strong>. Para habilitar la recepción física de mercancía en almacén, haga clic en <strong>&quot;Marcar como Enviada&quot;</strong>.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Resumen Superior en Pantalla */}
       <div className="no-print print:hidden grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -926,14 +1035,19 @@ export default function OrderDetailPage() {
           {/* Total Orden */}
           <div className="p-3.5 rounded-lg bg-muted/40 border border-border space-y-1">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">
-              Total Orden
+              Total Orden {currCode !== "USD" && `(${currCode})`}
             </span>
             <div className="text-xl font-bold font-mono text-foreground">
-              $ {orderTotalUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+              {currCode === "EUR"
+                ? `€ ${totalAmount.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`
+                : `$ ${orderTotalUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
             </div>
-            <span className="text-xs font-mono text-muted-foreground block">
-              Equiv. Bs. {totalOrderBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
+            <div className="text-xs font-mono text-muted-foreground flex flex-col gap-0.5">
+              <span>Equiv. Bs. {totalOrderBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              {currCode === "EUR" && (
+                <span>Contravalor: $ {orderTotalUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
+              )}
+            </div>
           </div>
 
           {/* Total Amortizado / Pagado */}
@@ -978,15 +1092,18 @@ export default function OrderDetailPage() {
                 remainingDebtUsd > 0 ? "text-amber-600 dark:text-amber-400" : "text-foreground"
               }`}
             >
-              $ {remainingDebtUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+              {currCode === "EUR" && remainingDebtEur > 0
+                ? `€ ${remainingDebtEur.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`
+                : `$ ${remainingDebtUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
             </div>
-            <span
-              className={`text-xs font-mono block ${
-                remainingDebtUsd > 0 ? "text-amber-600/80 dark:text-amber-400/80" : "text-muted-foreground"
-              }`}
-            >
-              Equiv. Bs. {remainingDebtBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
+            <div className={`text-xs font-mono flex flex-col gap-0.5 ${
+              remainingDebtUsd > 0 ? "text-amber-600/80 dark:text-amber-400/80" : "text-muted-foreground"
+            }`}>
+              <span>Equiv. Bs. {remainingDebtBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              {currCode === "EUR" && (
+                <span>Contravalor: $ {remainingDebtUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1475,9 +1592,9 @@ export default function OrderDetailPage() {
       {/* Modal Dinámico de Registro de Pago */}
       {showPaymentModal && (
         <div className="no-print print:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-card text-card-foreground rounded-xl max-w-lg w-full p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto border border-border">
+          <div className="bg-card text-card-foreground rounded-xl max-w-3xl md:max-w-4xl w-[95vw] p-5 sm:p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto border border-border">
             <div className="flex items-center justify-between pb-3 border-b border-border">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
                   <CreditCard className="w-4 h-4" />
                 </div>
@@ -1486,8 +1603,7 @@ export default function OrderDetailPage() {
                     Registrar Pago de Orden
                   </h3>
                   <p className="text-xs text-muted-foreground font-mono">
-                    Orden {order.orderNumber || `#${order.id}`} &bull; Saldo: ${" "}
-                    {remainingDebtUsd.toFixed(2)} USD
+                    Orden {order.orderNumber || `#${order.id}`} &bull; {order.supplier?.name}
                   </p>
                 </div>
               </div>
@@ -1498,6 +1614,32 @@ export default function OrderDetailPage() {
               >
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* Banner Informativo Saldo Pendiente */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-muted/40 rounded-xl border border-border">
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/25 rounded-lg flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-emerald-800 dark:text-emerald-300 block">
+                    Total Pendiente en Bolívares
+                  </span>
+                  <span className="text-xl font-black font-mono text-emerald-900 dark:text-emerald-200">
+                    Bs. {remainingDebtBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <Badge variant="success" className="font-mono text-xs">Bs.</Badge>
+              </div>
+              <div className="p-3 bg-blue-500/10 border border-blue-500/25 rounded-lg flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-blue-800 dark:text-blue-300 block">
+                    Saldo Restante en Dólares
+                  </span>
+                  <span className="text-xl font-black font-mono text-blue-950 dark:text-blue-200">
+                    $ {remainingDebtUsd.toFixed(2)} USD
+                  </span>
+                </div>
+                <Badge variant="indigo" className="font-mono text-xs">USD</Badge>
+              </div>
             </div>
 
             <form onSubmit={handleRegisterPayment} className="space-y-4">
@@ -1630,7 +1772,7 @@ export default function OrderDetailPage() {
                   </select>
                 </div>
                 <div className="sm:col-span-2">
-                  <div className="flex justify-between items-center mb-1">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-1">
                     <label className="block text-xs font-semibold text-muted-foreground uppercase">
                       Monto Pagado (
                       {transactionCurrency === "VED"
@@ -1643,10 +1785,10 @@ export default function OrderDetailPage() {
                     {remainingDebtUsd > 0 && (
                       <button
                         type="button"
-                        onClick={handleFillRemainingDebt}
-                        className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-semibold cursor-pointer"
+                        onClick={() => handleFillRemainingDebt(transactionCurrency)}
+                        className="text-xs text-primary hover:underline font-bold cursor-pointer"
                       >
-                        Pagar saldo total
+                        Pagar saldo total ({transactionCurrency === "VED" ? `Bs. ${(remainingDebtUsd * parsedAppliedRate).toFixed(2)}` : transactionCurrency === "EUR" ? `€ ${((remainingDebtUsd * (bcvRates.USD || 75.0)) / (parsedAppliedRate || 1)).toFixed(2)}` : `$ ${remainingDebtUsd.toFixed(2)}`})
                       </button>
                     )}
                   </div>
@@ -1696,18 +1838,30 @@ export default function OrderDetailPage() {
               )}
 
               {/* Indicador Reactivo de Amortización */}
-              <div className="p-3.5 rounded-lg bg-blue-500/10 border border-blue-500/20 space-y-1.5">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-blue-700 dark:text-blue-300">
-                    Equivale a amortizar de la deuda:
-                  </span>
-                  <span className="font-mono text-sm font-bold text-blue-600 dark:text-blue-400">
-                    $ {dynamicAmortizedUsd.toFixed(2)} USD
-                  </span>
+              <div className="p-3.5 rounded-lg bg-muted/40 border border-border space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-muted-foreground block text-[10px] uppercase font-semibold">
+                      Equivalente amortizado en USD:
+                    </span>
+                    <span className="font-mono text-sm font-bold text-blue-600 dark:text-blue-400">
+                      $ {dynamicAmortizedUsd.toFixed(2)} USD
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[10px] uppercase font-semibold">
+                      Equivalente en Bolívares (Bs.):
+                    </span>
+                    <span className="font-mono text-sm font-bold text-emerald-700 dark:text-emerald-300">
+                      Bs. {(dynamicAmortizedUsd * parsedAppliedRate).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center text-[11px] text-blue-600/80 dark:text-blue-300/80 font-mono">
-                  <span>Deuda restante actual:</span>
-                  <span>$ {remainingDebtUsd.toFixed(2)} USD</span>
+                <div className="flex justify-between items-center text-[11px] text-muted-foreground pt-1.5 border-t border-border font-mono">
+                  <span>Deuda restante proyectada:</span>
+                  <span className="font-bold text-foreground">
+                    $ {Math.max(0, Math.round((remainingDebtUsd - dynamicAmortizedUsd) * 100) / 100).toFixed(2)} USD (≈ Bs. {Math.max(0, Math.round((remainingDebtBs - (dynamicAmortizedUsd * parsedAppliedRate)) * 100) / 100).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                  </span>
                 </div>
               </div>
 

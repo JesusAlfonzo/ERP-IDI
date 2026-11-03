@@ -174,10 +174,16 @@ export interface SupplierDebt {
   id: number;
   name: string;
   rifOrId: string;
+  balanceBs?: number;
+  balanceUsd: number;
+  balanceEur?: number;
+  totalPurchasedBs?: number;
+  totalPaidBs?: number;
   totalPurchasedUsd: number;
   totalPaidUsd: number;
+  totalPurchasedEur?: number;
+  totalPaidEur?: number;
   totalPaidThisMonthUsd: number;
-  balanceUsd: number;
   status: "SOLVENTE" | "CON_DEUDA";
 }
 
@@ -185,6 +191,10 @@ export interface SupplierStatement {
   supplier: { id: number; name: string; rifOrId: string };
   orders: Array<
     PurchaseOrder & {
+      orderCurrency?: string;
+      totalAgreed?: number;
+      paidAgreed?: number;
+      balanceAgreed?: number;
       totalUsd: number;
       paidUsd: number;
       balanceUsd: number;
@@ -193,12 +203,23 @@ export interface SupplierStatement {
         paymentDate: string;
         paymentMethod: string;
         amount: number;
+        amountPaid?: number;
+        transactionCurrency?: string;
+        exchangeRate?: number;
+        amortizedAmountUsd?: number;
+        referenceNumber?: string | null;
       }>;
     }
   >;
+  balanceBs?: number;
+  balanceUsd?: number;
+  balanceEur?: number;
+  totalPurchasedBs?: number;
+  totalPaidBs?: number;
   totalPurchasedUsd: number;
   totalPaidUsd: number;
-  balanceUsd: number;
+  totalPurchasedEur?: number;
+  totalPaidEur?: number;
 }
 
 export interface PurchaseOrderItem {

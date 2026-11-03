@@ -139,13 +139,14 @@ export const deleteDirectPayment = async (
 
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    const reason = (req.body?.reason || req.query?.reason || '').toString();
 
     if (!id) {
       res.status(400).json({ status: 'BAD_REQUEST', message: 'ID de pago requerido' });
       return;
     }
 
-    await DirectPaymentService.deleteDirectPayment(BigInt(id));
+    await DirectPaymentService.deleteDirectPayment(BigInt(id), req.user?.id, reason);
 
     res.status(200).json({
       status: 'SUCCESS',

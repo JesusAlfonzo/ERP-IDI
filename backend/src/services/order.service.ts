@@ -33,13 +33,23 @@ export interface CreateOrderItemDTO {
 }
 
 export interface CreateOrderDTO {
-  supplierId?: number | null;
+  supplierId: number;
   currencyId?: number;
   currency?: string;
   exchangeRate?: number;
   requisitionId?: bigint | null;
   notes?: string | null;
   createdById: number;
+  items: CreateOrderItemDTO[];
+}
+
+export interface UpdateOrderDTO {
+  supplierId: number;
+  currencyId?: number;
+  currency?: string;
+  exchangeRate?: number;
+  requisitionId?: bigint | null;
+  notes?: string | null;
   items: CreateOrderItemDTO[];
 }
 
@@ -148,9 +158,26 @@ export class OrderService {
     return order;
   }
 
-  static async createOrder(data: CreateOrderDTO) {
+  private static async computeOrderCalculations(data: {
+    supplierId: number;
+    currency?: string;
+    currencyId?: number;
+    exchangeRate?: number;
+    items: CreateOrderItemDTO[];
+  }) {
+    if (!data.supplierId || Number(data.supplierId) <= 0) {
+      throw new Error('Debe seleccionar un proveedor registrado para la orden de compra');
+    }
+
+    const supplier = await prisma.supplier.findUnique({
+      where: { id: Number(data.supplierId) },
+    });
+    if (!supplier) {
+      throw new Error('El proveedor seleccionado no existe o no se encuentra activo');
+    }
+
     if (!data.items || data.items.length === 0) {
-      throw new Error('La orden debe incluir al menos un ítem');
+      throw new Error('La orden de compra debe incluir al menos un renglón/ítem');
     }
 
     let currencyCode = (data.currency || '').trim().toUpperCase();
@@ -162,7 +189,7 @@ export class OrderService {
         where: { id: data.currencyId },
         include: {
           exchanges: {
-            orderBy: { effectiveDate: 'desc' },
+            orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }],
             take: 1,
           },
         },
@@ -182,7 +209,7 @@ export class OrderService {
         },
         include: {
           exchanges: {
-            orderBy: { effectiveDate: 'desc' },
+            orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }],
             take: 1,
           },
         },
@@ -193,36 +220,46 @@ export class OrderService {
       currencyCode = 'USD';
     }
 
-    const resolvedCurrencyId = currency?.id ?? 1;
+    const resolvedCurrencyId =
+      currency?.id ??
+      (currencyCode === 'VED' || currencyCode === 'VES' ? 2 : currencyCode === 'EUR' ? 3 : 1);
+
+    // Obtener tasa BCV oficial USD -> Bs.
+    const vesCurrency = await prisma.currency.findFirst({
+      where: { code: { in: ['VES', 'VED'] } },
+      include: {
+        exchanges: {
+          orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }],
+          take: 1,
+        },
+      },
+    });
+    const defaultBcvUsdRate = vesCurrency?.exchanges[0]?.rate
+      ? Number(vesCurrency.exchanges[0].rate)
+      : 75.0;
 
     let exchangeRate = Number(data.exchangeRate || 0);
     if (!exchangeRate || exchangeRate <= 0) {
       if (currencyCode === 'VED' || currencyCode === 'VES') {
-        exchangeRate = 1.0;
-      } else if (currency && currency.exchanges[0]?.rate) {
-        exchangeRate = Number(currency.exchanges[0].rate);
+        exchangeRate = defaultBcvUsdRate;
+      } else if (currencyCode === 'EUR') {
+        const eurCurrency = await prisma.currency.findUnique({
+          where: { code: 'EUR' },
+          include: {
+            exchanges: {
+              orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }],
+              take: 1,
+            },
+          },
+        });
+        exchangeRate = eurCurrency?.exchanges[0]?.rate
+          ? Number(eurCurrency.exchanges[0].rate)
+          : 81.5;
       } else {
-        exchangeRate = currencyCode === 'EUR' ? 81.5 : 75.0;
+        // USD
+        exchangeRate = defaultBcvUsdRate;
       }
     }
-    if (currencyCode === 'VED' || currencyCode === 'VES') {
-      exchangeRate = 1.0;
-    }
-
-    const currentYear = new Date().getFullYear();
-    const latestOrder = await prisma.order.findFirst({
-      where: { orderNumber: { startsWith: `ORD-${currentYear}-` } },
-      orderBy: { orderNumber: 'desc' },
-    });
-
-    let nextSeq = 1;
-    if (latestOrder) {
-      const parts = latestOrder.orderNumber.split('-');
-      const seqStr = parts[2];
-      const seq = seqStr ? parseInt(seqStr, 10) : NaN;
-      if (!isNaN(seq)) nextSeq = seq + 1;
-    }
-    const orderNumber = `ORD-${currentYear}-${String(nextSeq).padStart(4, '0')}`;
 
     let taxableAmount = 0;
     let exemptAmount = 0;
@@ -291,71 +328,128 @@ export class OrderService {
     const totalAmount =
       Math.round((taxableAmount + exemptAmount + taxAmount) * 100) / 100;
 
-    const totalAmountBs =
-      currencyCode === 'VED' || currencyCode === 'VES'
-        ? totalAmount
-        : Math.round(totalAmount * exchangeRate * 100) / 100;
+    let totalAmountBs = 0;
+    let totalAmountUsd = 0;
+    let taxableAmountUsd = 0;
+    let exemptAmountUsd = 0;
+    let taxAmountUsd = 0;
 
-    const totalAmountUsd =
-      currencyCode === 'USD'
-        ? totalAmount
-        : exchangeRate > 0
-          ? Math.round((totalAmountBs / (currencyCode === 'EUR' ? 81.5 : exchangeRate)) * 100) / 100
+    if (currencyCode === 'VED' || currencyCode === 'VES') {
+      // Orden en Bolívares
+      totalAmountBs = totalAmount;
+      totalAmountUsd =
+        exchangeRate > 0
+          ? Math.round((totalAmount / exchangeRate) * 100) / 100
           : totalAmount;
-
-    const taxableAmountUsd =
-      currencyCode === 'USD'
-        ? taxableAmount
-        : totalAmount > 0
-          ? Math.round((taxableAmount * (totalAmountUsd / totalAmount)) * 100) / 100
+      taxableAmountUsd =
+        exchangeRate > 0
+          ? Math.round((taxableAmount / exchangeRate) * 100) / 100
           : taxableAmount;
-
-    const exemptAmountUsd =
-      currencyCode === 'USD'
-        ? exemptAmount
-        : totalAmount > 0
-          ? Math.round((exemptAmount * (totalAmountUsd / totalAmount)) * 100) / 100
+      exemptAmountUsd =
+        exchangeRate > 0
+          ? Math.round((exemptAmount / exchangeRate) * 100) / 100
           : exemptAmount;
-
-    const taxAmountUsd =
-      currencyCode === 'USD'
-        ? taxAmount
-        : totalAmount > 0
-          ? Math.round((taxAmount * (totalAmountUsd / totalAmount)) * 100) / 100
+      taxAmountUsd =
+        exchangeRate > 0
+          ? Math.round((taxAmount / exchangeRate) * 100) / 100
           : taxAmount;
+    } else if (currencyCode === 'EUR') {
+      // Orden en Euros
+      totalAmountBs = Math.round(totalAmount * exchangeRate * 100) / 100;
+      totalAmountUsd =
+        defaultBcvUsdRate > 0
+          ? Math.round((totalAmountBs / defaultBcvUsdRate) * 100) / 100
+          : totalAmount;
+      const factor = totalAmount > 0 ? totalAmountUsd / totalAmount : 1.0;
+      taxableAmountUsd = Math.round(taxableAmount * factor * 100) / 100;
+      exemptAmountUsd = Math.round(exemptAmount * factor * 100) / 100;
+      taxAmountUsd = Math.round(taxAmount * factor * 100) / 100;
+    } else {
+      // Orden en USD
+      totalAmountUsd = totalAmount;
+      totalAmountBs = Math.round(totalAmount * exchangeRate * 100) / 100;
+      taxableAmountUsd = taxableAmount;
+      exemptAmountUsd = exemptAmount;
+      taxAmountUsd = taxAmount;
+    }
 
     const subtotal = Math.round((taxableAmount + exemptAmount) * 100) / 100;
     const taxTotal = taxAmount;
     const total = totalAmount;
 
+    return {
+      supplierId: Number(data.supplierId),
+      currencyCode,
+      resolvedCurrencyId,
+      exchangeRate,
+      subtotal,
+      taxTotal,
+      total,
+      taxableAmount,
+      exemptAmount,
+      taxAmount,
+      totalAmount,
+      taxableAmountUsd,
+      exemptAmountUsd,
+      taxAmountUsd,
+      totalAmountUsd,
+      totalAmountBs,
+      processedItems,
+    };
+  }
+
+  static async createOrder(data: CreateOrderDTO) {
+    const calc = await this.computeOrderCalculations({
+      supplierId: data.supplierId,
+      currency: data.currency,
+      currencyId: data.currencyId,
+      exchangeRate: data.exchangeRate,
+      items: data.items,
+    });
+
+    const currentYear = new Date().getFullYear();
+    const latestOrder = await prisma.order.findFirst({
+      where: { orderNumber: { startsWith: `ORD-${currentYear}-` } },
+      orderBy: { orderNumber: 'desc' },
+    });
+
+    let nextSeq = 1;
+    if (latestOrder) {
+      const parts = latestOrder.orderNumber.split('-');
+      const seqStr = parts[2];
+      const seq = seqStr ? parseInt(seqStr, 10) : NaN;
+      if (!isNaN(seq)) nextSeq = seq + 1;
+    }
+    const orderNumber = `ORD-${currentYear}-${String(nextSeq).padStart(4, '0')}`;
+
     return prisma.$transaction(async (tx) => {
       const createdOrder = await tx.order.create({
         data: {
           orderNumber,
-          supplierId: data.supplierId ?? null,
-          currency: currencyCode,
-          currencyId: resolvedCurrencyId,
-          exchangeRate,
+          supplierId: calc.supplierId,
+          currency: calc.currencyCode,
+          currencyId: calc.resolvedCurrencyId,
+          exchangeRate: calc.exchangeRate,
           status: OrderStatus.BORRADOR,
           paymentStatus: PaymentStatus.PENDIENTE,
           receptionStatus: ReceptionStatus.PENDIENTE,
-          subtotal,
-          taxTotal,
-          total,
-          taxableAmount,
-          exemptAmount,
-          taxAmount,
-          totalAmount,
-          taxableAmountUsd,
-          exemptAmountUsd,
-          taxAmountUsd,
-          totalAmountUsd,
-          totalAmountBs,
+          subtotal: calc.subtotal,
+          taxTotal: calc.taxTotal,
+          total: calc.total,
+          taxableAmount: calc.taxableAmount,
+          exemptAmount: calc.exemptAmount,
+          taxAmount: calc.taxAmount,
+          totalAmount: calc.totalAmount,
+          taxableAmountUsd: calc.taxableAmountUsd,
+          exemptAmountUsd: calc.exemptAmountUsd,
+          taxAmountUsd: calc.taxAmountUsd,
+          totalAmountUsd: calc.totalAmountUsd,
+          totalAmountBs: calc.totalAmountBs,
           requisitionId: data.requisitionId ?? null,
           notes: data.notes ?? null,
           createdById: data.createdById,
           items: {
-            create: processedItems.map((pi) => ({
+            create: calc.processedItems.map((pi) => ({
               productId: pi.productId,
               unitId: pi.unitId,
               quantityOrdered: pi.quantityOrdered,
@@ -400,6 +494,130 @@ export class OrderService {
     });
   }
 
+  static async updateOrder(orderId: bigint, data: UpdateOrderDTO) {
+    const existing = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true },
+    });
+
+    if (!existing) {
+      throw new Error('Orden de compra no encontrada');
+    }
+
+    if (existing.status !== OrderStatus.BORRADOR) {
+      throw new Error(
+        `Solo se pueden modificar órdenes de compra en estado BORRADOR. La orden actual se encuentra en estado ${existing.status}.`
+      );
+    }
+
+    const calc = await this.computeOrderCalculations({
+      supplierId: data.supplierId,
+      currency: data.currency,
+      currencyId: data.currencyId,
+      exchangeRate: data.exchangeRate,
+      items: data.items,
+    });
+
+    return prisma.$transaction(async (tx) => {
+      // Eliminar renglones anteriores
+      await tx.orderItem.deleteMany({
+        where: { orderId },
+      });
+
+      // Actualizar cabecera e insertar nuevos renglones
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          supplierId: calc.supplierId,
+          currency: calc.currencyCode,
+          currencyId: calc.resolvedCurrencyId,
+          exchangeRate: calc.exchangeRate,
+          subtotal: calc.subtotal,
+          taxTotal: calc.taxTotal,
+          total: calc.total,
+          taxableAmount: calc.taxableAmount,
+          exemptAmount: calc.exemptAmount,
+          taxAmount: calc.taxAmount,
+          totalAmount: calc.totalAmount,
+          taxableAmountUsd: calc.taxableAmountUsd,
+          exemptAmountUsd: calc.exemptAmountUsd,
+          taxAmountUsd: calc.taxAmountUsd,
+          totalAmountUsd: calc.totalAmountUsd,
+          totalAmountBs: calc.totalAmountBs,
+          requisitionId: data.requisitionId !== undefined ? data.requisitionId : existing.requisitionId,
+          notes: data.notes !== undefined ? (data.notes ? String(data.notes) : null) : existing.notes,
+          items: {
+            create: calc.processedItems.map((pi) => ({
+              productId: pi.productId,
+              unitId: pi.unitId,
+              quantityOrdered: pi.quantityOrdered,
+              multiplier: pi.multiplier,
+              baseQuantity: pi.baseQuantity,
+              unitPrice: pi.unitPrice,
+              taxRate: pi.taxRate,
+              isExempt: pi.isExempt,
+              totalLine: pi.totalLine,
+            })),
+          },
+        },
+        include: {
+          items: {
+            include: {
+              product: {
+                include: { baseUnit: true, purchaseUnit: true },
+              },
+              unit: true,
+            },
+          },
+          supplier: true,
+          currencyRel: true,
+          requisition: {
+            select: {
+              id: true,
+              requisitionNumber: true,
+              departmentSection: true,
+            },
+          },
+        },
+      });
+
+      return updatedOrder;
+    });
+  }
+
+  static async sendOrder(orderId: bigint) {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      throw new Error('Orden de compra no encontrada');
+    }
+
+    if (order.status !== OrderStatus.BORRADOR) {
+      throw new Error(
+        `Solo se pueden enviar órdenes que se encuentren en estado BORRADOR. El estado actual es ${order.status}.`
+      );
+    }
+
+    return prisma.order.update({
+      where: { id: orderId },
+      data: {
+        status: OrderStatus.ENVIADA,
+      },
+      include: {
+        items: {
+          include: {
+            product: true,
+            unit: true,
+          },
+        },
+        supplier: true,
+        currencyRel: true,
+      },
+    });
+  }
+
   static async receiveOrder(data: ReceiveOrderDTO) {
     if (!data.items || data.items.length === 0) {
       throw new Error('Debe proporcionar al menos un ítem para recibir');
@@ -410,6 +628,16 @@ export class OrderService {
         where: { id: data.orderId },
         include: { items: { include: { product: true } } },
       });
+
+      if (!order) {
+        throw new Error('Orden no encontrada');
+      }
+
+      if (order.status === OrderStatus.BORRADOR) {
+        throw new Error(
+          'La orden de compra se encuentra en estado BORRADOR. Debe marcarla como ENVIADA antes de recibir mercancía física.'
+        );
+      }
 
       if (!order) {
         throw new Error('Orden no encontrada');

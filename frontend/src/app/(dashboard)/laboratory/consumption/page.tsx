@@ -10,6 +10,9 @@ import {
 import { useRouter } from "next/navigation";
 import { LaboratoryClientService } from "@/services/laboratory.service";
 import { AuthService } from "@/services/auth.service";
+import { useDebounce } from "@/hooks/use-debounce";
+import { usePagination } from "@/hooks/use-pagination";
+import { TablePagination } from "@/components/common/TablePagination";
 import type {
   LabReagentUnitItem,
   ReagentConsumptionRecord,
@@ -27,6 +30,7 @@ import {
   Snowflake,
   Filter,
   ShieldAlert,
+  X,
 } from "lucide-react";
 
 import {
@@ -71,8 +75,10 @@ export default function ReagentConsumptionPage() {
 
   const [units, setUnits] = useState<LabReagentUnitItem[]>([]);
   const [history, setHistory] = useState<ReagentConsumptionRecord[]>([]);
+  const pagination = usePagination(history, { initialPageSize: 5 });
   const [loadingData, setLoadingData] = useState(() => isLabStaff);
   const [unitSearch, setUnitSearch] = useState("");
+  const debouncedUnitSearch = useDebounce(unitSearch, 350);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -291,22 +297,42 @@ export default function ReagentConsumptionPage() {
                         <Filter className="w-3.5 h-3.5 text-muted-foreground" />
                         Filtrar por Nevera (Opcional)
                       </Label>
-                      <select
-                        value={filterFridgeId}
-                        onChange={(e) => {
-                          setFilterFridgeId(e.target.value);
-                          setSelectedUnitId("");
-                          setSelectedUnit(null);
-                        }}
-                        className="w-full bg-background border border-input rounded-md px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
-                      >
-                        <option value="">Todas las neveras / cavas</option>
-                        {fridges.map((f) => (
-                          <option key={f.id} value={f.id}>
-                            {f.name} ({f.code})
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex gap-2 items-center">
+                        <select
+                          value={filterFridgeId}
+                          onChange={(e) => {
+                            setFilterFridgeId(e.target.value);
+                            setSelectedUnitId("");
+                            setSelectedUnit(null);
+                          }}
+                          className="flex-1 bg-background border border-input rounded-md px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring text-foreground cursor-pointer"
+                        >
+                          <option value="">Todas las neveras / cavas</option>
+                          {fridges.map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.name} ({f.code})
+                            </option>
+                          ))}
+                        </select>
+                        {(filterFridgeId || unitSearch) && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setFilterFridgeId("");
+                              setUnitSearch("");
+                              setSelectedUnitId("");
+                              setSelectedUnit(null);
+                            }}
+                            className="text-xs text-muted-foreground hover:text-foreground gap-1 h-9 cursor-pointer"
+                            title="Limpiar filtros"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>Limpiar</span>
+                          </Button>
+                        )}
+                      </div>
                     </div>
 
                     {/* Buscador de Frascos */}
@@ -326,9 +352,23 @@ export default function ReagentConsumptionPage() {
                             setIsDropdownOpen(true);
                           }}
                           placeholder="Buscar por reactivo, código de frasco (#LOT-F01) o lote..."
-                          className="pl-9 text-xs"
+                          className="pl-9 pr-8 text-xs"
                           required={!selectedUnitId}
                         />
+                        {unitSearch && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUnitSearch("");
+                              setSelectedUnitId("");
+                              setSelectedUnit(null);
+                            }}
+                            className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                            title="Borrar búsqueda"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
 
                         {isDropdownOpen && !selectedUnitId && (
                           <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-popover border border-border rounded-md shadow-lg">
@@ -527,7 +567,7 @@ export default function ReagentConsumptionPage() {
                     </p>
                   ) : (
                     <div className="space-y-3">
-                      {history.map((record) => (
+                      {pagination.paginatedItems.map((record) => (
                         <div
                           key={record.id}
                           className="p-3 bg-muted/40 border border-border rounded-lg text-xs space-y-1"
@@ -561,6 +601,17 @@ export default function ReagentConsumptionPage() {
                       ))}
                     </div>
                   )}
+                  <TablePagination
+                    currentPage={pagination.currentPage}
+                    totalPages={pagination.totalPages}
+                    pageSize={pagination.pageSize}
+                    totalItems={pagination.totalItems}
+                    onPageChange={pagination.onPageChange}
+                    onPageSizeChange={pagination.onPageSizeChange}
+                    pageSizeOptions={[5, 10, 20]}
+                    entityName="consumos"
+                    className="mt-3 p-2 border-t"
+                  />
                 </CardContent>
               </Card>
             </div>

@@ -79,7 +79,7 @@ export const getProducts = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { search, q, categoryId, isReagent } = req.query;
+    const { search, q, categoryId, isReagent, isLabReagent, labAreaId } = req.query;
 
     const filter: ProductFilterDTO = {};
     const rawSearch =
@@ -106,6 +106,15 @@ export const getProducts = async (
     }
     if (isReagent !== undefined) {
       filter.isReagent = isReagent === 'true';
+    }
+    if (isLabReagent !== undefined) {
+      filter.isLabReagent = isLabReagent === 'true';
+    }
+    if (labAreaId !== undefined && labAreaId !== '') {
+      const parsedAreaId = Number(labAreaId);
+      if (!isNaN(parsedAreaId) && parsedAreaId > 0) {
+        filter.labAreaId = parsedAreaId;
+      }
     }
 
     const products = await ProductService.listProducts(filter);
@@ -137,6 +146,13 @@ export const createProduct = async (
       isTaxExempt,
       minStockAlert,
       isReagent,
+      isLabReagent,
+      labItemType,
+      theoreticalYield,
+      includesCalibrator,
+      calibratorsPerRun,
+      allowedLabAreaIds,
+      compatibleExamIds,
     } = req.body;
 
     if (!name || !categoryId || !baseUnitId) {
@@ -147,18 +163,30 @@ export const createProduct = async (
       return;
     }
 
+    const isLabReagentVal = Boolean(isLabReagent);
     const newProductData: CreateProductDTO = {
       name: String(name),
       categoryId: Number(categoryId),
       baseUnitId: Number(baseUnitId),
       purchaseUnitId: purchaseUnitId ? Number(purchaseUnitId) : null,
-      conversionFactor: conversionFactor ? Number(conversionFactor) : 1.0,
+      conversionFactor: conversionFactor !== undefined ? Number(conversionFactor) : undefined,
       brandId: brandId ? Number(brandId) : null,
       barcode: barcode ? String(barcode) : null,
       description: description ? String(description) : null,
       isTaxExempt: Boolean(isTaxExempt),
       minStockAlert: minStockAlert ? Number(minStockAlert) : 0,
-      isReagent: Boolean(isReagent),
+      isLabReagent: isLabReagentVal,
+      isReagent: isReagent !== undefined ? Boolean(isReagent) : isLabReagentVal,
+      labItemType: labItemType ?? null,
+      theoreticalYield: theoreticalYield ? Number(theoreticalYield) : null,
+      includesCalibrator: Boolean(includesCalibrator),
+      calibratorsPerRun: calibratorsPerRun ? Number(calibratorsPerRun) : null,
+      allowedLabAreaIds: Array.isArray(allowedLabAreaIds)
+        ? allowedLabAreaIds.map((id: any) => Number(id))
+        : undefined,
+      compatibleExamIds: Array.isArray(compatibleExamIds)
+        ? compatibleExamIds.map((id: any) => Number(id))
+        : undefined,
     };
 
     const product = await ProductService.createProduct(newProductData);
@@ -199,6 +227,13 @@ export const updateProduct = async (
       isTaxExempt,
       minStockAlert,
       isReagent,
+      isLabReagent,
+      labItemType,
+      theoreticalYield,
+      includesCalibrator,
+      calibratorsPerRun,
+      allowedLabAreaIds,
+      compatibleExamIds,
     } = req.body;
 
     const updateData: UpdateProductDTO = {};
@@ -226,8 +261,36 @@ export const updateProduct = async (
     if (minStockAlert !== undefined) {
       updateData.minStockAlert = Number(minStockAlert) || 0;
     }
+    if (isLabReagent !== undefined) {
+      updateData.isLabReagent = Boolean(isLabReagent);
+      if (updateData.isLabReagent && isReagent === undefined) {
+        updateData.isReagent = true;
+      }
+    }
     if (isReagent !== undefined) {
       updateData.isReagent = Boolean(isReagent);
+    }
+    if (labItemType !== undefined) {
+      updateData.labItemType = labItemType;
+    }
+    if (theoreticalYield !== undefined) {
+      updateData.theoreticalYield = theoreticalYield ? Number(theoreticalYield) : null;
+    }
+    if (includesCalibrator !== undefined) {
+      updateData.includesCalibrator = Boolean(includesCalibrator);
+    }
+    if (calibratorsPerRun !== undefined) {
+      updateData.calibratorsPerRun = calibratorsPerRun ? Number(calibratorsPerRun) : null;
+    }
+    if (allowedLabAreaIds !== undefined) {
+      updateData.allowedLabAreaIds = Array.isArray(allowedLabAreaIds)
+        ? allowedLabAreaIds.map((item: any) => Number(item))
+        : [];
+    }
+    if (compatibleExamIds !== undefined) {
+      updateData.compatibleExamIds = Array.isArray(compatibleExamIds)
+        ? compatibleExamIds.map((item: any) => Number(item))
+        : [];
     }
 
     const updated = await ProductService.updateProduct(BigInt(id), updateData);

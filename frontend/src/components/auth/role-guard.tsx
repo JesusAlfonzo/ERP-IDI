@@ -6,21 +6,104 @@ import { ShieldAlert, RefreshCw } from "lucide-react";
 
 // Matriz de permisos ordenada por estricta especificidad (rutas hijas primero)
 const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
-  // 1. Módulos Administrativos y Configuración
+  // 1. Módulos de Reportes y Trazabilidad (Admin)
+  {
+    pattern: "/admin/reports/traceability",
+    roles: [
+      "ADMINISTRADOR",
+      "COORDINADOR_LABORATORIO",
+      "COORDINADOR",
+      "ADMINISTRACION",
+      "LABORATORIO",
+      "BIOANALISTA",
+      "ALMACENISTA",
+    ],
+  },
+  {
+    pattern: "/admin/reports",
+    roles: [
+      "ADMINISTRADOR",
+      "COORDINADOR_LABORATORIO",
+      "COORDINADOR",
+      "ADMINISTRACION",
+    ],
+  },
+
+  // 2. Módulo de Coordinación
+  {
+    pattern: "/coordinator/fridge-audit",
+    roles: [
+      "ADMINISTRADOR",
+      "COORDINADOR_LABORATORIO",
+      "COORDINADOR",
+      "LABORATORIO",
+      "BIOANALISTA",
+      "ADMINISTRACION",
+    ],
+  },
+  {
+    pattern: "/coordinator",
+    roles: [
+      "ADMINISTRADOR",
+      "COORDINADOR_LABORATORIO",
+      "COORDINADOR",
+      "LABORATORIO",
+    ],
+  },
+
+  // 3. Módulo Operativo de Laboratorio (Bioanalista / Área Operativa)
+  {
+    pattern: "/lab",
+    roles: [
+      "ADMINISTRADOR",
+      "LABORATORIO",
+      "COORDINADOR_LABORATORIO",
+      "COORDINADOR",
+      "BIOANALISTA",
+    ],
+  },
+
+  // 4. Módulo de Investigación y Docencia
+  {
+    pattern: "/research/trials",
+    roles: [
+      "ADMINISTRADOR",
+      "INVESTIGACION",
+      "DOCENCIA",
+      "LABORATORIO",
+      "COORDINADOR_LABORATORIO",
+      "BIOANALISTA",
+    ],
+  },
+  {
+    pattern: "/research",
+    roles: [
+      "ADMINISTRADOR",
+      "INVESTIGACION",
+      "DOCENCIA",
+      "LABORATORIO",
+      "COORDINADOR_LABORATORIO",
+    ],
+  },
+
+  // 5. Módulos Administrativos y Configuración
   { pattern: "/admin/financial/payments", roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"] },
   { pattern: "/admin", roles: ["ADMINISTRADOR"] },
   { pattern: "/settings/users", roles: ["ADMINISTRADOR"] },
 
-  // 2. Operaciones Críticas de Almacén y Kardex
+  // 6. Operaciones Críticas de Almacén y Kardex
   { pattern: "/inventory/settings", roles: ["ADMINISTRADOR", "ALMACENISTA", "ADMINISTRACION"] },
   {
     pattern: "/inventory/adjustments",
     roles: ["ADMINISTRADOR", "ALMACENISTA"],
   },
+  {
+    pattern: /^\/inventory\/kardex\/[^/]+$/,
+    roles: ["ADMINISTRADOR", "ALMACENISTA"],
+  },
   { pattern: "/inventory/kardex", roles: ["ADMINISTRADOR", "ALMACENISTA"] },
 
-  // 3. Ficha Técnica / Detalle del Producto (Show [id])
-  // Restringido para que SOLICITANTE no vea costos de lote ni auditoría profunda
+  // 7. Ficha Técnica / Detalle del Producto (Show [id])
   {
     pattern: /^\/inventory\/products\/[^/]+$/,
     roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS", "LABORATORIO"],
@@ -30,7 +113,7 @@ const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
     roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS", "LABORATORIO"],
   },
 
-  // 4. Catálogo General de Productos (Listado base)
+  // 8. Catálogo General de Productos
   {
     pattern: "/inventory/products",
     roles: [
@@ -52,14 +135,14 @@ const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
     ],
   },
 
-  // 5. Cadena de Frío y Calidad
+  // 9. Cadena de Frío y Calidad
   { pattern: "/laboratory", roles: ["ADMINISTRADOR", "LABORATORIO"] },
   { pattern: "/quality", roles: ["ADMINISTRADOR", "LABORATORIO", "ALMACENISTA"] },
 
-  // 6. Compras y Proveedores
+  // 10. Compras y Proveedores
   { pattern: "/purchasing", roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"] },
 
-  // 7. Solicitudes Internas
+  // 11. Solicitudes Internas Generales
   {
     pattern: "/requests",
     roles: [
@@ -69,12 +152,6 @@ const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
       "SOLICITANTE",
     ],
   },
-  // En ROUTE_PERMISSIONS, añade la regla hija de Kardex antes del listado base:
-  {
-    pattern: /^\/inventory\/kardex\/[^/]+$/,
-    roles: ["ADMINISTRADOR", "ALMACENISTA"],
-  },
-  { pattern: "/inventory/kardex", roles: ["ADMINISTRADOR", "ALMACENISTA"] },
 ];
 
 interface RoleGuardProps {
@@ -86,7 +163,6 @@ export function RoleGuard({ user, children }: RoleGuardProps) {
   const pathname = usePathname();
   const router = useRouter();
 
-  // Si aún no se ha recibido el objeto de usuario desde AppLayout, esperamos
   if (!user) {
     return (
       <div className="h-[50vh] flex items-center justify-center text-slate-400">
@@ -96,7 +172,6 @@ export function RoleGuard({ user, children }: RoleGuardProps) {
     );
   }
 
-  // Evaluar regla coincidente por Regex o Prefijo
   const matchedRule = ROUTE_PERMISSIONS.find((rule) => {
     if (typeof rule.pattern === "string") {
       return (
@@ -106,7 +181,6 @@ export function RoleGuard({ user, children }: RoleGuardProps) {
     return rule.pattern.test(pathname);
   });
 
-  // Rutas sin restricción explícita (ej. /dashboard)
   if (!matchedRule) {
     return <>{children}</>;
   }

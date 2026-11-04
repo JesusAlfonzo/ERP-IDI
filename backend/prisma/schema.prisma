@@ -82,10 +82,85 @@ enum StockMovementType {
 }
 
 enum LabUnitStatus {
+  IN_TRANSIT_TO_LAB
   SELLADO
   EN_USO
+  INTERNAL_QUARANTINE
   AGOTADO
+  DISCARDED
   DESCARTADO
+}
+
+enum LabItemType {
+  REAGENT_KIT
+  STANDALONE_CALIBRATOR
+  CONTROL
+  CONSUMABLE
+}
+
+enum StockOwnership {
+  CLINICAL_ROUTINE
+  RESEARCH_PROJECT
+}
+
+enum QuarantineInstanceType {
+  RECEPTION_PURCHASING
+  INTERNAL_LAB
+}
+
+enum QuarantineReason {
+  COLD_CHAIN_BREAK
+  CALIBRATION_FAILURE
+  CONTAMINATION
+  DAMAGED_PACKAGING
+  EXPIRED
+  OTHER
+}
+
+enum QuarantineResolutionStatus {
+  PENDING
+  RETURNED_TO_SUPPLIER
+  REINTEGRATED_TO_STOCK
+  WRITTEN_OFF_AS_LOSS
+}
+
+enum LabInternalRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  DELIVERED
+}
+
+enum LabWeeklyRunStatus {
+  OPEN_ACCUMULATING
+  CLOSED_RECONCILED
+  CANCELLED
+}
+
+enum RepeatReason {
+  CALIBRATION_FAILURE
+  CRITICAL_VALUE_CONFIRMATION
+  COMPLEX_SAMPLE
+  OPERATOR_ERROR
+  OTHER
+}
+
+enum ConsumptionConcept {
+  PATIENT
+  REPEAT
+  CALIBRATION
+  CONTROL
+  WASTE
+  YIELD_SURPLUS
+  YIELD_DEFICIT
+  QUARANTINE_LOCK
+  PHYSICAL_AUDIT_ADJUSTMENT
+}
+
+enum FridgeAuditAdjustmentStatus {
+  PENDING_ADJUSTMENT
+  ADJUSTED_AND_RECONCILED
+  FLAGGED_DISCREPANCY
 }
 
 enum LabMovementType {
@@ -123,6 +198,56 @@ enum IncidentStatus {
   DESCARTADA
 }
 
+enum ResearchProjectType {
+  TEACHING
+  THESIS
+  INSTITUTIONAL
+  EXTERNAL_COLLABORATION
+}
+
+enum ResearchProjectStatus {
+  FORMULATION
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum ResearchMemberRole {
+  PRINCIPAL_INVESTIGATOR
+  CO_INVESTIGATOR
+  PROFESSOR
+  THESIS_STUDENT
+  LAB_ASSISTANT
+}
+
+enum ResearchInvestorType {
+  PUBLIC_GRANT
+  UNIVERSITY_FUND
+  PRIVATE_COMPANY
+  NGO_INTERNATIONAL
+  INDIVIDUAL
+}
+
+enum ResearchTransferDirection {
+  CLINICAL_TO_RESEARCH
+  RESEARCH_TO_CLINICAL
+}
+
+enum ResearchTrialStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+enum ResearchFindingType {
+  EXPERIMENTAL_RESULT
+  MILESTONE
+  THESIS_CHAPTER
+  PUBLICATION
+  ACADEMIC_MATERIAL
+}
+
 // ==========================================
 // 2. SEGURIDAD Y ACCESO (RBAC + AUTH)
 // ==========================================
@@ -152,6 +277,17 @@ model User {
   resolvedIncidents       BatchIncident[]    @relation("ResolvedIncidents")
   purchaseRequisitions    PurchaseRequisition[] @relation("UserPurchaseRequisitions")
   directPayments          DirectPayment[]
+  labAreas                UserLabArea[]
+  labRequestsCreated      LabInternalRequest[]     @relation("LabRequestsRequested")
+  labRequestsReviewed     LabInternalRequest[]     @relation("LabRequestsReviewed")
+  weeklyRunsExecuted      LabWeeklyRun[]           @relation("UserWeeklyRuns")
+  consumptionAuditLogs    LabConsumptionAuditLog[]
+  projectMemberships      ResearchProjectMember[]
+  donationsReceived       ResearchDonation[]       @relation("DonationsReceived")
+  transfersAuthorized     ResearchStockTransfer[]  @relation("TransfersAuthorized")
+  trialsExecuted          ResearchTrial[]          @relation("UserResearchTrials")
+  findingsRecorded        ResearchFinding[]        @relation("UserResearchFindings")
+  fridgePhysicalAudits    FridgePhysicalAudit[]
 
   @@map("users")
 }
@@ -324,6 +460,11 @@ model Product {
   isTaxExempt      Boolean  @default(false) @map("is_tax_exempt")
   minStockAlert    Int      @default(0) @map("min_stock_alert")
   isReagent        Boolean  @default(false) @map("is_reagent")
+  isLabReagent     Boolean  @default(false) @map("is_lab_reagent")
+  labItemType      LabItemType? @map("lab_item_type")
+  theoreticalYield Int?     @map("theoretical_yield")
+  includesCalibrator Boolean @default(false) @map("includes_calibrator")
+  calibratorsPerRun Int?    @map("calibrators_per_run")
   isActive         Boolean  @default(true) @map("is_active")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
@@ -338,6 +479,10 @@ model Product {
   requestItems    RequestItem[]
   purchaseRequisitionItems PurchaseRequisitionItem[]
   stockMovements  StockMovement[]
+  allowedLabAreas LabAreaProduct[]
+  compatibleExams LabExamProduct[]
+  internalRequestItems LabInternalRequestItem[]
+  donationItems ResearchDonationItem[]
 
   @@map("products")
 }
@@ -583,16 +728,20 @@ model StockBatch {
   currentQuantity Decimal     @map("current_quantity") @db.Decimal(12, 2)
   costPrice       Decimal     @map("cost_price") @db.Decimal(18, 4)
   expirationDate  DateTime?   @map("expiration_date") @db.Date
-  status          BatchStatus @default(DISPONIBLE)
-  origin          String?     @default("ORDEN_COMPRA") @map("origin")
-  createdAt       DateTime    @default(now()) @map("created_at")
+  status          BatchStatus    @default(DISPONIBLE)
+  origin          String?        @default("ORDEN_COMPRA") @map("origin")
+  ownershipType   StockOwnership @default(CLINICAL_ROUTINE) @map("ownership_type")
+  researchProjectId Int?         @map("research_project_id")
+  createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime    @updatedAt @map("updated_at")
 
   product            Product              @relation(fields: [productId], references: [id])
   location           Location             @relation(fields: [locationId], references: [id])
+  researchProject    ResearchProject?     @relation(fields: [researchProjectId], references: [id], onDelete: SetNull)
   movementItems      StockMovementItem[]
   labReagentUnits    LabReagentUnit[]
   incidents          BatchIncident[]
+  donationItems      ResearchDonationItem[]
 
   @@index([productId, lotNumber, locationId])
   @@map("stock_batches")
@@ -648,18 +797,40 @@ model LabReagentUnit {
   unitCode       String        @unique @map("unit_code")
   initialVolume  Decimal       @map("initial_volume") @db.Decimal(12, 2)
   currentVolume  Decimal       @map("current_volume") @db.Decimal(12, 2)
-  status         LabUnitStatus @default(SELLADO)
-  openedAt       DateTime?     @map("opened_at")
+  status                 LabUnitStatus  @default(SELLADO)
+  ownershipType          StockOwnership @default(CLINICAL_ROUTINE) @map("ownership_type")
+  researchProjectId      Int?           @map("research_project_id")
+  initialTheoreticalUses Int            @default(0) @map("initial_theoretical_uses")
+  consumedUses           Int            @default(0) @map("consumed_uses")
+  remainingUses          Int            @default(0) @map("remaining_uses")
+  yieldVariance          Int            @default(0) @map("yield_variance")
+  unitCostPerUse         Decimal        @default(0.0000) @map("unit_cost_per_use") @db.Decimal(18, 4)
+  referenceCostPerUse    Decimal?       @map("reference_cost_per_use") @db.Decimal(18, 4)
+  assignedLabAreaId      Int?           @map("assigned_lab_area_id")
+  openedAt               DateTime?      @map("opened_at")
   openedById     Int?          @map("opened_by_id")
   expirationDate DateTime?     @map("expiration_date") @db.Date
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
-  product       Product            @relation(fields: [productId], references: [id])
-  batch         StockBatch         @relation(fields: [batchId], references: [id])
-  fridge        Fridge?            @relation(fields: [fridgeId], references: [id])
-  openedBy      User?              @relation("LabUnitOpenedBy", fields: [openedById], references: [id])
-  movements     LabStockMovement[]
+  product                     Product                  @relation(fields: [productId], references: [id])
+  batch                       StockBatch               @relation(fields: [batchId], references: [id])
+  fridge                      Fridge?                  @relation(fields: [fridgeId], references: [id])
+  assignedLabArea             LabArea?                 @relation("AssignedLabUnits", fields: [assignedLabAreaId], references: [id], onDelete: SetNull)
+  openedBy                    User?                    @relation("LabUnitOpenedBy", fields: [openedById], references: [id])
+  researchProject             ResearchProject?         @relation(fields: [researchProjectId], references: [id], onDelete: SetNull)
+  movements                   LabStockMovement[]
+  incidents                   BatchIncident[]
+  internalRequestItems        LabInternalRequestItem[]
+  runConsumptionsAsPrimary    LabRunConsumption[]      @relation("PrimaryReagentConsumptions")
+  runConsumptionsAsCalibrator LabRunConsumption[]      @relation("ExternalCalibratorConsumptions")
+  trialConsumptionsAsPrimary  ResearchTrialConsumption[] @relation("PrimaryReagentTrialConsumptions")
+  trialConsumptionsAsCalibrator ResearchTrialConsumption[] @relation("ExternalCalibratorTrialConsumptions")
+  stockTransfersSource        ResearchStockTransfer[]  @relation("TransferSourceUnit")
+  stockTransfersTarget        ResearchStockTransfer[]  @relation("TransferTargetUnit")
+  donationItems               ResearchDonationItem[]
+  consumptionAuditLogs        LabConsumptionAuditLog[]
+  fridgePhysicalAuditItems    FridgePhysicalAuditItem[]
 
   @@map("lab_reagent_units")
 }
@@ -732,22 +903,30 @@ model RequestItem {
 // ==========================================
 
 model BatchIncident {
-  id               BigInt         @id @default(autoincrement())
-  batchId          BigInt         @map("batch_id")
-  reportedById     Int            @map("reported_by_id")
-  incidentType     IncidentType   @map("incident_type")
-  description      String         @db.Text
-  evidenceUrl      String?        @map("evidence_url")
-  affectedQuantity Decimal        @map("affected_quantity") @db.Decimal(12, 2)
-  status           IncidentStatus @default(ABIERTA)
-  resolvedById     Int?           @map("resolved_by_id")
-  resolutionNotes  String?        @map("resolution_notes") @db.Text
-  resolvedAt       DateTime?      @map("resolved_at")
-  createdAt        DateTime       @default(now()) @map("created_at")
+  id               BigInt                     @id @default(autoincrement())
+  batchId          BigInt?                    @map("batch_id")
+  labReagentUnitId BigInt?                    @map("lab_reagent_unit_id")
+  labAreaId        Int?                       @map("lab_area_id")
+  reportedById     Int                        @map("reported_by_id")
+  incidentType     IncidentType               @map("incident_type")
+  instanceType     QuarantineInstanceType     @default(RECEPTION_PURCHASING) @map("instance_type")
+  quarantineReason QuarantineReason?          @map("quarantine_reason")
+  description      String                     @db.Text
+  evidenceUrl      String?                    @map("evidence_url")
+  affectedQuantity Decimal                    @default(0.00) @map("affected_quantity") @db.Decimal(12, 2)
+  affectedUses     Int?                       @default(0) @map("affected_uses")
+  status           IncidentStatus             @default(ABIERTA)
+  resolutionStatus QuarantineResolutionStatus @default(PENDING) @map("resolution_status")
+  resolvedById     Int?                       @map("resolved_by_id")
+  resolutionNotes  String?                    @map("resolution_notes") @db.Text
+  resolvedAt       DateTime?                  @map("resolved_at")
+  createdAt        DateTime                   @default(now()) @map("created_at")
 
-  batch      StockBatch @relation(fields: [batchId], references: [id])
-  reportedBy User       @relation("ReportedIncidents", fields: [reportedById], references: [id])
-  resolvedBy User?      @relation("ResolvedIncidents", fields: [resolvedById], references: [id])
+  batch          StockBatch?     @relation(fields: [batchId], references: [id])
+  labReagentUnit LabReagentUnit? @relation(fields: [labReagentUnitId], references: [id], onDelete: SetNull)
+  labArea        LabArea?        @relation(fields: [labAreaId], references: [id], onDelete: SetNull)
+  reportedBy     User            @relation("ReportedIncidents", fields: [reportedById], references: [id])
+  resolvedBy     User?           @relation("ResolvedIncidents", fields: [resolvedById], references: [id])
 
   @@map("batch_incidents")
 }
@@ -800,4 +979,441 @@ model JustificationConcept {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("justification_concepts")
-}
+}
+
+// ==========================================
+// 13. ÁREAS DE LABORATORIO Y CATÁLOGO DE EXÁMENES
+// ==========================================
+
+model LabArea {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String   @unique
+  description String?  @db.Text
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users                UserLabArea[]
+  exams                LabExam[]
+  products             LabAreaProduct[]
+  incidents            BatchIncident[]
+  assignedUnits        LabReagentUnit[]         @relation("AssignedLabUnits")
+  internalRequests     LabInternalRequest[]
+  weeklyRuns           LabWeeklyRun[]
+  consumptionAuditLogs LabConsumptionAuditLog[]
+
+  @@map("lab_areas")
+}
+
+model UserLabArea {
+  userId    Int      @map("user_id")
+  labAreaId Int      @map("lab_area_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  labArea LabArea @relation(fields: [labAreaId], references: [id], onDelete: Cascade)
+
+  @@id([userId, labAreaId])
+  @@map("user_lab_areas")
+}
+
+model LabExam {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String
+  description String?  @db.Text
+  areaId      Int?     @map("area_id")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  area                 LabArea?                 @relation(fields: [areaId], references: [id], onDelete: SetNull)
+  compatibleProducts   LabExamProduct[]
+  weeklyRuns           LabWeeklyRun[]
+  consumptionAuditLogs LabConsumptionAuditLog[]
+
+  @@map("lab_exams")
+}
+
+model LabAreaProduct {
+  labAreaId Int     @map("lab_area_id")
+  productId BigInt  @map("product_id")
+
+  labArea LabArea @relation(fields: [labAreaId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([labAreaId, productId])
+  @@map("lab_area_products")
+}
+
+model LabExamProduct {
+  labExamId Int     @map("lab_exam_id")
+  productId BigInt  @map("product_id")
+
+  labExam LabExam @relation(fields: [labExamId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([labExamId, productId])
+  @@map("lab_exam_products")
+}
+
+// ==========================================
+// 14. SOLICITUDES INTERNAS, CORRIDAS SEMANALES Y AUDITORÍA 5D (FASE 2)
+// ==========================================
+
+model LabInternalRequest {
+  id            Int                      @id @default(autoincrement())
+  code          String                   @unique
+  labAreaId     Int                      @map("lab_area_id")
+  requestedById Int                      @map("requested_by_id")
+  reviewedById  Int?                     @map("reviewed_by_id")
+  status        LabInternalRequestStatus @default(PENDING)
+  justification String                   @db.Text
+  reviewNotes   String?                  @map("review_notes") @db.Text
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  updatedAt     DateTime                 @updatedAt @map("updated_at")
+  resolvedAt    DateTime?                @map("resolved_at")
+
+  labArea     LabArea                  @relation(fields: [labAreaId], references: [id])
+  requestedBy User                     @relation("LabRequestsRequested", fields: [requestedById], references: [id])
+  reviewedBy  User?                    @relation("LabRequestsReviewed", fields: [reviewedById], references: [id])
+  items       LabInternalRequestItem[]
+
+  @@map("lab_internal_requests")
+}
+
+model LabInternalRequestItem {
+  id                   Int     @id @default(autoincrement())
+  requestId            Int     @map("request_id")
+  productId            BigInt  @map("product_id")
+  requestedUsesOrUnits Int     @map("requested_uses_or_units")
+  assignedLabUnitId    BigInt? @map("assigned_lab_unit_id")
+
+  request         LabInternalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  product         Product            @relation(fields: [productId], references: [id])
+  assignedLabUnit LabReagentUnit?    @relation(fields: [assignedLabUnitId], references: [id], onDelete: SetNull)
+
+  @@map("lab_internal_request_items")
+}
+
+model LabWeeklyRun {
+  id                     Int                @id @default(autoincrement())
+  code                   String             @unique
+  labAreaId              Int                @map("lab_area_id")
+  labExamId              Int                @map("lab_exam_id")
+  bioanalystId           Int                @map("bioanalyst_id")
+  weekStartDate          DateTime           @map("week_start_date")
+  weekEndDate            DateTime           @map("week_end_date")
+  status                 LabWeeklyRunStatus @default(OPEN_ACCUMULATING)
+  totalValidPatientExams Int                @default(0) @map("total_valid_patient_exams")
+  totalRunCost           Decimal            @default(0.0000) @map("total_run_cost") @db.Decimal(18, 4)
+  effectiveCostPerExam   Decimal            @default(0.0000) @map("effective_cost_per_exam") @db.Decimal(18, 4)
+  notes                  String?            @db.Text
+  closedAt               DateTime?          @map("closed_at")
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
+
+  labArea      LabArea                  @relation(fields: [labAreaId], references: [id])
+  labExam      LabExam                  @relation(fields: [labExamId], references: [id])
+  bioanalyst   User                     @relation("UserWeeklyRuns", fields: [bioanalystId], references: [id])
+  consumptions LabRunConsumption[]
+  auditLogs    LabConsumptionAuditLog[]
+
+  @@map("lab_weekly_runs")
+}
+
+model LabRunConsumption {
+  id                        Int           @id @default(autoincrement())
+  runId                     Int           @map("run_id")
+  labReagentUnitId          BigInt        @map("lab_reagent_unit_id")
+  externalCalibratorUnitId  BigInt?       @map("external_calibrator_unit_id")
+  patientUses               Int           @default(0) @map("patient_uses")
+  repeatUses                Int           @default(0) @map("repeat_uses")
+  repeatReason              RepeatReason? @map("repeat_reason")
+  calibratorUses            Int           @default(0) @map("calibrator_uses")
+  calibratorNotes           String?       @map("calibrator_notes")
+  controlUses               Int           @default(0) @map("control_uses")
+  wasteUses                 Int           @default(0) @map("waste_uses")
+  totalDeductedUses         Int           @default(0) @map("total_deducted_uses")
+  calculatedCost            Decimal       @default(0.0000) @map("calculated_cost") @db.Decimal(18, 4)
+
+  run                    LabWeeklyRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  labReagentUnit         LabReagentUnit  @relation("PrimaryReagentConsumptions", fields: [labReagentUnitId], references: [id])
+  externalCalibratorUnit LabReagentUnit? @relation("ExternalCalibratorConsumptions", fields: [externalCalibratorUnitId], references: [id], onDelete: SetNull)
+
+  @@map("lab_run_consumptions")
+}
+
+model LabConsumptionAuditLog {
+  id               BigInt             @id @default(autoincrement())
+  userId           Int                @map("user_id")
+  labAreaId        Int?               @map("lab_area_id")
+  researchTrialId  Int?               @map("research_trial_id")
+  labExamId        Int?               @map("lab_exam_id")
+  weeklyRunId      Int?               @map("weekly_run_id")
+  labReagentUnitId BigInt             @map("lab_reagent_unit_id")
+  concept          ConsumptionConcept
+  usesCount        Int                @map("uses_count")
+  costImpact       Decimal            @default(0.0000) @map("cost_impact") @db.Decimal(18, 4)
+  notes            String?            @db.Text
+  createdAt        DateTime           @default(now()) @map("created_at")
+
+  user           User           @relation(fields: [userId], references: [id])
+  labArea        LabArea?       @relation(fields: [labAreaId], references: [id], onDelete: SetNull)
+  researchTrial  ResearchTrial? @relation(fields: [researchTrialId], references: [id], onDelete: SetNull)
+  labExam        LabExam?       @relation(fields: [labExamId], references: [id], onDelete: SetNull)
+  weeklyRun      LabWeeklyRun?  @relation(fields: [weeklyRunId], references: [id], onDelete: SetNull)
+  labReagentUnit LabReagentUnit @relation(fields: [labReagentUnitId], references: [id])
+
+  @@index([labReagentUnitId, createdAt])
+  @@index([labAreaId, concept])
+  @@index([researchTrialId])
+  @@map("lab_consumption_audit_logs")
+}
+
+// ==========================================
+// 15. MÓDULO DE INVESTIGACIÓN Y DOCENCIA (FASE 3)
+// ==========================================
+
+model ResearchProject {
+  id                     Int                   @id @default(autoincrement())
+  code                   String                @unique
+  title                  String
+  description            String?               @db.Text
+  researchLine           String?               @map("research_line")
+  type                   ResearchProjectType
+  status                 ResearchProjectStatus @default(FORMULATION)
+  startDate              DateTime?             @map("start_date")
+  endDate                DateTime?             @map("end_date")
+  totalInvestedFunds     Decimal               @default(0.0000) @map("total_invested_funds") @db.Decimal(18, 4)
+  spentFunds             Decimal               @default(0.0000) @map("spent_funds") @db.Decimal(18, 4)
+  remainingFunds         Decimal               @default(0.0000) @map("remaining_funds") @db.Decimal(18, 4)
+  consumedMaterialsValue Decimal               @default(0.0000) @map("consumed_materials_value") @db.Decimal(18, 4)
+  createdAt              DateTime              @default(now()) @map("created_at")
+  updatedAt              DateTime              @updatedAt @map("updated_at")
+
+  members                ResearchProjectMember[]
+  investments            ResearchInvestment[]
+  donations              ResearchDonation[]
+  stockTransfers         ResearchStockTransfer[]
+  trials                 ResearchTrial[]
+  findings               ResearchFinding[]
+  stockBatches           StockBatch[]
+  labReagentUnits        LabReagentUnit[]
+
+  @@map("research_projects")
+}
+
+model ResearchProjectMember {
+  id                  Int                @id @default(autoincrement())
+  projectId           Int                @map("project_id")
+  userId              Int                @map("user_id")
+  role                ResearchMemberRole
+  canRequestMaterials Boolean            @default(true) @map("can_request_materials")
+  canRecordTrials     Boolean            @default(true) @map("can_record_trials")
+  isActive            Boolean            @default(true) @map("is_active")
+  createdAt           DateTime           @default(now()) @map("created_at")
+
+  project             ResearchProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("research_project_members")
+}
+
+model ResearchInvestor {
+  id           Int                  @id @default(autoincrement())
+  name         String
+  taxIdOrCode  String?              @unique @map("tax_id_or_code")
+  investorType ResearchInvestorType @map("investor_type")
+  contactName  String?              @map("contact_name")
+  contactEmail String?              @map("contact_email")
+  isActive     Boolean              @default(true) @map("is_active")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+
+  investments  ResearchInvestment[]
+  donations    ResearchDonation[]
+
+  @@map("research_investors")
+}
+
+model ResearchInvestment {
+  id             Int              @id @default(autoincrement())
+  code           String           @unique
+  projectId      Int              @map("project_id")
+  investorId     Int              @map("investor_id")
+  amount         Decimal          @db.Decimal(18, 4)
+  currency       String           @default("USD")
+  investmentDate DateTime         @map("investment_date")
+  purposeNotes   String?          @map("purpose_notes") @db.Text
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  project        ResearchProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  investor       ResearchInvestor @relation(fields: [investorId], references: [id])
+
+  @@map("research_investments")
+}
+
+model ResearchDonation {
+  id           Int                    @id @default(autoincrement())
+  code         String                 @unique
+  projectId    Int                    @map("project_id")
+  investorId   Int                    @map("investor_id")
+  receivedById Int                    @map("received_by_id")
+  donationDate DateTime               @map("donation_date")
+  notes        String?                @db.Text
+  createdAt    DateTime               @default(now()) @map("created_at")
+
+  project      ResearchProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  investor     ResearchInvestor       @relation(fields: [investorId], references: [id])
+  receivedBy   User                   @relation("DonationsReceived", fields: [receivedById], references: [id])
+  items        ResearchDonationItem[]
+
+  @@map("research_donations")
+}
+
+model ResearchDonationItem {
+  id                 Int               @id @default(autoincrement())
+  donationId         Int               @map("donation_id")
+  productId          BigInt            @map("product_id")
+  quantity           Int
+  lotNumber          String            @map("lot_number")
+  expirationDate     DateTime?         @map("expiration_date") @db.Date
+  estimatedUnitValue Decimal           @map("estimated_unit_value") @db.Decimal(18, 4)
+  stockBatchId       BigInt?           @map("stock_batch_id")
+  labReagentUnitId   BigInt?           @map("lab_reagent_unit_id")
+
+  donation           ResearchDonation  @relation(fields: [donationId], references: [id], onDelete: Cascade)
+  product            Product           @relation(fields: [productId], references: [id])
+  stockBatch         StockBatch?       @relation(fields: [stockBatchId], references: [id], onDelete: SetNull)
+  labReagentUnit     LabReagentUnit?   @relation(fields: [labReagentUnitId], references: [id], onDelete: SetNull)
+
+  @@map("research_donation_items")
+}
+
+model ResearchStockTransfer {
+  id              Int                       @id @default(autoincrement())
+  sourceUnitId    BigInt                    @map("source_unit_id")
+  targetUnitId    BigInt?                   @map("target_unit_id")
+  projectId       Int                       @map("project_id")
+  authorizedById  Int                       @map("authorized_by_id")
+  transferredUses Int                       @map("transferred_uses")
+  direction       ResearchTransferDirection
+  reason          String                    @db.Text
+  createdAt       DateTime                  @default(now()) @map("created_at")
+
+  sourceUnit      LabReagentUnit            @relation("TransferSourceUnit", fields: [sourceUnitId], references: [id])
+  targetUnit      LabReagentUnit?           @relation("TransferTargetUnit", fields: [targetUnitId], references: [id], onDelete: SetNull)
+  project         ResearchProject           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorizedBy    User                      @relation("TransfersAuthorized", fields: [authorizedById], references: [id])
+
+  @@map("research_stock_transfers")
+}
+
+model ResearchTrial {
+  id                  Int                        @id @default(autoincrement())
+  code                String                     @unique
+  projectId           Int                        @map("project_id")
+  executedById        Int                        @map("executed_by_id")
+  trialDate           DateTime                   @map("trial_date")
+  title               String
+  objective           String?                    @db.Text
+  status              ResearchTrialStatus        @default(OPEN)
+  totalSamplesTested  Int                        @default(0) @map("total_samples_tested")
+  totalTrialCost      Decimal                    @default(0.0000) @map("total_trial_cost") @db.Decimal(18, 4)
+  totalReferenceValue Decimal                    @default(0.0000) @map("total_reference_value") @db.Decimal(18, 4)
+  notes               String?                    @db.Text
+  completedAt         DateTime?                  @map("completed_at")
+  createdAt           DateTime                   @default(now()) @map("created_at")
+  updatedAt           DateTime                   @updatedAt @map("updated_at")
+
+  project             ResearchProject            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  executedBy          User                       @relation("UserResearchTrials", fields: [executedById], references: [id])
+  consumptions        ResearchTrialConsumption[]
+  findings            ResearchFinding[]
+  auditLogs           LabConsumptionAuditLog[]
+
+  @@map("research_trials")
+}
+
+model ResearchTrialConsumption {
+  id                       Int             @id @default(autoincrement())
+  trialId                  Int             @map("trial_id")
+  labReagentUnitId         BigInt          @map("lab_reagent_unit_id")
+  externalCalibratorUnitId BigInt?         @map("external_calibrator_unit_id")
+  sampleUses               Int             @default(0) @map("sample_uses")
+  repeatUses               Int             @default(0) @map("repeat_uses")
+  repeatReason             RepeatReason?   @map("repeat_reason")
+  calibratorUses           Int             @default(0) @map("calibrator_uses")
+  calibratorNotes          String?         @map("calibrator_notes")
+  controlUses              Int             @default(0) @map("control_uses")
+  wasteUses                Int             @default(0) @map("waste_uses")
+  totalDeductedUses        Int             @default(0) @map("total_deducted_uses")
+  calculatedCost           Decimal         @default(0.0000) @map("calculated_cost") @db.Decimal(18, 4)
+  calculatedReferenceValue Decimal         @default(0.0000) @map("calculated_reference_value") @db.Decimal(18, 4)
+
+  trial                    ResearchTrial   @relation(fields: [trialId], references: [id], onDelete: Cascade)
+  labReagentUnit           LabReagentUnit  @relation("PrimaryReagentTrialConsumptions", fields: [labReagentUnitId], references: [id])
+  externalCalibratorUnit   LabReagentUnit? @relation("ExternalCalibratorTrialConsumptions", fields: [externalCalibratorUnitId], references: [id], onDelete: SetNull)
+
+  @@map("research_trial_consumptions")
+}
+
+model ResearchFinding {
+  id            Int                 @id @default(autoincrement())
+  projectId     Int                 @map("project_id")
+  trialId       Int?                @map("trial_id")
+  recordedById  Int                 @map("recorded_by_id")
+  title         String
+  findingType   ResearchFindingType @map("finding_type")
+  summary       String              @db.Text
+  conclusion    String?             @db.Text
+  attachmentUrl String?             @map("attachment_url")
+  isPublished   Boolean             @default(false) @map("is_published")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+
+  project       ResearchProject     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  trial         ResearchTrial?      @relation(fields: [trialId], references: [id], onDelete: SetNull)
+  recordedBy    User                @relation("UserResearchFindings", fields: [recordedById], references: [id])
+
+  @@map("research_findings")
+}
+
+// ==========================================
+// 16. AUDITORÍA DE RECUENTO FÍSICO DE NEVERAS (FASE 4)
+// ==========================================
+
+model FridgePhysicalAudit {
+  id            Int                       @id @default(autoincrement())
+  code          String                    @unique
+  performedById Int                       @map("performed_by_id")
+  auditDate     DateTime                  @default(now()) @map("audit_date")
+  notes         String?                   @db.Text
+  createdAt     DateTime                  @default(now()) @map("created_at")
+
+  performedBy   User                      @relation(fields: [performedById], references: [id])
+  items         FridgePhysicalAuditItem[]
+
+  @@map("fridge_physical_audits")
+}
+
+model FridgePhysicalAuditItem {
+  id                    Int                         @id @default(autoincrement())
+  auditId               Int                         @map("audit_id")
+  labReagentUnitId      BigInt                      @map("lab_reagent_unit_id")
+  systemRemainingUses   Int                         @map("system_remaining_uses")
+  physicalRemainingUses Int                         @map("physical_remaining_uses")
+  variance              Int
+  adjustmentStatus      FridgeAuditAdjustmentStatus @default(ADJUSTED_AND_RECONCILED) @map("adjustment_status")
+  notes                 String?                     @db.Text
+
+  audit                 FridgePhysicalAudit         @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  labReagentUnit        LabReagentUnit              @relation(fields: [labReagentUnitId], references: [id])
+
+  @@map("fridge_physical_audit_items")
+}
+
+

@@ -7,6 +7,11 @@ import {
   StockMovementType,
   RequestStatus,
   PaymentStatus,
+  LabWeeklyRunStatus,
+  RepeatReason,
+  ConsumptionConcept,
+  StockOwnership,
+  Prisma,
 } from '@prisma/client';
 
 export interface CustomReportFilter {
@@ -985,6 +990,603 @@ export class ReportService {
         within90DaysCount,
       },
       rows,
+    };
+  }
+
+  // ==========================================
+  // 17. COSTO REAL POR EXAMEN (FASE 4)
+  // ==========================================
+
+  static async getCostRealByExam(filter?: {
+    startDate?: Date | string;
+    endDate?: Date | string;
+    labExamId?: number;
+  }) {
+    const where: any = {
+      status: LabWeeklyRunStatus.CLOSED_RECONCILED,
+    };
+
+    if (filter?.labExamId) {
+      where.labExamId = Number(filter.labExamId);
+    }
+
+    if (filter?.startDate || filter?.endDate) {
+      where.weekStartDate = {
+        ...(filter?.startDate ? { gte: new Date(filter.startDate) } : {}),
+      };
+      where.weekEndDate = {
+        ...(filter?.endDate ? { lte: new Date(filter.endDate) } : {}),
+      };
+    }
+
+    const runs = await prisma.labWeeklyRun.findMany({
+      where,
+      include: {
+        labExam: { include: { area: true } },
+        labArea: true,
+        consumptions: {
+          include: {
+            labReagentUnit: { include: { product: true } },
+            externalCalibratorUnit: { include: { product: true } },
+          },
+        },
+      },
+      orderBy: { weekStartDate: 'asc' },
+    });
+
+    const examMap = new Map<number, any>();
+
+    let grandTotalCost = new Prisma.Decimal(0);
+    let grandTotalPatientExams = 0;
+
+    for (const run of runs) {
+      const examId = run.labExamId;
+      if (!examMap.has(examId)) {
+        examMap.set(examId, {
+          examId: run.labExam.id,
+          examCode: run.labExam.code,
+          examName: run.labExam.name,
+          areaId: run.labArea.id,
+          areaName: run.labArea.name,
+          totalRuns: 0,
+          totalValidPatientExams: 0,
+          totalRunCost: new Prisma.Decimal(0),
+          effectiveCostPerExam: new Prisma.Decimal(0),
+          usesBreakdown: {
+            patientUses: 0,
+            repeatUses: 0,
+            calibratorUses: 0,
+            controlUses: 0,
+            wasteUses: 0,
+            totalDeductedUses: 0,
+          },
+          repeatReasons: {} as Record<string, number>,
+          runs: [] as any[],
+        });
+      }
+
+      const examStat = examMap.get(examId);
+      examStat.totalRuns += 1;
+      examStat.totalValidPatientExams += run.totalValidPatientExams;
+      examStat.totalRunCost = examStat.totalRunCost.add(run.totalRunCost);
+
+      grandTotalCost = grandTotalCost.add(run.totalRunCost);
+      grandTotalPatientExams += run.totalValidPatientExams;
+
+      for (const c of run.consumptions) {
+        examStat.usesBreakdown.patientUses += c.patientUses;
+        examStat.usesBreakdown.repeatUses += c.repeatUses;
+        examStat.usesBreakdown.calibratorUses += c.calibratorUses;
+        examStat.usesBreakdown.controlUses += c.controlUses;
+        examStat.usesBreakdown.wasteUses += c.wasteUses;
+        examStat.usesBreakdown.totalDeductedUses += c.totalDeductedUses;
+
+        if (c.repeatReason) {
+          examStat.repeatReasons[c.repeatReason] =
+            (examStat.repeatReasons[c.repeatReason] || 0) + c.repeatUses;
+        }
+      }
+
+      examStat.runs.push({
+        id: run.id,
+        code: run.code,
+        weekStartDate: run.weekStartDate,
+        weekEndDate: run.weekEndDate,
+        totalValidPatientExams: run.totalValidPatientExams,
+        totalRunCost: run.totalRunCost,
+        effectiveCostPerExam: run.effectiveCostPerExam,
+      });
+    }
+
+    const exams = Array.from(examMap.values()).map((e) => {
+      const avgCost =
+        e.totalValidPatientExams > 0
+          ? e.totalRunCost.div(e.totalValidPatientExams)
+          : new Prisma.Decimal(0);
+      return {
+        ...e,
+        effectiveCostPerExam: Number(avgCost.toFixed(4)),
+        totalRunCost: Number(e.totalRunCost.toFixed(4)),
+      };
+    });
+
+    const overallAverageCost =
+      grandTotalPatientExams > 0
+        ? grandTotalCost.div(grandTotalPatientExams)
+        : new Prisma.Decimal(0);
+
+    return {
+      reportType: 'REAL_COST_BY_EXAM',
+      generatedAt: new Date(),
+      filter: {
+        startDate: filter?.startDate ?? null,
+        endDate: filter?.endDate ?? null,
+        labExamId: filter?.labExamId ?? null,
+      },
+      summary: {
+        totalExamsEvaluated: exams.length,
+        totalRunsProcessed: runs.length,
+        grandTotalPatientExams,
+        grandTotalCost: Number(grandTotalCost.toFixed(4)),
+        overallAverageCostPerExam: Number(overallAverageCost.toFixed(4)),
+      },
+      exams,
+    };
+  }
+
+  // ==========================================
+  // 18. CONSOLIDADO FINANCIERO POR ÁREA (FASE 4)
+  // ==========================================
+
+  static async getFinancialConsolidatedByArea(filter?: {
+    startDate?: Date | string;
+    endDate?: Date | string;
+    labAreaId?: number;
+  }) {
+    const areas = await prisma.labArea.findMany({
+      where: {
+        ...(filter?.labAreaId ? { id: Number(filter.labAreaId) } : {}),
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    const dateFilterRuns: any = {};
+    if (filter?.startDate || filter?.endDate) {
+      dateFilterRuns.weekStartDate = {
+        ...(filter?.startDate ? { gte: new Date(filter.startDate) } : {}),
+      };
+      dateFilterRuns.weekEndDate = {
+        ...(filter?.endDate ? { lte: new Date(filter.endDate) } : {}),
+      };
+    }
+
+    let overallClinicalExpenditure = new Prisma.Decimal(0);
+    let overallResearchExpenditure = new Prisma.Decimal(0);
+
+    const consolidatedAreas = [];
+
+    for (const area of areas) {
+      // 1. Corridas clínicas cerradas en esta área
+      const closedRuns = await prisma.labWeeklyRun.findMany({
+        where: {
+          labAreaId: area.id,
+          status: LabWeeklyRunStatus.CLOSED_RECONCILED,
+          ...dateFilterRuns,
+        },
+        include: {
+          labExam: true,
+        },
+      });
+
+      let clinicalAreaCost = new Prisma.Decimal(0);
+      let clinicalAreaPatientExams = 0;
+      const examDistributionMap = new Map<string, { examName: string; runsCount: number; cost: Prisma.Decimal }>();
+
+      for (const run of closedRuns) {
+        clinicalAreaCost = clinicalAreaCost.add(run.totalRunCost);
+        clinicalAreaPatientExams += run.totalValidPatientExams;
+
+        const examCode = run.labExam.code;
+        if (!examDistributionMap.has(examCode)) {
+          examDistributionMap.set(examCode, {
+            examName: run.labExam.name,
+            runsCount: 0,
+            cost: new Prisma.Decimal(0),
+          });
+        }
+        const dist = examDistributionMap.get(examCode)!;
+        dist.runsCount += 1;
+        dist.cost = dist.cost.add(run.totalRunCost);
+      }
+
+      // 2. Inventario activo en nevera para esta área
+      const activeUnits = await prisma.labReagentUnit.findMany({
+        where: {
+          assignedLabAreaId: area.id,
+          status: { in: [LabUnitStatus.SELLADO, LabUnitStatus.EN_USO] },
+        },
+      });
+
+      let activeUnitsRemainingUses = 0;
+      let activeUnitsEstimatedValue = new Prisma.Decimal(0);
+      for (const u of activeUnits) {
+        activeUnitsRemainingUses += u.remainingUses;
+        const val = new Prisma.Decimal(u.remainingUses).mul(u.unitCostPerUse);
+        activeUnitsEstimatedValue = activeUnitsEstimatedValue.add(val);
+      }
+
+      // 3. Investigación vinculada o ejecutada
+      // Consumo de materiales en ensayos de investigación (LabConsumptionAuditLog)
+      const auditDateFilter =
+        filter?.startDate || filter?.endDate
+          ? {
+              createdAt: {
+                ...(filter?.startDate ? { gte: new Date(filter.startDate) } : {}),
+                ...(filter?.endDate ? { lte: new Date(filter.endDate) } : {}),
+              },
+            }
+          : {};
+
+      const researchAuditLogs = await prisma.labConsumptionAuditLog.findMany({
+        where: {
+          researchTrialId: { not: null },
+          ...auditDateFilter,
+        },
+      });
+
+      let researchMaterialsCost = new Prisma.Decimal(0);
+      for (const log of researchAuditLogs) {
+        researchMaterialsCost = researchMaterialsCost.add(log.costImpact);
+      }
+
+      overallClinicalExpenditure = overallClinicalExpenditure.add(clinicalAreaCost);
+      overallResearchExpenditure = overallResearchExpenditure.add(researchMaterialsCost);
+
+      consolidatedAreas.push({
+        areaId: area.id,
+        areaCode: area.code,
+        areaName: area.name,
+        clinical: {
+          closedRunsCount: closedRuns.length,
+          totalValidPatientExams: clinicalAreaPatientExams,
+          totalCost: Number(clinicalAreaCost.toFixed(4)),
+          examDistribution: Array.from(examDistributionMap.entries()).map(([code, d]) => ({
+            examCode: code,
+            examName: d.examName,
+            runsCount: d.runsCount,
+            cost: Number(d.cost.toFixed(4)),
+          })),
+          activeFridgeStock: {
+            unitsCount: activeUnits.length,
+            remainingUses: activeUnitsRemainingUses,
+            estimatedValueUsd: Number(activeUnitsEstimatedValue.toFixed(2)),
+          },
+        },
+        research: {
+          consumedMaterialsValueUsd: Number(researchMaterialsCost.toFixed(4)),
+        },
+        totalOperatingCost: Number(clinicalAreaCost.add(researchMaterialsCost).toFixed(4)),
+      });
+    }
+
+    return {
+      reportType: 'FINANCIAL_CONSOLIDATED_BY_AREA',
+      generatedAt: new Date(),
+      totals: {
+        clinicalExpenditure: Number(overallClinicalExpenditure.toFixed(4)),
+        researchExpenditure: Number(overallResearchExpenditure.toFixed(4)),
+        grandTotalExpenditure: Number(overallClinicalExpenditure.add(overallResearchExpenditure).toFixed(4)),
+      },
+      areas: consolidatedAreas,
+    };
+  }
+
+  // ==========================================
+  // 19. TRAZABILIDAD PUNTA A PUNTA (FASE 4)
+  // ==========================================
+
+  static async getItemTraceability(identifier: {
+    batchId?: bigint | number | string;
+    productId?: bigint | number | string;
+    lotNumber?: string;
+  }) {
+    const where: any = {};
+    if (identifier.batchId) {
+      where.id = BigInt(identifier.batchId);
+    } else if (identifier.lotNumber) {
+      where.lotNumber = String(identifier.lotNumber);
+    } else if (identifier.productId) {
+      where.productId = BigInt(identifier.productId);
+    } else {
+      throw new Error('Debe proporcionar batchId, productId o lotNumber para la trazabilidad');
+    }
+
+    const batches = await prisma.stockBatch.findMany({
+      where,
+      include: {
+        product: {
+          include: {
+            baseUnit: true,
+            category: true,
+            brand: true,
+          },
+        },
+        location: true,
+        movementItems: {
+          include: {
+            stockMovement: {
+              include: {
+                order: {
+                  include: {
+                    supplier: true,
+                    requisition: true,
+                    invoices: true,
+                    payments: true,
+                  },
+                },
+                createdBy: { select: { id: true, fullName: true, username: true } },
+              },
+            },
+          },
+        },
+        labReagentUnits: {
+          include: {
+            fridge: true,
+            assignedLabArea: true,
+            researchProject: true,
+            internalRequestItems: {
+              include: {
+                request: {
+                  include: {
+                    labArea: true,
+                    requestedBy: { select: { id: true, fullName: true, username: true } },
+                    reviewedBy: { select: { id: true, fullName: true, username: true } },
+                  },
+                },
+              },
+            },
+            runConsumptionsAsPrimary: {
+              include: {
+                run: {
+                  include: {
+                    labExam: true,
+                    labArea: true,
+                    bioanalyst: { select: { id: true, fullName: true, username: true } },
+                  },
+                },
+              },
+            },
+            runConsumptionsAsCalibrator: {
+              include: {
+                run: {
+                  include: {
+                    labExam: true,
+                    labArea: true,
+                    bioanalyst: { select: { id: true, fullName: true, username: true } },
+                  },
+                },
+              },
+            },
+            trialConsumptionsAsPrimary: {
+              include: {
+                trial: {
+                  include: {
+                    project: true,
+                    executedBy: { select: { id: true, fullName: true, username: true } },
+                  },
+                },
+              },
+            },
+            trialConsumptionsAsCalibrator: {
+              include: {
+                trial: {
+                  include: {
+                    project: true,
+                    executedBy: { select: { id: true, fullName: true, username: true } },
+                  },
+                },
+              },
+            },
+            consumptionAuditLogs: {
+              include: {
+                user: { select: { id: true, fullName: true, username: true } },
+                labArea: true,
+                labExam: true,
+                weeklyRun: true,
+                researchTrial: true,
+              },
+              orderBy: { createdAt: 'desc' },
+            },
+          },
+        },
+        incidents: {
+          include: {
+            reportedBy: { select: { id: true, fullName: true, username: true } },
+            resolvedBy: { select: { id: true, fullName: true, username: true } },
+          },
+        },
+      },
+    });
+
+    if (!batches || batches.length === 0) {
+      throw new Error('No se encontró información de trazabilidad para el criterio especificado');
+    }
+
+    const batch = batches[0];
+    if (!batch) {
+      throw new Error('No se encontró información de trazabilidad para el criterio especificado');
+    }
+
+    // 1. Lo que se pidió (Requisiciones y Órdenes)
+    const procurementMovements = batch.movementItems.filter(
+      (m) => m.stockMovement.order !== null
+    );
+
+    const procurement = procurementMovements.map((pm) => {
+      const order = pm.stockMovement.order!;
+      return {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        orderStatus: order.status,
+        supplierName: order.supplier?.name || 'Proveedor no especificado',
+        supplierTaxId: order.supplier?.rifOrId || null,
+        requisitionNumber: order.requisition?.requisitionNumber || null,
+        requisitionJustification: order.requisition?.justification || null,
+        currency: order.currency,
+        unitPricePaid: pm.unitCost,
+        quantityOrdered: pm.quantity,
+        invoices: order.invoices.map((inv) => ({
+          invoiceNumber: inv.invoiceNumber,
+          issueDate: inv.invoiceDate,
+          totalAmount: inv.totalAmount,
+        })),
+        payments: order.payments.map((p) => ({
+          method: p.method,
+          amountPaid: p.amountPaid,
+          paymentDate: p.paymentDate,
+        })),
+      };
+    });
+
+    // 2. Lo que se compró / recibió en almacén central
+    const warehouseReception = {
+      batchId: batch.id,
+      lotNumber: batch.lotNumber,
+      productName: batch.product.name,
+      sku: batch.product.sku,
+      category: batch.product.category?.name || 'General',
+      currentStockQuantity: batch.currentQuantity,
+      unitCostPrice: batch.costPrice,
+      origin: batch.origin,
+      ownershipType: batch.ownershipType,
+      receptionLocation: batch.location.name,
+      expirationDate: batch.expirationDate,
+      status: batch.status,
+    };
+
+    // 3. Lo que se solicitó a nevera (Solicitudes Internas)
+    const internalRequests: any[] = [];
+    const requestSet = new Set<string>();
+
+    for (const unit of batch.labReagentUnits) {
+      for (const reqItem of unit.internalRequestItems) {
+        const req = reqItem.request;
+        if (!requestSet.has(req.code)) {
+          requestSet.add(req.code);
+          internalRequests.push({
+            requestCode: req.code,
+            status: req.status,
+            labArea: req.labArea.name,
+            requestedBy: req.requestedBy.fullName,
+            reviewedBy: req.reviewedBy?.fullName || null,
+            justification: req.justification,
+            createdAt: req.createdAt,
+            resolvedAt: req.resolvedAt,
+          });
+        }
+      }
+    }
+
+    // 4. Lo que se usó y justificó en laboratorio / investigación
+    const labUnitsDetail = batch.labReagentUnits.map((u) => ({
+      unitId: u.id,
+      unitCode: u.unitCode,
+      fridge: u.fridge ? `${u.fridge.name} (${u.fridge.code})` : 'Sin nevera asignada',
+      assignedArea: u.assignedLabArea?.name || 'Sin área asignada',
+      researchProject: u.researchProject ? `${u.researchProject.code} - ${u.researchProject.title}` : null,
+      initialTheoreticalUses: u.initialTheoreticalUses,
+      remainingUses: u.remainingUses,
+      consumedUses: u.consumedUses,
+      yieldVariance: u.yieldVariance,
+      unitCostPerUse: u.unitCostPerUse,
+      referenceCostPerUse: u.referenceCostPerUse,
+      status: u.status,
+    }));
+
+    const weeklyRunsList: any[] = [];
+    const researchTrialsList: any[] = [];
+    const auditEvents: any[] = [];
+
+    for (const unit of batch.labReagentUnits) {
+      for (const rc of [...unit.runConsumptionsAsPrimary, ...unit.runConsumptionsAsCalibrator]) {
+        weeklyRunsList.push({
+          runCode: rc.run.code,
+          examName: rc.run.labExam.name,
+          labArea: rc.run.labArea.name,
+          bioanalyst: rc.run.bioanalyst.fullName,
+          status: rc.run.status,
+          weekStartDate: rc.run.weekStartDate,
+          weekEndDate: rc.run.weekEndDate,
+          totalDeductedUses: rc.totalDeductedUses,
+          patientUses: rc.patientUses,
+          repeatUses: rc.repeatUses,
+          repeatReason: rc.repeatReason,
+          calibratorUses: rc.calibratorUses,
+          controlUses: rc.controlUses,
+          wasteUses: rc.wasteUses,
+          calculatedCost: rc.calculatedCost,
+        });
+      }
+
+      for (const tc of [...unit.trialConsumptionsAsPrimary, ...unit.trialConsumptionsAsCalibrator]) {
+        researchTrialsList.push({
+          trialCode: tc.trial.code,
+          trialTitle: tc.trial.title,
+          projectCode: tc.trial.project.code,
+          executedBy: tc.trial.executedBy.fullName,
+          status: tc.trial.status,
+          trialDate: tc.trial.trialDate,
+          totalDeductedUses: tc.totalDeductedUses,
+          sampleUses: tc.sampleUses,
+          repeatUses: tc.repeatUses,
+          repeatReason: tc.repeatReason,
+          calibratorUses: tc.calibratorUses,
+          controlUses: tc.controlUses,
+          wasteUses: tc.wasteUses,
+          calculatedCost: tc.calculatedCost,
+          calculatedReferenceValue: tc.calculatedReferenceValue,
+        });
+      }
+
+      for (const log of unit.consumptionAuditLogs) {
+        auditEvents.push({
+          auditId: log.id,
+          createdAt: log.createdAt,
+          concept: log.concept,
+          usesCount: log.usesCount,
+          costImpact: log.costImpact,
+          performedBy: log.user.fullName,
+          context: log.weeklyRun
+            ? `Corrida ${log.weeklyRun.code}`
+            : log.researchTrial
+            ? `Ensayo ${log.researchTrial.code}`
+            : 'Ajuste / Recuento',
+          notes: log.notes,
+        });
+      }
+    }
+
+    return {
+      reportType: 'END_TO_END_TRACEABILITY',
+      generatedAt: new Date(),
+      product: {
+        id: batch.product.id,
+        name: batch.product.name,
+        sku: batch.product.sku,
+        theoreticalYield: batch.product.theoreticalYield,
+        unitOfMeasure: batch.product.baseUnit.abbreviation,
+      },
+      lifecycle: {
+        phase1_procurement: procurement,
+        phase2_warehouseReception: warehouseReception,
+        phase3_internalRequests: internalRequests,
+        phase4_consumptionAndExecution: {
+          units: labUnitsDetail,
+          weeklyRuns: weeklyRunsList,
+          researchTrials: researchTrialsList,
+          auditHistory: auditEvents,
+        },
+      },
     };
   }
 }

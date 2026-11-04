@@ -25,6 +25,8 @@ import exportRoutes from './routes/export.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import bankAccountRoutes from './routes/bank-account.routes.js';
 import directPaymentRoutes from './routes/direct-payment.routes.js';
+import researchRoutes from './routes/research.routes.js';
+import fridgeAuditRoutes from './routes/fridge-audit.routes.js';
 
 const app: express.Application = express();
 
@@ -79,6 +81,12 @@ app.use('/api/inventory/masters', inventoryMasterRoutes);
 // Solicitudes y Laboratorio Clínico
 app.use('/api/requests', requestRoutes);
 app.use('/api/lab', labRoutes);
+
+// Auditoría de Cotejo Físico de Neveras
+app.use('/api/fridge-audits', fridgeAuditRoutes);
+
+// Investigación y Docencia
+app.use('/api/research', researchRoutes);
 
 // Reportería y Exportaciones
 app.use('/api/reports', reportRoutes);

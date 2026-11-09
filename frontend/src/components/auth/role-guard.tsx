@@ -6,30 +6,7 @@ import { ShieldAlert, RefreshCw } from "lucide-react";
 
 // Matriz de permisos ordenada por estricta especificidad (rutas hijas primero)
 const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
-  // 1. Módulos de Reportes y Trazabilidad (Admin)
-  {
-    pattern: "/admin/reports/traceability",
-    roles: [
-      "ADMINISTRADOR",
-      "COORDINADOR_LABORATORIO",
-      "COORDINADOR",
-      "ADMINISTRACION",
-      "LABORATORIO",
-      "BIOANALISTA",
-      "ALMACENISTA",
-    ],
-  },
-  {
-    pattern: "/admin/reports",
-    roles: [
-      "ADMINISTRADOR",
-      "COORDINADOR_LABORATORIO",
-      "COORDINADOR",
-      "ADMINISTRACION",
-    ],
-  },
-
-  // 2. Módulo de Coordinación
+  // 1. Módulo de Coordinación
   {
     pattern: "/coordinator/fridge-audit",
     roles: [
@@ -150,6 +127,13 @@ const ROUTE_PERMISSIONS: { pattern: RegExp | string; roles: string[] }[] = [
       "ALMACENISTA",
       "LABORATORIO",
       "SOLICITANTE",
+      "COMPRAS",
+      "ADMINISTRACION",
+      "COORDINADOR_LABORATORIO",
+      "COORDINADOR",
+      "BIOANALISTA",
+      "INVESTIGACION",
+      "DOCENCIA",
     ],
   },
 ];

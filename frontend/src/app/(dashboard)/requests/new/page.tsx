@@ -125,8 +125,7 @@ export default function NewInternalRequestPage() {
     userRoles.includes("LABORATORIO") ||
     userRoles.includes("COMPRAS");
 
-  const canCreate =
-    canCreateRole && (isWarehouseStaff || (windowStatus?.canCreate ?? false));
+  const canCreate = canCreateRole;
 
   // Carga inicial de datos concurrentemente
   useEffect(() => {
@@ -506,36 +505,8 @@ export default function NewInternalRequestPage() {
             <span className="font-bold">{totalUnits}</span>
             <span>unidades totales</span>
           </Badge>
-          {windowStatus && (
-            <Badge
-              variant={windowStatus.isOpen ? "success" : "warning"}
-              className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium"
-            >
-              <span
-                className={cn(
-                  "w-2 h-2 rounded-full shrink-0",
-                  windowStatus.isOpen
-                    ? "bg-emerald-500 animate-pulse"
-                    : "bg-amber-500"
-                )}
-              />
-              <span>{windowStatus.isOpen ? "Ventana Operativa Abierta" : "Ventana Restringida"}</span>
-            </Badge>
-          )}
         </div>
       </div>
-
-      {/* Alerta de restricción si el usuario no puede crear */}
-      {!canCreate && (
-        <Alert variant="destructive">
-          <AlertCircle className="w-4 h-4" />
-          <AlertTitle>Creación de Solicitudes No Permitida</AlertTitle>
-          <AlertDescription>
-            {windowStatus?.message ||
-              "La ventana operativa semanal está cerrada o ha agotado el cupo permitido para su usuario."}
-          </AlertDescription>
-        </Alert>
-      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* SECCIÓN 1: DATOS GENERALES DEL SOLICITANTE */}
@@ -591,21 +562,22 @@ export default function NewInternalRequestPage() {
               </div>
             </div>
 
-            {/* Ciclo / Fecha */}
+            {/* Fecha de Emisión */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Ciclo Operativo Semanal
+                Fecha de Emisión
               </Label>
               <div className="h-9 rounded-lg border border-input bg-muted/40 px-3 py-1 flex items-center justify-between text-xs font-medium">
-                <span className="font-mono text-primary font-bold">
-                  {windowStatus?.currentCycle || "Ciclo en curso"}
+                <span className="font-mono text-foreground font-semibold">
+                  {new Date().toLocaleDateString("es-VE", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                  })}
                 </span>
-                {windowStatus && (
-                  <span className="text-[10px] text-muted-foreground">
-                    Cupo: {windowStatus.weeklyQuotaUsed} /{" "}
-                    {windowStatus.maxWeeklyRequests}
-                  </span>
-                )}
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {windowStatus?.currentCycle || "En curso"}
+                </span>
               </div>
             </div>
           </CardContent>

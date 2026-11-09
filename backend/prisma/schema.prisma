@@ -1019,14 +1019,16 @@ model UserLabArea {
 }
 
 model LabExam {
-  id          Int      @id @default(autoincrement())
-  code        String   @unique
-  name        String
-  description String?  @db.Text
-  areaId      Int?     @map("area_id")
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id                    Int      @id @default(autoincrement())
+  code                  String   @unique
+  name                  String
+  description           String?  @db.Text
+  areaId                Int?     @map("area_id")
+  isActive              Boolean  @default(true) @map("is_active")
+  defaultCalibratorUses Int      @default(0) @map("default_calibrator_uses")
+  defaultControlUses    Int      @default(0) @map("default_control_uses")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
 
   area                 LabArea?                 @relation(fields: [areaId], references: [id], onDelete: SetNull)
   compatibleProducts   LabExamProduct[]

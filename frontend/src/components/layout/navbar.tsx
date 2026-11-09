@@ -12,10 +12,8 @@ import {
 import { toast } from "@/utils/toast";
 import type { AuthUser } from "@/types/auth";
 import {
-  Menu,
   LogOut,
   ChevronDown,
-  Building,
   ShieldCheck,
   User,
   Coins,
@@ -33,7 +31,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Dialog,
@@ -75,7 +72,6 @@ export function Navbar({
   onToggleSidebarCollapse,
 }: NavbarProps) {
   const router = useRouter();
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
   const [currencies, setCurrencies] = useState<CurrencyItem[]>([]);
@@ -111,7 +107,6 @@ export function Navbar({
     }
   });
 
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
   const canEditRate =
@@ -246,12 +241,6 @@ export function Navbar({
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setDropdownOpen(false);
-      }
       if (
         notifRef.current &&
         !notifRef.current.contains(event.target as Node)

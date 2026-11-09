@@ -15,6 +15,10 @@ import {
 import { CurrencyService } from "@/services/currency.service";
 import type { SupplierDebt, SupplierStatement } from "@/types/purchasing";
 import {
+  UniversalPdfDownloadButton,
+  SupplierDebtPdfDocument,
+} from "@/components/pdf";
+import {
   AlertCircle,
   Banknote,
   Building2,
@@ -1106,17 +1110,15 @@ export default function SupplierDebtsPage() {
                   {selectedSupplier?.name} · RIF: {selectedSupplier?.rifOrId}
                 </p>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => window.print()}
-                className="gap-1.5 text-xs"
-                title="Imprimir estado de cuenta"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                Imprimir
-              </Button>
+              {statement && (
+                <UniversalPdfDownloadButton
+                  document={<SupplierDebtPdfDocument statement={statement} />}
+                  fileName={`Estado_Cuenta_${(selectedSupplier?.name || "Proveedor").replace(/[^a-zA-Z0-9_-]/g, "_")}`}
+                  buttonLabel="Descargar PDF"
+                  previewLabel="Vista Previa"
+                  dialogTitle={`Estado de Cuenta: ${selectedSupplier?.name}`}
+                />
+              )}
             </div>
           </DialogHeader>
 

@@ -178,8 +178,9 @@ export default function ProductDetailPage() {
       setProduct(updated);
       setIsEditDialogOpen(false);
       toast.success("Parámetros y empaque del insumo actualizados con éxito.");
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || "Error al actualizar insumo";
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } }; message?: string };
+      const msg = error?.response?.data?.message || error?.message || "Error al actualizar insumo";
       toast.error(msg);
     } finally {
       setSavingEdit(false);

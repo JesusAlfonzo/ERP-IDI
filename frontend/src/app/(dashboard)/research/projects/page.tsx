@@ -83,8 +83,25 @@ export default function ResearchProjectsPage() {
   }, []);
 
   useEffect(() => {
-    void loadProjects();
-  }, [loadProjects]);
+    let active = true;
+    ResearchService.getProjects()
+      .then((data) => {
+        if (!active) return;
+        setProjects(data);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        const msg = err instanceof Error ? err.message : "Error al cargar proyectos de investigación";
+        setError(msg);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const onSubmitProject = async (values: CreateProjectFormValues) => {
     setSubmitting(true);
@@ -130,8 +147,17 @@ export default function ResearchProjectsPage() {
         return <Badge variant="outline">Borrador</Badge>;
       case "PAUSED":
         return <Badge className="bg-amber-500 hover:bg-amber-600">Pausado</Badge>;
-      default:
-        return <Badge variant="secondary">{status}</Badge>;
+      default: {
+        const translations: Record<string, string> = {
+          ACTIVE: "Activo",
+          COMPLETED: "Completado",
+          DRAFT: "Borrador",
+          PAUSED: "Pausado",
+          CANCELLED: "Cancelado",
+          SUSPENDED: "Suspendido",
+        };
+        return <Badge variant="secondary">{translations[status] || status.replace(/_/g, " ")}</Badge>;
+      }
     }
   };
 

@@ -121,21 +121,33 @@ export default function EditInternalRequestPage() {
           const allProds = [...prods];
           if (reqData.items && reqData.items.length > 0) {
             reqData.items.forEach((it) => {
-              const pId = it.productId ?? (it as any).product_id ?? it.product?.id;
+              const rawIt = it as unknown as {
+                productId?: number;
+                product_id?: number;
+                product?: {
+                  id?: number;
+                  name: string;
+                  sku: string;
+                  unitOfMeasure?: string;
+                  baseUnit?: string;
+                  categoryId?: number;
+                };
+              };
+              const pId = rawIt.productId ?? rawIt.product_id ?? rawIt.product?.id;
               if (
                 pId &&
                 !allProds.some((p) => String(p.id) === String(pId))
               ) {
-                if (it.product) {
+                if (rawIt.product) {
                   allProds.push({
                     id: Number(pId),
-                    name: it.product.name,
-                    sku: it.product.sku,
-                    unitOfMeasure: it.product.unitOfMeasure,
-                    baseUnit: it.product.baseUnit,
-                    categoryId: (it.product as any).categoryId || 0,
+                    name: rawIt.product.name,
+                    sku: rawIt.product.sku,
+                    unitOfMeasure: rawIt.product.unitOfMeasure,
+                    baseUnit: rawIt.product.baseUnit,
+                    categoryId: rawIt.product.categoryId || 0,
                     isActive: true,
-                  } as any);
+                  } as Product);
                 }
               }
             });
@@ -152,13 +164,21 @@ export default function EditInternalRequestPage() {
           if (reqData.items && reqData.items.length > 0) {
             setRows(
               reqData.items.map((it, idx) => {
+                const rawIt = it as unknown as {
+                  productId?: number;
+                  product_id?: number;
+                  product?: { id?: number };
+                  quantityRequested?: number;
+                  requestedQuantity?: number;
+                  quantity_requested?: number;
+                };
                 const prodId = Number(
-                  it.productId ?? (it as any).product_id ?? it.product?.id ?? 0
+                  rawIt.productId ?? rawIt.product_id ?? rawIt.product?.id ?? 0
                 );
                 const rawQty =
-                  it.quantityRequested ??
-                  it.requestedQuantity ??
-                  (it as any).quantity_requested;
+                  rawIt.quantityRequested ??
+                  rawIt.requestedQuantity ??
+                  rawIt.quantity_requested;
                 const parsedQty = Number(rawQty);
                 const requestedQuantity =
                   !isNaN(parsedQty) && parsedQty > 0 ? parsedQty : 1;

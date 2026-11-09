@@ -472,7 +472,7 @@ export default function DashboardPage() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card
-              onClick={() => router.push("/laboratory/fridges")}
+              onClick={() => router.push("/lab/fridges")}
               className="hover:border-blue-300 hover:shadow-xs transition-all cursor-pointer"
             >
               <CardContent className="p-4 space-y-1">
@@ -493,7 +493,7 @@ export default function DashboardPage() {
             </Card>
 
             <Card
-              onClick={() => router.push("/laboratory/consumption")}
+              onClick={() => router.push("/lab/runs")}
               className="hover:border-emerald-300 hover:shadow-xs transition-all cursor-pointer"
             >
               <CardContent className="p-4 space-y-1">
@@ -511,7 +511,7 @@ export default function DashboardPage() {
             </Card>
 
             <Card
-              onClick={() => router.push("/laboratory/reagents")}
+              onClick={() => router.push("/lab/fridges")}
               className="hover:border-indigo-300 hover:shadow-xs transition-all cursor-pointer"
             >
               <CardContent className="p-4 space-y-1">
@@ -529,7 +529,7 @@ export default function DashboardPage() {
             </Card>
 
             <Card
-              onClick={() => router.push("/laboratory/consumption")}
+              onClick={() => router.push("/lab/runs")}
               className="hover:border-purple-300 hover:shadow-xs transition-all cursor-pointer"
             >
               <CardContent className="p-4 space-y-1">
@@ -557,7 +557,7 @@ export default function DashboardPage() {
               <Button
                 variant="link"
                 size="sm"
-                onClick={() => router.push("/laboratory/consumption")}
+                onClick={() => router.push("/lab/runs")}
                 className="text-xs h-auto p-0 text-primary"
               >
                 Nuevo consumo volumétrico &rarr;
@@ -638,7 +638,7 @@ export default function DashboardPage() {
                             variant="secondary"
                             size="sm"
                             onClick={() =>
-                              router.push("/laboratory/consumption")
+                              router.push("/lab/runs")
                             }
                             className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 h-7 text-[11px]"
                           >
@@ -861,7 +861,7 @@ export default function DashboardPage() {
                 onClick={() => router.push("/inventory/kardex")}
                 className="text-xs h-auto p-0 text-primary"
               >
-                Ver trazabilidad &rarr;
+                Ver movimientos en Kardex &rarr;
               </Button>
             </div>
             <Table>

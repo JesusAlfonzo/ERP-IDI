@@ -222,6 +222,51 @@ function DispatchContent() {
   const isWarehouseStaff =
     userRoles.includes("ADMINISTRADOR") || userRoles.includes("ALMACENISTA");
 
+  // Inicializar renglones de una solicitud
+  const initializeForRequest = useCallback(
+    (
+      req: InternalRequest,
+      batchesList: typeof availableBatches
+    ) => {
+      setSelectedRequest(req);
+      const initialMap: Record<number, DispatchAllocationRow[]> = {};
+
+      req.items.forEach((it) => {
+        if (it.id) {
+          const qtyApproved = Number(
+            it.quantityApproved && it.quantityApproved > 0
+              ? it.quantityApproved
+              : it.quantityRequested ?? it.requestedQuantity ?? 0
+          );
+          const qtyDispatched = Number(
+            it.quantityDispatched ?? it.dispatchedQuantity ?? 0
+          );
+          const pendingQuantity = Math.max(0, qtyApproved - qtyDispatched);
+
+          // Buscar lotes candidatos para este producto
+          const candidateBatches = batchesList.filter(
+            (b) => (b.productId ?? b.product?.id) === it.productId
+          );
+          const firstBatch = candidateBatches[0];
+
+          initialMap[it.id] = [
+            {
+              batchId: firstBatch ? firstBatch.id : 0,
+              quantity: firstBatch
+                ? Math.min(pendingQuantity, firstBatch.currentQuantity)
+                : pendingQuantity > 0
+                ? pendingQuantity
+                : "",
+            },
+          ];
+        }
+      });
+
+      setAllocations(initialMap);
+    },
+    []
+  );
+
   // Carga inicial
   useEffect(() => {
     let isMounted = true;
@@ -285,52 +330,7 @@ function DispatchContent() {
     return () => {
       isMounted = false;
     };
-  }, [queryRequestId, isWarehouseStaff]);
-
-  // Inicializar renglones de una solicitud
-  const initializeForRequest = useCallback(
-    (
-      req: InternalRequest,
-      batchesList: typeof availableBatches
-    ) => {
-      setSelectedRequest(req);
-      const initialMap: Record<number, DispatchAllocationRow[]> = {};
-
-      req.items.forEach((it) => {
-        if (it.id) {
-          const qtyApproved = Number(
-            it.quantityApproved && it.quantityApproved > 0
-              ? it.quantityApproved
-              : it.quantityRequested ?? it.requestedQuantity ?? 0
-          );
-          const qtyDispatched = Number(
-            it.quantityDispatched ?? it.dispatchedQuantity ?? 0
-          );
-          const pendingQuantity = Math.max(0, qtyApproved - qtyDispatched);
-
-          // Buscar lotes candidatos para este producto
-          const candidateBatches = batchesList.filter(
-            (b) => (b.productId ?? b.product?.id) === it.productId
-          );
-          const firstBatch = candidateBatches[0];
-
-          initialMap[it.id] = [
-            {
-              batchId: firstBatch ? firstBatch.id : 0,
-              quantity: firstBatch
-                ? Math.min(pendingQuantity, firstBatch.currentQuantity)
-                : pendingQuantity > 0
-                ? pendingQuantity
-                : "",
-            },
-          ];
-        }
-      });
-
-      setAllocations(initialMap);
-    },
-    []
-  );
+  }, [queryRequestId, isWarehouseStaff, initializeForRequest]);
 
   // Manejo de cambio de solicitud seleccionada
   const handleSelectRequest = (reqId: string) => {
@@ -345,7 +345,7 @@ function DispatchContent() {
     itemId: number,
     index: number,
     field: "batchId" | "quantity",
-    value: any
+    value: number | string
   ) => {
     setAllocations((prev) => {
       const currentRows = [...(prev[itemId] || [])];

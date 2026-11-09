@@ -3,7 +3,16 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FlaskConical, Snowflake, ClipboardList, CheckCircle2, Building } from "lucide-react";
+import {
+  FlaskConical,
+  Snowflake,
+  ClipboardList,
+  CheckCircle2,
+  Building,
+  ShieldAlert,
+  LayoutDashboard,
+  BarChart3,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LabWorkflowService } from "@/services/lab-workflow.service";
 import type { LabArea } from "@/types/lab-workflow";
@@ -40,19 +49,34 @@ export default function LabLayout({
 
   const navLinks = [
     {
-      label: "Dashboard de Neveras & Área",
-      href: "/lab/dashboard",
-      icon: Snowflake,
+      label: "Tablero General",
+      href: "/lab",
+      icon: LayoutDashboard,
     },
     {
-      label: "Mis Solicitudes de Insumos",
+      label: "Corridas & Consumo",
+      href: "/lab/runs",
+      icon: FlaskConical,
+    },
+    {
+      label: "Solicitudes FEFO",
       href: "/lab/requests",
       icon: ClipboardList,
     },
     {
-      label: "Corridas Semanales Clínicas",
-      href: "/lab/runs",
-      icon: FlaskConical,
+      label: "Neveras & Cadena de Frío",
+      href: "/lab/fridges",
+      icon: Snowflake,
+    },
+    {
+      label: "Calidad & Cuarentena",
+      href: "/lab/quality",
+      icon: ShieldAlert,
+    },
+    {
+      label: "Reportes & Auditoría",
+      href: "/lab/reports",
+      icon: BarChart3,
     },
   ];
 
@@ -105,7 +129,10 @@ export default function LabLayout({
         <div className="flex items-center gap-2 mt-4 overflow-x-auto no-scrollbar">
           {navLinks.map((link) => {
             const Icon = link.icon;
-            const isActive = pathname === link.href || pathname.startsWith(`${link.href}/`);
+            const isActive =
+              link.href === "/lab"
+                ? pathname === "/lab"
+                : pathname === link.href || pathname.startsWith(`${link.href}/`);
             return (
               <Link
                 key={link.href}

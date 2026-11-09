@@ -18,8 +18,8 @@ import {
   DocumentMetadataGrid,
   DocumentSignatures,
   DocumentFooter,
-  PrintActionButton,
 } from "@/components/common/PrintableDocument";
+import { DownloadPdfButton } from "@/components/purchasing/DownloadPdfButton";
 import {
   FileText,
   ArrowLeft,
@@ -886,7 +886,13 @@ export default function OrderDetailPage() {
             <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
             <span>WhatsApp</span>
           </Button>
-          <PrintActionButton label="Descargar / Imprimir PDF" />
+          <DownloadPdfButton
+            order={order}
+            effectiveBcvRate={effectiveBcvRate}
+            symbol={symbol}
+            currCode={currCode}
+            className="no-print print:hidden"
+          />
         </div>
       </div>
 

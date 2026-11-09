@@ -1,11 +1,13 @@
 export type LabInternalRequestStatus =
   | "PENDING_REVIEW"
+  | "PENDING"
   | "APPROVED"
   | "DELIVERED"
   | "REJECTED"
   | "CANCELLED";
 
 export type LabWeeklyRunStatus =
+  | "OPEN_ACCUMULATING"
   | "IN_PROGRESS"
   | "PENDING_RECONCILIATION"
   | "CLOSED_RECONCILED"
@@ -33,10 +35,13 @@ export type QuarantineReason =
   | "OTHER";
 
 export type QuarantineResolutionStatus =
+  | "PENDING"
   | "RETURNED_TO_INVENTORY"
   | "RETURNED_TO_SUPPLIER"
   | "DISCARDED"
-  | "DOWNGRADED_TO_RESEARCH";
+  | "DOWNGRADED_TO_RESEARCH"
+  | "REINTEGRATED_TO_STOCK"
+  | "WRITTEN_OFF_AS_LOSS";
 
 export interface LabArea {
   id: number;
@@ -58,6 +63,8 @@ export interface LabExam {
   name: string;
   description?: string | null;
   areaId?: number | null;
+  defaultCalibratorUses?: number;
+  defaultControlUses?: number;
   isActive: boolean;
   area?: LabArea | null;
   compatibleProducts?: Array<{
@@ -136,6 +143,8 @@ export interface FefoSuggestionItem {
     expirationDate: string | null;
     currentVolume: number;
     initialVolume: number;
+    remainingUses?: number;
+    ownershipType?: "CLINICAL_ROUTINE" | "RESEARCH_PROJECT" | string;
     status: string;
   }>;
 }
@@ -154,6 +163,7 @@ export interface WeeklyRunConsumption {
   controlUses: number;
   wasteUses: number;
   totalUses: number;
+  totalDeductedUses?: number;
   unitCostSnapshot: number | string;
   totalConsumptionCost: number | string;
   isPrimaryKitDepleted: boolean;
@@ -213,21 +223,25 @@ export interface LabWeeklyRun {
 
 export interface QuarantineIncident {
   id: string | number;
-  code: string;
-  instanceType: "RECEPTION_WAREHOUSE" | "INTERNAL_LAB";
+  code?: string;
+  incidentType?: string | null;
+  instanceType?: "RECEPTION_WAREHOUSE" | "INTERNAL_LAB" | "RECEPTION_PURCHASING" | string;
   unitId?: string | number | null;
   batchId?: string | number | null;
   labAreaId?: number | null;
   reportedById: number;
   resolvedById?: number | null;
-  quarantineReason: QuarantineReason;
+  quarantineReason?: QuarantineReason | string | null;
   description: string;
   evidenceUrl?: string | null;
+  affectedUses?: number | null;
+  affectedQuantity?: number | string | null;
+  status?: string | null;
   resolutionStatus: QuarantineResolutionStatus;
   resolutionNotes?: string | null;
   resolvedAt?: string | null;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
   reportedBy: {
     id: number;
     fullName: string;
@@ -247,24 +261,54 @@ export interface QuarantineIncident {
     product?: { name: string; sku: string };
     batch?: { lotNumber: string };
   } | null;
+  labReagentUnit?: {
+    id: string | number;
+    unitCode: string;
+    status: string;
+    fridge?: { name: string; code: string } | null;
+    product?: { name: string; sku: string };
+    batch?: { lotNumber: string };
+  } | null;
+  batch?: {
+    id: string | number;
+    lotNumber?: string;
+    location?: { name: string } | null;
+    product?: { name: string; sku?: string } | null;
+  } | null;
 }
+
+export type FridgeAuditAdjustmentStatus =
+  | "PENDING_ADJUSTMENT"
+  | "ADJUSTED_AND_RECONCILED"
+  | "FLAGGED_DISCREPANCY"
+  | "RECONCILED_MATCH"
+  | "SURPLUS_DETECTED"
+  | "DEFICIT_DISCARDED"
+  | "MANUAL_CORRECTION";
 
 export interface FridgeAuditItem {
   id: number;
-  fridgePhysicalAuditId: number;
+  auditId?: number;
+  fridgePhysicalAuditId?: number;
   labReagentUnitId: string | number;
-  systemUsesBefore: number;
+  systemRemainingUses?: number;
+  systemUsesBefore?: number;
   physicalRemainingUses: number;
-  adjustmentUses: number;
-  adjustmentStatus: "RECONCILED_MATCH" | "SURPLUS_DETECTED" | "DEFICIT_DISCARDED" | "MANUAL_CORRECTION";
+  variance?: number;
+  adjustmentUses?: number;
+  adjustmentStatus: FridgeAuditAdjustmentStatus;
   notes?: string | null;
   labReagentUnit?: {
     id: string | number;
     unitCode: string;
     currentVolume: number;
+    status: string;
+    ownershipType?: "CLINICAL_ROUTINE" | "RESEARCH_PROJECT";
+    expirationDate?: string;
     fridge?: { name: string; code: string } | null;
-    product: { name: string; sku: string };
-    batch?: { lotNumber: string };
+    product: { id?: number; name: string; sku: string };
+    batch?: { id?: number; lotNumber: string; expirationDate?: string };
+    assignedLabArea?: { id: number; name: string } | null;
   };
 }
 
@@ -272,12 +316,59 @@ export interface FridgePhysicalAudit {
   id: number;
   code: string;
   performedById: number;
+  auditDate?: string;
   notes?: string | null;
   createdAt: string;
   performedBy: {
     id: number;
     fullName: string;
     username: string;
+    department?: string;
   };
   items: FridgeAuditItem[];
+}
+
+export type ConsumptionConcept =
+  | "PATIENT"
+  | "REPEAT"
+  | "CALIBRATION"
+  | "CONTROL"
+  | "WASTE"
+  | "YIELD_SURPLUS"
+  | "YIELD_DEFICIT"
+  | "QUARANTINE_LOCK"
+  | "PHYSICAL_AUDIT_ADJUSTMENT";
+
+export interface LabConsumptionAuditLog {
+  id: string | number;
+  userId: number;
+  labAreaId?: number | null;
+  researchTrialId?: number | null;
+  labExamId?: number | null;
+  weeklyRunId?: number | null;
+  labReagentUnitId: string | number;
+  concept: ConsumptionConcept;
+  usesCount: number;
+  costImpact: number | string;
+  notes?: string | null;
+  createdAt: string;
+  user?: {
+    id: number;
+    fullName: string;
+    username: string;
+    department?: string;
+  };
+  labArea?: LabArea | null;
+  labExam?: LabExam | null;
+  weeklyRun?: {
+    id: number;
+    code: string;
+    status: string;
+  } | null;
+  labReagentUnit?: {
+    id: string | number;
+    unitCode: string;
+    product?: { id: number; name: string; sku: string };
+    batch?: { id: number; lotNumber: string; expirationDate?: string };
+  };
 }

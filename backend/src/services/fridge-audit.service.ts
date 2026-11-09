@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma.js';
+import { LabService } from './lab.service.js';
 import {
   FridgeAuditAdjustmentStatus,
   ConsumptionConcept,
@@ -15,6 +16,7 @@ export interface CreateFridgeAuditItemDTO {
 export interface CreateFridgeAuditDTO {
   performedById: number;
   notes?: string;
+  autoReconcile?: boolean;
   items: CreateFridgeAuditItemDTO[];
 }
 
@@ -68,26 +70,29 @@ export class FridgeAuditService {
 
         const systemRemainingUses = unit.remainingUses;
         const variance = physicalRemainingUses - systemRemainingUses;
+        const shouldReconcile = data.autoReconcile !== false;
 
-        // Determinar estado de la unidad según el conteo
-        let newStatus = unit.status;
-        if (physicalRemainingUses === 0) {
-          newStatus = LabUnitStatus.AGOTADO;
-        } else if (unit.status === LabUnitStatus.AGOTADO && physicalRemainingUses > 0) {
-          newStatus = LabUnitStatus.EN_USO;
-        } else if (unit.status === LabUnitStatus.SELLADO && physicalRemainingUses < unit.initialTheoreticalUses) {
-          newStatus = LabUnitStatus.EN_USO;
+        // Determinar estado de la unidad según el conteo si auto-concilia
+        if (shouldReconcile) {
+          let newStatus = unit.status;
+          if (physicalRemainingUses === 0) {
+            newStatus = LabUnitStatus.AGOTADO;
+          } else if (unit.status === LabUnitStatus.AGOTADO && physicalRemainingUses > 0) {
+            newStatus = LabUnitStatus.EN_USO;
+          } else if (unit.status === LabUnitStatus.SELLADO && physicalRemainingUses < unit.initialTheoreticalUses) {
+            newStatus = LabUnitStatus.EN_USO;
+          }
+
+          // Actualizar LabReagentUnit
+          await tx.labReagentUnit.update({
+            where: { id: unit.id },
+            data: {
+              remainingUses: physicalRemainingUses,
+              yieldVariance: unit.yieldVariance + variance,
+              status: newStatus,
+            },
+          });
         }
-
-        // Actualizar LabReagentUnit
-        await tx.labReagentUnit.update({
-          where: { id: unit.id },
-          data: {
-            remainingUses: physicalRemainingUses,
-            yieldVariance: unit.yieldVariance + variance,
-            status: newStatus,
-          },
-        });
 
         // Registrar FridgePhysicalAuditItem
         await tx.fridgePhysicalAuditItem.create({
@@ -97,31 +102,35 @@ export class FridgeAuditService {
             systemRemainingUses,
             physicalRemainingUses,
             variance,
-            adjustmentStatus: FridgeAuditAdjustmentStatus.ADJUSTED_AND_RECONCILED,
+            adjustmentStatus: shouldReconcile
+              ? FridgeAuditAdjustmentStatus.ADJUSTED_AND_RECONCILED
+              : FridgeAuditAdjustmentStatus.PENDING_ADJUSTMENT,
             notes: item.notes?.trim() || null,
           },
         });
 
-        // Registrar LabConsumptionAuditLog
-        const costImpact = Math.abs(variance) * Number(unit.unitCostPerUse || 0);
+        if (shouldReconcile) {
+          // Registrar LabConsumptionAuditLog
+          const costImpact = Math.abs(variance) * Number(unit.unitCostPerUse || 0);
 
-        await tx.labConsumptionAuditLog.create({
-          data: {
-            userId: data.performedById,
-            concept: ConsumptionConcept.PHYSICAL_AUDIT_ADJUSTMENT,
-            labReagentUnitId: unit.id,
-            labAreaId: unit.assignedLabAreaId ?? null,
-            usesCount: Math.abs(variance),
-            costImpact: new Prisma.Decimal(costImpact.toFixed(4)),
-            notes:
-              item.notes?.trim() ||
-              (variance === 0
-                ? 'Recuento físico conforme sin varianza'
-                : variance > 0
-                ? `Sobrante de +${variance} usos detectado en recuento físico de nevera`
-                : `Merma de ${variance} usos detectada en recuento físico de nevera`),
-          },
-        });
+          await tx.labConsumptionAuditLog.create({
+            data: {
+              userId: data.performedById,
+              concept: ConsumptionConcept.PHYSICAL_AUDIT_ADJUSTMENT,
+              labReagentUnitId: unit.id,
+              labAreaId: unit.assignedLabAreaId ?? null,
+              usesCount: Math.abs(variance),
+              costImpact: new Prisma.Decimal(costImpact.toFixed(4)),
+              notes:
+                item.notes?.trim() ||
+                (variance === 0
+                  ? 'Recuento físico conforme sin varianza'
+                  : variance > 0
+                  ? `Sobrante de +${variance} usos detectado en recuento físico de nevera`
+                  : `Merma de ${variance} usos detectada en recuento físico de nevera`),
+            },
+          });
+        }
       }
 
       return tx.fridgePhysicalAudit.findUnique({
@@ -235,5 +244,9 @@ export class FridgeAuditService {
     }
 
     return audit;
+  }
+
+  static async reconcileFridgeAudit(auditId: number, userId: number) {
+    return LabService.reconcileFridgeAudit(auditId, userId);
   }
 }

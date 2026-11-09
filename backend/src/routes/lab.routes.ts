@@ -38,216 +38,249 @@ import {
   getWeeklyRunById,
   createWeeklyRun,
   closeWeeklyRun,
+  quickConsumeReagent,
+  failRunByCalibration,
+  reconcileFridgeAudit,
   getConsumptionAuditLogs,
 } from '../controllers/lab.controller.js';
 import { authenticateJWT } from '../middlewares/auth.middleware.js';
 import { requireRoles } from '../middlewares/role.middleware.js';
 
+/**
+ * Matriz Homologada de Permisos (RBAC) - Laboratorio Clínico
+ * 
+ * 1. Roles Analíticos / Operativos:
+ *    Permite consulta general y trabajo diario en mesón analítico.
+ *    Roles: BIOANALISTA, LABORATORIO, COORDINADOR_LABORATORIO, COORDINADOR, ADMINISTRADOR.
+ * 
+ * 2. Roles de Supervisión y Control Crítico:
+ *    Restringido exclusivamente para gobierno, aprobaciones FEFO, cuarentena y auditorías.
+ *    Roles: COORDINADOR_LABORATORIO, COORDINADOR, ADMINISTRADOR.
+ */
+export const LAB_ANALYTICAL_ROLES = [
+  'ADMINISTRADOR',
+  'COORDINADOR_LABORATORIO',
+  'COORDINADOR',
+  'LABORATORIO',
+  'BIOANALISTA',
+];
+
+export const LAB_SUPERVISORY_ROLES = [
+  'ADMINISTRADOR',
+  'COORDINADOR_LABORATORIO',
+  'COORDINADOR',
+];
+
 const router: Router = Router();
 
 router.use(authenticateJWT);
 
-// Neveras / Equipos
-router.get('/fridges', getFridges);
+// ==========================================
+// 1. NEVERAS, CAVAS Y EQUIPOS DE FRÍO
+// ==========================================
+router.get('/fridges', requireRoles(LAB_ANALYTICAL_ROLES), getFridges);
 router.post(
   '/fridges',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_SUPERVISORY_ROLES),
   createFridge
 );
-router.get('/fridges/:id/contents', getFridgeContents);
+router.get(
+  '/fridges/:id/contents',
+  requireRoles(LAB_ANALYTICAL_ROLES),
+  getFridgeContents
+);
 router.post(
   '/fridges/:id/assign',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_ANALYTICAL_ROLES),
   assignUnitToFridge
 );
 router.post(
   '/fridges/:id/assign-batch',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_ANALYTICAL_ROLES),
   assignBatchToFridge
 );
 
-// Frascos de reactivos
-router.get('/units', getLabUnits);
+// ==========================================
+// 2. FRASCOS / UNIDADES Y CONSUMOS DIRECTOS
+// ==========================================
+router.get('/units', requireRoles(LAB_ANALYTICAL_ROLES), getLabUnits);
 router.get(
   '/reagents',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_ANALYTICAL_ROLES),
   getAvailableReagents
 );
 router.get(
   '/consumptions',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_ANALYTICAL_ROLES),
   getRecentConsumptions
 );
 router.post(
   '/consumptions',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_ANALYTICAL_ROLES),
   registerReagentConsumption
 );
-router.get('/units/:id', getLabUnitById);
+router.get('/units/:id', requireRoles(LAB_ANALYTICAL_ROLES), getLabUnitById);
+router.post(
+  '/units/:id/open',
+  requireRoles(LAB_ANALYTICAL_ROLES),
+  openLabUnit
+);
 router.patch(
   '/units/:id/open',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_ANALYTICAL_ROLES),
   openLabUnit
 );
 router.post(
   '/units/:id/consume',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_ANALYTICAL_ROLES),
   consumeLabUnit
 );
 router.post(
   '/units/:id/transfer',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_ANALYTICAL_ROLES),
   transferFridge
 );
 router.post(
   '/units/:id/discard',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_SUPERVISORY_ROLES),
   discardLabUnit
 );
 
-// Cuarentena de doble instancia (Laboratorio)
+// ==========================================
+// 3. CUARENTENA TÉCNICA E INCIDENCIAS (LAB)
+// ==========================================
 router.post(
   '/units/:id/quarantine',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_SUPERVISORY_ROLES),
   putUnitInQuarantine
 );
 router.post(
   '/quarantine/:id/resolve',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_SUPERVISORY_ROLES),
   resolveQuarantine
 );
 router.get(
   '/quarantine',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_ANALYTICAL_ROLES),
   getQuarantineIncidents
 );
 
-// Áreas de Laboratorio
-router.get('/areas', getLabAreas);
-router.get('/areas/:id', getLabAreaById);
+// ==========================================
+// 4. ÁREAS DE LABORATORIO
+// ==========================================
+router.get('/areas', requireRoles(LAB_ANALYTICAL_ROLES), getLabAreas);
+router.get('/areas/:id', requireRoles(LAB_ANALYTICAL_ROLES), getLabAreaById);
 router.post(
   '/areas',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_SUPERVISORY_ROLES),
   createLabArea
 );
 router.put(
   '/areas/:id',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_SUPERVISORY_ROLES),
   updateLabArea
 );
 router.post(
   '/areas/:id/users',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_SUPERVISORY_ROLES),
   assignUsersToLabArea
 );
-router.get('/users/:id/areas', getUserLabAreas);
-router.get('/my-areas', getUserLabAreas);
+router.get('/users/:id/areas', requireRoles(LAB_ANALYTICAL_ROLES), getUserLabAreas);
+router.get('/my-areas', requireRoles(LAB_ANALYTICAL_ROLES), getUserLabAreas);
 
-// Catálogo de Exámenes
-router.get('/exams', getLabExams);
-router.get('/exams/:id', getLabExamById);
+// ==========================================
+// 5. CATÁLOGO DE EXÁMENES CLÍNICOS
+// ==========================================
+router.get('/exams', requireRoles(LAB_ANALYTICAL_ROLES), getLabExams);
+router.get('/exams/:id', requireRoles(LAB_ANALYTICAL_ROLES), getLabExamById);
 router.post(
   '/exams',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_SUPERVISORY_ROLES),
   createLabExam
 );
 router.put(
   '/exams/:id',
-  requireRoles(['ADMINISTRADOR', 'LABORATORIO']),
+  requireRoles(LAB_SUPERVISORY_ROLES),
   updateLabExam
 );
 
-// Solicitudes Internas a Coordinación
-router.get('/requests', getInternalRequests);
-router.get('/requests/:id', getInternalRequestById);
+// ==========================================
+// 6. SOLICITUDES INTERNAS Y DESPACHO FEFO
+// ==========================================
+router.get('/requests', requireRoles(LAB_ANALYTICAL_ROLES), getInternalRequests);
+router.get('/requests/:id', requireRoles(LAB_ANALYTICAL_ROLES), getInternalRequestById);
 router.post(
   '/requests',
-  requireRoles([
-    'ADMINISTRADOR',
-    'LABORATORIO',
-    'COORDINADOR_LABORATORIO',
-    'COORDINADOR',
-    'BIOANALISTA',
-  ]),
+  requireRoles(LAB_ANALYTICAL_ROLES),
   createInternalRequest
 );
 router.get(
   '/requests/:id/suggest-fefo',
-  requireRoles([
-    'ADMINISTRADOR',
-    'LABORATORIO',
-    'COORDINADOR_LABORATORIO',
-    'COORDINADOR',
-  ]),
+  requireRoles(LAB_SUPERVISORY_ROLES),
   suggestFefoForRequest
 );
 router.post(
   '/requests/:id/approve',
-  requireRoles([
-    'ADMINISTRADOR',
-    'LABORATORIO',
-    'COORDINADOR_LABORATORIO',
-    'COORDINADOR',
-  ]),
+  requireRoles(LAB_SUPERVISORY_ROLES),
   approveInternalRequest
 );
 router.post(
   '/requests/:id/deliver',
-  requireRoles([
-    'ADMINISTRADOR',
-    'LABORATORIO',
-    'COORDINADOR_LABORATORIO',
-    'COORDINADOR',
-  ]),
+  requireRoles(LAB_SUPERVISORY_ROLES),
   deliverInternalRequest
 );
 router.post(
   '/requests/:id/reject',
-  requireRoles([
-    'ADMINISTRADOR',
-    'LABORATORIO',
-    'COORDINADOR_LABORATORIO',
-    'COORDINADOR',
-  ]),
+  requireRoles(LAB_SUPERVISORY_ROLES),
   rejectInternalRequest
 );
 
-// Motor de Corridas Semanales
-router.get('/runs', getWeeklyRuns);
-router.get('/runs/:id', getWeeklyRunById);
+// ==========================================
+// 7. MOTOR DE CORRIDAS SEMANALES Y ACCIONES RÁPIDAS (FASE 2B)
+// ==========================================
+router.get('/runs', requireRoles(LAB_ANALYTICAL_ROLES), getWeeklyRuns);
+
+// Consumo rápido / prueba individual (debe ir antes de /runs/:id)
+router.post(
+  '/runs/quick-consume',
+  requireRoles(LAB_ANALYTICAL_ROLES),
+  quickConsumeReagent
+);
+
+router.get('/runs/:id', requireRoles(LAB_ANALYTICAL_ROLES), getWeeklyRunById);
 router.post(
   '/runs',
-  requireRoles([
-    'ADMINISTRADOR',
-    'LABORATORIO',
-    'COORDINADOR_LABORATORIO',
-    'COORDINADOR',
-    'BIOANALISTA',
-  ]),
+  requireRoles(LAB_ANALYTICAL_ROLES),
   createWeeklyRun
 );
 router.post(
   '/runs/:id/close',
-  requireRoles([
-    'ADMINISTRADOR',
-    'LABORATORIO',
-    'COORDINADOR_LABORATORIO',
-    'COORDINADOR',
-    'BIOANALISTA',
-  ]),
+  requireRoles(LAB_ANALYTICAL_ROLES),
   closeWeeklyRun
 );
 
-// Auditoría Inmutable de Consumos (5 Dimensiones)
+// Acción rápida: corrida fallida por calibración (Caso Borde E5)
+router.post(
+  '/runs/:id/fail-calibration',
+  requireRoles(LAB_ANALYTICAL_ROLES),
+  failRunByCalibration
+);
+
+// ==========================================
+// 8. ARQUEO FÍSICO DE NEVERAS (RECONCILIACIÓN EN 1 CLIC - CASO BORDE E6)
+// ==========================================
+router.post(
+  '/fridge-audits/:id/reconcile',
+  requireRoles(LAB_SUPERVISORY_ROLES),
+  reconcileFridgeAudit
+);
+
+// ==========================================
+// 9. AUDITORÍA INMUTABLE DE CONSUMOS (5D)
+// ==========================================
 router.get(
   '/audit-logs',
-  requireRoles([
-    'ADMINISTRADOR',
-    'LABORATORIO',
-    'COORDINADOR_LABORATORIO',
-    'COORDINADOR',
-    'BIOANALISTA',
-  ]),
+  requireRoles(LAB_ANALYTICAL_ROLES),
   getConsumptionAuditLogs
 );
 

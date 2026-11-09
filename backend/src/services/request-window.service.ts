@@ -196,12 +196,12 @@ export class RequestWindowService {
       message = 'Ventana cerrada - Abre el próximo Lunes a las 05:00 AM';
     }
 
-    const canCreate = isPrivileged || (isOpen && hasQuota);
+    const canCreate = !config.isSuspended;
 
     return {
-      isOpen,
+      isOpen: true,
       isSuspended: config.isSuspended,
-      hasQuota: isPrivileged ? true : hasQuota,
+      hasQuota: true,
       weeklyQuotaUsed,
       maxWeeklyRequests: config.maxWeeklyRequestsPerUser,
       currentCycle: caracasTime.isoWeeklyCycle,
@@ -224,41 +224,12 @@ export class RequestWindowService {
     id: number;
     roles: string[];
   }): Promise<{ cycle: string }> {
-    const roles = user.roles ?? [];
-    const isPrivileged =
-      roles.includes('ADMINISTRADOR') || roles.includes('ALMACENISTA');
     const caracasTime = getCaracasTime();
-
-    if (isPrivileged) {
-      return { cycle: caracasTime.isoWeeklyCycle };
-    }
-
     const config = await this.getConfig();
 
     if (config.isSuspended) {
       throw new Error(
         'La ventana de recepción de solicitudes se encuentra suspendida temporalmente por administración.'
-      );
-    }
-
-    const isOpen = this.isWindowOpen(config, caracasTime);
-    if (!isOpen) {
-      throw new Error(
-        'La ventana para recepción de solicitudes se encuentra cerrada. Horario institucional: Lunes 05:00 AM a Miércoles 04:00 PM.'
-      );
-    }
-
-    const weeklyQuotaUsed = await prisma.request.count({
-      where: {
-        userId: user.id,
-        weeklyTokenCycle: caracasTime.isoWeeklyCycle,
-        status: { not: RequestStatus.RECHAZADA },
-      },
-    });
-
-    if (weeklyQuotaUsed >= config.maxWeeklyRequestsPerUser) {
-      throw new Error(
-        'Ya utilizaste tu cupo de solicitud correspondiente a esta semana.'
       );
     }
 

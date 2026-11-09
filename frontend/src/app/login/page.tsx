@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, type FormEvent } from "react";
+import React, { useState, useEffect, useSyncExternalStore, type FormEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -26,7 +26,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { toast } from "@/utils/toast";
 
@@ -37,6 +36,27 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const isAuth = useSyncExternalStore(
+    () => () => {},
+    () => AuthService.isAuthenticated(),
+    () => false
+  );
+
+  useEffect(() => {
+    if (isAuth) {
+      const token = AuthService.getToken();
+      if (token) {
+        AuthService.setAuthCookie(token);
+      }
+      const searchParams = new URLSearchParams(window.location.search);
+      const redirectParam = searchParams.get("redirect");
+      const targetUrl =
+        redirectParam && !redirectParam.startsWith("/login")
+          ? redirectParam
+          : "/dashboard";
+      router.replace(targetUrl);
+    }
+  }, [isAuth, router]);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -46,7 +66,13 @@ export default function LoginPage() {
     try {
       await AuthService.login({ identifier: username, password });
       toast.success("Sesión iniciada con éxito");
-      router.push("/dashboard");
+      const searchParams = new URLSearchParams(window.location.search);
+      const redirectParam = searchParams.get("redirect");
+      const targetUrl =
+        redirectParam && !redirectParam.startsWith("/login")
+          ? redirectParam
+          : "/dashboard";
+      router.push(targetUrl);
     } catch (err: unknown) {
       const msg =
         err instanceof Error
@@ -58,6 +84,47 @@ export default function LoginPage() {
       setIsLoading(false);
     }
   };
+
+  if (isAuth) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] text-slate-900 dark:text-slate-100 flex flex-col items-center justify-center selection:bg-blue-600 selection:text-white relative overflow-hidden transition-colors duration-300 p-4">
+        {/* Glow de fondo */}
+        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[450px] bg-gradient-to-tr from-sky-400/25 via-blue-500/20 to-indigo-400/15 dark:from-sky-500/15 dark:via-blue-600/15 dark:to-indigo-500/10 rounded-full blur-[110px] transform-gpu" />
+        </div>
+
+        <div className="relative z-10 w-full max-w-sm p-8 rounded-3xl backdrop-blur-2xl bg-white/70 dark:bg-slate-900/60 border border-white/90 dark:border-white/10 shadow-2xl shadow-blue-500/10 dark:shadow-black/40 text-center space-y-4 ring-1 ring-black/[0.04]">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-white p-2.5 border border-slate-200/80 dark:border-white/20 shadow-md shadow-blue-500/10 flex items-center justify-center">
+            <Image
+              src="/logo-icon.svg"
+              alt="Logo IDI"
+              width={36}
+              height={36}
+              className="w-full h-full object-contain"
+              priority
+            />
+          </div>
+          <div>
+            <div className="flex items-center justify-center gap-1.5">
+              <span className="font-extrabold text-slate-900 dark:text-white tracking-tight text-base">
+                ERP-IDI
+              </span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100/80 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-700/40">
+                v2.5
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
+              Verificando sesión activa...
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400 pt-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Redirigiendo a la plataforma...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] text-slate-900 dark:text-slate-100 flex flex-col justify-between selection:bg-blue-600 selection:text-white relative overflow-hidden transition-colors duration-300 p-4 sm:p-6 lg:p-8">

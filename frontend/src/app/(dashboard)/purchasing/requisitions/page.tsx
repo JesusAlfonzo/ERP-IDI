@@ -25,6 +25,10 @@ import type {
 import type { Product, Category } from "@/types/inventory";
 import { ProductPackagingSelector } from "@/components/purchasing/ProductPackagingSelector";
 import { ProtocolBadgeSelector } from "@/components/requests/ProtocolBadgeSelector";
+import {
+  UniversalPdfDownloadButton,
+  RequisitionPdfDocument,
+} from "@/components/pdf";
 import { useDebounce } from "@/hooks/use-debounce";
 import { usePagination } from "@/hooks/use-pagination";
 import { TablePagination } from "@/components/common/TablePagination";
@@ -229,10 +233,54 @@ export default function PurchaseRequisitionsPage() {
   }, [statusFilter, debouncedSearchFilter, adjudicateCurrency]);
 
   useEffect(() => {
-    loadData();
+    let active = true;
+    Promise.all([
+      PurchasingClientService.getRequisitions({
+        status: statusFilter || undefined,
+        search: debouncedSearchFilter || undefined,
+      }).catch(() => []),
+      PurchasingClientService.getSuppliers().catch(() => []),
+      PurchasingClientService.getCurrencies().catch(() => []),
+      InventoryClientService.getProducts().catch(() => []),
+      InventoryClientService.getCategories().catch(() => []),
+      CurrencyService.getCurrentRates().catch(() => null),
+      InventoryMasterService.getDepartments(true).catch(() => []),
+      InventoryMasterService.getJustificationConcepts(undefined, true).catch(() => []),
+    ])
+      .then(([reqs, sups, currs, prods, cats, rates, deps, concepts]) => {
+        if (!active) return;
+        setRequisitions(reqs);
+        setSuppliers(sups);
+        setCurrencies(currs);
+        setCatalogProducts(prods);
+        setCategories(cats);
+        setDepartments(deps);
+        setJustificationConcepts(concepts);
+        if (deps.length > 0) {
+          setSelectedDepartmentId((prev) => (prev !== "" ? prev : deps[0].id));
+          setDepartmentSection((prev) => (prev ? prev : deps[0].name));
+        }
+
+        if (rates) {
+          const ratesObj = {
+            USD: Number(rates.USD || rates.rates?.USD || 75.0),
+            EUR: Number(rates.EUR || rates.rates?.EUR || 81.5),
+            VED: 1.0,
+          };
+          setBcvRates(ratesObj);
+          setAdjudicateExchangeRate((prev) => {
+            if (adjudicateCurrency === "EUR") return ratesObj.EUR;
+            if (adjudicateCurrency === "VED") return 1.0;
+            return prev === 75.0 ? ratesObj.USD : prev;
+          });
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
     const handleRateUpdated = () => {
-      loadData();
+      void loadData();
     };
 
     if (typeof window !== "undefined") {
@@ -240,11 +288,12 @@ export default function PurchaseRequisitionsPage() {
     }
 
     return () => {
+      active = false;
       if (typeof window !== "undefined") {
         window.removeEventListener("idi:exchange-rate-updated", handleRateUpdated);
       }
     };
-  }, [loadData]);
+  }, [statusFilter, debouncedSearchFilter, adjudicateCurrency, loadData]);
 
   // Manejadores del Formulario Crear Preorden
   const handleAddItem = () => {
@@ -553,9 +602,6 @@ export default function PurchaseRequisitionsPage() {
     window.open(`https://api.whatsapp.com/send?text=${message}`, "_blank");
   };
 
-  const handlePrintRequisition = () => {
-    window.print();
-  };
 
   return (
     <div className="space-y-6">
@@ -1218,17 +1264,15 @@ export default function PurchaseRequisitionsPage() {
                 <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
                 <span>WhatsApp</span>
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handlePrintRequisition}
-                className="gap-1.5 text-xs"
-                title="Descargar o Imprimir Documento"
-              >
-                <Printer className="w-3.5 h-3.5 text-muted-foreground" />
-                <span>Imprimir / PDF</span>
-              </Button>
+              {selectedForView && (
+                <UniversalPdfDownloadButton
+                  document={<RequisitionPdfDocument requisition={selectedForView} />}
+                  fileName={`Preorden_${String(selectedForView.requisitionNumber || selectedForView.id).replace(/[^a-zA-Z0-9_-]/g, "_")}`}
+                  buttonLabel="Descargar PDF"
+                  previewLabel="Vista Previa"
+                  dialogTitle={`Preorden: ${selectedForView.requisitionNumber}`}
+                />
+              )}
             </div>
             <Button
               type="button"

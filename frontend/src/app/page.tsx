@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -29,13 +29,13 @@ import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { AuthService } from "@/services/auth.service";
 
 export default function Home() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const isAuthenticated = useSyncExternalStore(
+    () => () => {},
+    () => AuthService.isAuthenticated(),
+    () => false
+  );
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"frio" | "reactivos" | "kardex" | "calidad">("frio");
-
-  useEffect(() => {
-    setIsAuthenticated(AuthService.isAuthenticated());
-  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] text-slate-900 dark:text-slate-100 flex flex-col selection:bg-blue-600 selection:text-white relative overflow-hidden transition-colors duration-300">
@@ -190,11 +190,20 @@ export default function Home() {
             </a>
             <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
               <Link
-                href="/login"
+                href={isAuthenticated ? "/dashboard" : "/login"}
                 className="w-full inline-flex items-center justify-center gap-2 bg-blue-600 text-white text-xs font-semibold py-2.5 rounded-xl shadow-xs"
               >
-                <Lock className="w-3.5 h-3.5" />
-                Iniciar Sesión
+                {isAuthenticated ? (
+                  <>
+                    <Layers className="w-3.5 h-3.5" />
+                    Panel Principal
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-3.5 h-3.5" />
+                    Iniciar Sesión
+                  </>
+                )}
               </Link>
             </div>
           </div>
@@ -235,11 +244,11 @@ export default function Home() {
         {/* Botones de Acción Hero */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 pt-2">
           <Link
-            href="/login"
+            href={isAuthenticated ? "/dashboard" : "/login"}
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-semibold rounded-xl transition-all shadow-xl shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
           >
             <Sparkles className="w-4 h-4 text-blue-200" />
-            <span>Ingresar a la Plataforma</span>
+            <span>{isAuthenticated ? "Ir al Panel Principal" : "Ingresar a la Plataforma"}</span>
             <ArrowRight className="w-4 h-4" />
           </Link>
 
@@ -813,11 +822,20 @@ export default function Home() {
 
             <div className="shrink-0 flex flex-col sm:flex-row lg:flex-col gap-3 w-full sm:w-auto">
               <Link
-                href="/login"
+                href={isAuthenticated ? "/dashboard" : "/login"}
                 className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-blue-600/25 cursor-pointer text-center"
               >
-                <Lock className="w-4 h-4" />
-                <span>Ingresar al Sistema ERP</span>
+                {isAuthenticated ? (
+                  <>
+                    <Layers className="w-4 h-4" />
+                    <span>Ir al Panel Principal</span>
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-4 h-4" />
+                    <span>Ingresar al Sistema ERP</span>
+                  </>
+                )}
               </Link>
               <a
                 href="https://idiucv.vercel.app"
@@ -859,8 +877,11 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-6 text-[11px] font-medium">
-            <Link href="/login" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-              Iniciar Sesión
+            <Link
+              href={isAuthenticated ? "/dashboard" : "/login"}
+              className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            >
+              {isAuthenticated ? "Panel Principal" : "Iniciar Sesión"}
             </Link>
             <a href="#modulos" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               Módulos

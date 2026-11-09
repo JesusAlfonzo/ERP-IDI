@@ -7,14 +7,34 @@ import type {
   FefoSuggestionItem,
   LabWeeklyRun,
   QuarantineIncident,
+  FridgePhysicalAudit,
+  LabConsumptionAuditLog,
 } from "@/types/lab-workflow";
-import type { LabFridge, LabReagentUnitItem } from "@/types/laboratory";
+import type {
+  LabFridge,
+  LabReagentUnitItem,
+  ReagentBatchOption,
+  ReagentConsumptionPayload,
+  ReagentConsumptionRecord,
+  FridgeContentsResponse,
+  AssignBatchResponse,
+  CreateFridgePayload,
+  ReagentInFridge,
+} from "@/types/laboratory";
 
+/**
+ * Servicio Unificado de Laboratorio Clínico (ERP-IDI)
+ * Consolida todas las operaciones analíticas, cadena de frío, inventario de reactivos,
+ * solicitudes internas FEFO, corridas semanales y control de calidad.
+ */
 export const LabWorkflowService = {
-  // Áreas
+  // ==========================================
+  // 1. ÁREAS DE LABORATORIO
+  // ==========================================
   async getMyLabAreas(): Promise<LabArea[]> {
-    const res = await apiClient.get<ApiResponse<LabArea[]>>("/lab/my-areas");
-    return res.data.data || [];
+    const res = await apiClient.get<ApiResponse<(LabArea | { labArea: LabArea })[]>>("/lab/my-areas");
+    const raw = res.data.data || [];
+    return raw.map((item) => ("labArea" in item ? item.labArea : item));
   },
 
   async getLabAreas(): Promise<LabArea[]> {
@@ -22,7 +42,9 @@ export const LabWorkflowService = {
     return res.data.data || [];
   },
 
-  // Exámenes
+  // ==========================================
+  // 2. CATÁLOGO DE EXÁMENES
+  // ==========================================
   async getLabExams(params?: { areaId?: number; search?: string }): Promise<LabExam[]> {
     const query = new URLSearchParams();
     if (params?.areaId) query.append("areaId", String(params.areaId));
@@ -36,18 +58,93 @@ export const LabWorkflowService = {
     return res.data.data || null;
   },
 
-  // Neveras
-  async getFridges(): Promise<LabFridge[]> {
-    const res = await apiClient.get<ApiResponse<LabFridge[]>>("/lab/fridges");
-    return res.data.data || [];
-  },
-
-  async getFridgeContents(id: number) {
-    const res = await apiClient.get<ApiResponse<unknown>>(`/lab/fridges/${id}/contents`);
+  async createLabExam(payload: {
+    code: string;
+    name: string;
+    description?: string | null;
+    areaId?: number | null;
+    defaultCalibratorUses?: number;
+    defaultControlUses?: number;
+    compatibleProductIds?: Array<string | number>;
+  }): Promise<LabExam> {
+    const res = await apiClient.post<ApiResponse<LabExam>>("/lab/exams", payload);
+    if (!res.data.data) throw new Error(res.data.message || "Error al crear el examen");
     return res.data.data;
   },
 
-  // Unidades físicas / frascos
+  async updateLabExam(
+    id: number,
+    payload: {
+      name?: string;
+      description?: string | null;
+      areaId?: number | null;
+      isActive?: boolean;
+      defaultCalibratorUses?: number;
+      defaultControlUses?: number;
+      compatibleProductIds?: Array<string | number>;
+    }
+  ): Promise<LabExam> {
+    const res = await apiClient.put<ApiResponse<LabExam>>(`/lab/exams/${id}`, payload);
+    if (!res.data.data) throw new Error(res.data.message || "Error al actualizar el examen");
+    return res.data.data;
+  },
+
+  // ==========================================
+  // 3. NEVERAS, CAVAS Y CADENA DE FRÍO
+  // ==========================================
+  async getFridges(locationId?: number): Promise<LabFridge[]> {
+    const query = locationId ? `?locationId=${locationId}` : "";
+    const res = await apiClient.get<ApiResponse<LabFridge[]>>(`/lab/fridges${query}`);
+    return res.data.data || [];
+  },
+
+  async createFridge(data: CreateFridgePayload): Promise<LabFridge> {
+    const res = await apiClient.post<ApiResponse<LabFridge>>("/lab/fridges", data);
+    if (!res.data.data) {
+      throw new Error(res.data.message || "Error al registrar la nevera");
+    }
+    return res.data.data;
+  },
+
+  async getFridgeContents(id: number): Promise<FridgeContentsResponse> {
+    const res = await apiClient.get<ApiResponse<FridgeContentsResponse>>(
+      `/lab/fridges/${id}/contents`
+    );
+    if (!res.data.data) {
+      throw new Error(res.data.message || "Contenido de nevera no encontrado");
+    }
+    return res.data.data;
+  },
+
+  async assignBatchToFridge(
+    fridgeId: number,
+    batchId: number | string,
+    options?: {
+      quantityBoxes?: number;
+      ownershipType?: string;
+      researchProjectId?: number;
+      isDonation?: boolean;
+      notes?: string;
+    }
+  ): Promise<AssignBatchResponse> {
+    const res = await apiClient.post<ApiResponse<AssignBatchResponse>>(
+      `/lab/fridges/${fridgeId}/assign-batch`,
+      { batchId: Number(batchId), ...options }
+    );
+    if (!res.data.data) {
+      throw new Error(res.data.message || "No se pudo asignar el lote a la nevera");
+    }
+    return res.data.data;
+  },
+
+  /** Alias para compatibilidad con código existente */
+  async assignBatch(fridgeId: number, batchId: string | number): Promise<AssignBatchResponse> {
+    return this.assignBatchToFridge(fridgeId, batchId);
+  },
+
+  // ==========================================
+  // 4. UNIDADES FÍSICAS / FRASCOS EN FRÍO
+  // ==========================================
   async getLabUnits(params?: {
     search?: string;
     fridgeId?: number;
@@ -63,7 +160,120 @@ export const LabWorkflowService = {
     return res.data.data || [];
   },
 
-  // Solicitudes Internas
+  /**
+   * Obtiene los frascos reales en nevera listos para uso analítico (SELLADO o EN_USO)
+   */
+  async getAvailableUnits(
+    search?: string,
+    fridgeId?: number
+  ): Promise<LabReagentUnitItem[]> {
+    const params = new URLSearchParams();
+    if (search?.trim()) params.append("search", search.trim());
+    if (fridgeId) params.append("fridgeId", String(fridgeId));
+
+    const res = await apiClient.get<ApiResponse<LabReagentUnitItem[]>>(
+      `/lab/units?${params.toString()}`
+    );
+    const units = res.data.data || [];
+    return units.filter((u) => u.status === "SELLADO" || u.status === "EN_USO");
+  },
+
+  /**
+   * Apertura formal de un frasco sellado en mesón de trabajo (SELLADO -> EN_USO)
+   */
+  async openUnit(unitId: string | number): Promise<ReagentInFridge> {
+    const res = await apiClient.patch<ApiResponse<ReagentInFridge>>(`/lab/units/${unitId}/open`);
+    if (!res.data.data) {
+      throw new Error(res.data.message || "Error al abrir la unidad de reactivo");
+    }
+    return res.data.data;
+  },
+
+  /**
+   * Reubicación o traslado físico de un frasco a otra nevera
+   */
+  async transferUnit(
+    unitId: string | number,
+    toFridgeId: number,
+    reason?: string
+  ): Promise<ReagentInFridge> {
+    const res = await apiClient.post<ApiResponse<ReagentInFridge>>(
+      `/lab/units/${unitId}/transfer`,
+      { toFridgeId, reason }
+    );
+    if (!res.data.data) {
+      throw new Error(res.data.message || "Error al trasladar la unidad de nevera");
+    }
+    return res.data.data;
+  },
+
+  /**
+   * Descarte formal de un frasco por agotamiento, vencimiento o merma
+   */
+  async discardUnit(
+    unitId: string | number,
+    reason: string
+  ): Promise<ReagentInFridge> {
+    const res = await apiClient.post<ApiResponse<ReagentInFridge>>(
+      `/lab/units/${unitId}/discard`,
+      { reason }
+    );
+    if (!res.data.data) {
+      throw new Error(res.data.message || "Error al descartar la unidad de reactivo");
+    }
+    return res.data.data;
+  },
+
+  // ==========================================
+  // 5. CONSUMOS VOLUMÉTRICOS Y REACTIVOS DISPONIBLES
+  // ==========================================
+  async getAvailableReagents(search?: string): Promise<ReagentBatchOption[]> {
+    const query = search?.trim()
+      ? `?search=${encodeURIComponent(search.trim())}`
+      : "";
+    const res = await apiClient.get<ApiResponse<ReagentBatchOption[]>>(
+      `/lab/reagents${query}`
+    );
+    return res.data.data || [];
+  },
+
+  async consumeUnit(
+    unitId: string | number,
+    amountUsed: number,
+    reason?: string
+  ): Promise<unknown> {
+    const res = await apiClient.post<ApiResponse<unknown>>(
+      `/lab/units/${unitId}/consume`,
+      { amountUsed, reason }
+    );
+    return res.data.data;
+  },
+
+  async getRecentConsumptions(limit = 10): Promise<ReagentConsumptionRecord[]> {
+    const res = await apiClient.get<ApiResponse<ReagentConsumptionRecord[]>>(
+      `/lab/consumptions?limit=${limit}`
+    );
+    return res.data.data || [];
+  },
+
+  async registerConsumption(
+    payload: ReagentConsumptionPayload
+  ): Promise<ReagentConsumptionRecord> {
+    const res = await apiClient.post<ApiResponse<ReagentConsumptionRecord>>(
+      "/lab/consumptions",
+      payload
+    );
+    if (!res.data.data) {
+      throw new Error(
+        res.data.message || "Error al registrar el consumo del reactivo"
+      );
+    }
+    return res.data.data;
+  },
+
+  // ==========================================
+  // 6. SOLICITUDES INTERNAS Y DESPACHO FEFO
+  // ==========================================
   async getInternalRequests(params?: {
     labAreaId?: number;
     status?: string;
@@ -143,7 +353,9 @@ export const LabWorkflowService = {
     return res.data.data;
   },
 
-  // Corridas Semanales
+  // ==========================================
+  // 7. MOTOR DE CORRIDAS SEMANALES
+  // ==========================================
   async getWeeklyRuns(params?: {
     labAreaId?: number;
     labExamId?: number;
@@ -180,8 +392,11 @@ export const LabWorkflowService = {
     payload: {
       totalValidPatientExams: number;
       notes?: string;
+      allowExpiredOverride?: boolean;
       consumptions: Array<{
         labReagentUnitId: string | number;
+        rolloverUnitId?: string | number | null;
+        allowExpiredOverride?: boolean;
         externalCalibratorUnitId?: string | number | null;
         patientUses: number;
         repeatUses?: number;
@@ -191,9 +406,13 @@ export const LabWorkflowService = {
         calibratorNotes?: string | null;
         controlUses?: number;
         wasteUses?: number;
+        isPhysicallyExhausted?: boolean;
+        reportedRemainingUses?: number | null;
         isPrimaryKitDepleted?: boolean;
         primaryKitPhysicalRemainingUses?: number | null;
         calibratorPhysicalRemainingUses?: number | null;
+        isExternalCalibratorDepleted?: boolean;
+        externalCalibratorPhysicalRemainingUses?: number | null;
       }>;
     }
   ): Promise<LabWeeklyRun> {
@@ -202,6 +421,7 @@ export const LabWorkflowService = {
       consumptions: payload.consumptions.map((c) => ({
         ...c,
         labReagentUnitId: String(c.labReagentUnitId),
+        rolloverUnitId: c.rolloverUnitId ? String(c.rolloverUnitId) : undefined,
         externalCalibratorUnitId: c.externalCalibratorUnitId ? String(c.externalCalibratorUnitId) : null,
       })),
     });
@@ -209,7 +429,65 @@ export const LabWorkflowService = {
     return res.data.data;
   },
 
-  // Cuarentena e Incidencias
+  async quickConsumeReagent(payload: {
+    examId: number;
+    labAreaId: number;
+    unitId: string | number;
+    validPatientsCount: number;
+    repeatUses?: number;
+    repeatReason?: string | null;
+    repeatNotes?: string | null;
+    wasteUses?: number;
+    isPhysicallyExhausted?: boolean;
+    reportedRemainingUses?: number | null;
+    allowExpiredOverride?: boolean;
+    calibratorUses?: number;
+    controlUses?: number;
+    notes?: string;
+  }): Promise<LabWeeklyRun> {
+    const res = await apiClient.post<ApiResponse<LabWeeklyRun>>("/lab/runs/quick-consume", {
+      ...payload,
+      unitId: String(payload.unitId),
+    });
+    if (!res.data.data) throw new Error(res.data.message || "Error al registrar el consumo rápido");
+    return res.data.data;
+  },
+
+  async failRunByCalibration(
+    runId: number,
+    payload: {
+      unitId: string | number;
+      totalWellsWasted: number;
+      calibratorUses?: number;
+      controlUses?: number;
+      isPhysicallyExhausted?: boolean;
+      reportedRemainingUses?: number | null;
+      allowExpiredOverride?: boolean;
+      notes?: string;
+      autoCloneNewRun?: boolean;
+    }
+  ): Promise<{ failedRun: LabWeeklyRun; clonedRun: LabWeeklyRun | null }> {
+    const res = await apiClient.post<
+      ApiResponse<{ failedRun: LabWeeklyRun; clonedRun: LabWeeklyRun | null }>
+    >(`/lab/runs/${runId}/fail-calibration`, {
+      ...payload,
+      unitId: String(payload.unitId),
+    });
+    if (!res.data.data) throw new Error(res.data.message || "Error al registrar la falla de calibración");
+    return res.data.data;
+  },
+
+  async reconcileFridgeAudit(auditId: number): Promise<FridgePhysicalAudit> {
+    const res = await apiClient.post<ApiResponse<FridgePhysicalAudit>>(
+      `/lab/fridge-audits/${auditId}/reconcile`
+    );
+    if (!res.data.data) throw new Error(res.data.message || "Error al conciliar arqueo físico");
+    return res.data.data;
+  },
+
+  // ==========================================
+  // 8. CUARENTENA TÉCNICA E INCIDENCIAS
+  // ==========================================
   async getQuarantineIncidents(params?: {
     instanceType?: string;
     resolutionStatus?: string;
@@ -245,5 +523,29 @@ export const LabWorkflowService = {
   ): Promise<unknown> {
     const res = await apiClient.post<ApiResponse<unknown>>(`/lab/quarantine/${incidentId}/resolve`, payload);
     return res.data.data;
+  },
+
+  // ==========================================
+  // 9. AUDITORÍA INMUTABLE DE CONSUMOS (5D)
+  // ==========================================
+  async getConsumptionAuditLogs(params?: {
+    labAreaId?: number;
+    labExamId?: number;
+    weeklyRunId?: number;
+    concept?: string;
+    labReagentUnitId?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<LabConsumptionAuditLog[]> {
+    const query = new URLSearchParams();
+    if (params?.labAreaId) query.append("labAreaId", String(params.labAreaId));
+    if (params?.labExamId) query.append("labExamId", String(params.labExamId));
+    if (params?.weeklyRunId) query.append("weeklyRunId", String(params.weeklyRunId));
+    if (params?.concept) query.append("concept", params.concept);
+    if (params?.labReagentUnitId) query.append("labReagentUnitId", params.labReagentUnitId);
+    if (params?.startDate) query.append("startDate", params.startDate);
+    if (params?.endDate) query.append("endDate", params.endDate);
+    const res = await apiClient.get<ApiResponse<LabConsumptionAuditLog[]>>(`/lab/audit-logs?${query.toString()}`);
+    return res.data.data || [];
   },
 };

@@ -12,8 +12,11 @@ import {
   DocumentMetadataGrid,
   DocumentSignatures,
   DocumentFooter,
-  PrintActionButton,
 } from "@/components/common/PrintableDocument";
+import {
+  UniversalPdfDownloadButton,
+  DirectPaymentPdfDocument,
+} from "@/components/pdf";
 import {
   ArrowLeft,
   Building2,
@@ -128,7 +131,13 @@ export default function DirectPaymentDetailPage() {
           </Link>
         </Button>
 
-        <PrintActionButton label="Imprimir Comprobante" />
+        <UniversalPdfDownloadButton
+          document={<DirectPaymentPdfDocument payment={{ ...payment, voucherCode }} />}
+          fileName={`Comprobante_Egreso_${String(voucherCode || payment.id).replace(/[^a-zA-Z0-9_-]/g, "_")}`}
+          buttonLabel="Descargar PDF"
+          previewLabel="Vista Previa"
+          dialogTitle={`Comprobante de Egreso: ${voucherCode}`}
+        />
       </div>
 
       {/* DOCUMENTO IMPRIMIBLE FORMAL DE EGRESO (VOUCHER) */}

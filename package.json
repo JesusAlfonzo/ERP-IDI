@@ -2,5 +2,12 @@
   "name": "erp-idi",
   "version": "1.0.0",
   "private": true,
-  "packageManager": "pnpm@11.25.0"
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "dev:backend": "pnpm --filter backend dev",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "build": "pnpm -r build",
+    "start": "pnpm -r start"
+  }
 }

@@ -19,11 +19,16 @@ export interface CustomReportData {
   reportType: 'KARDEX' | 'SUPPLIER_PAYMENTS' | 'DEPARTMENT_CONSUMPTION' | 'BATCH_EXPIRATION';
   generatedAt: string;
   totalRecords: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   summary: Record<string, any>;
-  rows?: any[];
-  orders?: any[];
-  directPayments?: any[];
-  supplierSummaries?: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  rows?: Record<string, any>[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  orders?: Record<string, any>[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  directPayments?: Record<string, any>[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supplierSummaries?: Record<string, any>[];
 }
 
 export const ReportClientService = {

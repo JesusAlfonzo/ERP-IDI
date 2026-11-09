@@ -59,6 +59,8 @@ apiClient.interceptors.response.use(
     ) {
       localStorage.removeItem("erp_token");
       localStorage.removeItem("erp_user");
+      document.cookie =
+        "erp_token=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = "/login";
     }

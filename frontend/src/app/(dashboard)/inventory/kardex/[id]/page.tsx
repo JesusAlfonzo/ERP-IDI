@@ -10,8 +10,8 @@ import {
   DocumentMetadataGrid,
   DocumentSignatures,
   DocumentFooter,
-  PrintActionButton,
 } from "@/components/common/PrintableDocument";
+import { UniversalPdfDownloadButton, KardexPdfDocument } from "@/components/pdf";
 import {
   FileText,
   ArrowLeft,
@@ -193,7 +193,13 @@ export default function KardexDetailPage() {
         </Button>
 
         <div className="flex items-center gap-2">
-          <PrintActionButton label="Imprimir / Exportar PDF" />
+          <UniversalPdfDownloadButton
+            document={<KardexPdfDocument movement={movement} />}
+            fileName={`Comprobante_Movimiento_${(movement.referenceNumber || `MOV_${movement.id}`).replace(/[^a-zA-Z0-9_-]/g, "_")}`}
+            buttonLabel="Descargar PDF"
+            previewLabel="Vista Previa"
+            dialogTitle={`Comprobante de Movimiento: ${movement.referenceNumber || `#MOV-${movement.id}`}`}
+          />
         </div>
       </div>
 
@@ -203,9 +209,9 @@ export default function KardexDetailPage() {
           title="Comprobante de Movimiento de Almacén"
           subtitle="Instituto de Inmunología Clínica · ERP-IDI"
           documentNumber={movement.referenceNumber || `#MOV-${movement.id}`}
-          badge={movement.type.replace(/_/g, " ")}
+          badge={(movement.type || "MOVIMIENTO").replace(/_/g, " ")}
           status={{
-            label: movement.type.replace(/_/g, " "),
+            label: (movement.type || "MOVIMIENTO").replace(/_/g, " "),
             className: getTypeBadge(movement.type),
           }}
           date={new Date(movement.createdAt).toLocaleString("es-VE")}
@@ -254,7 +260,7 @@ export default function KardexDetailPage() {
             },
             {
               label: "Tipo de Operación",
-              value: movement.type.replace(/_/g, " "),
+              value: (movement.type || "MOVIMIENTO").replace(/_/g, " "),
             },
             {
               label: "Notas / Justificación",

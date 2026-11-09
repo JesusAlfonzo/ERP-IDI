@@ -325,7 +325,7 @@ describe('FASE 2: Flujo Operativo del Laboratorio Clínico', () => {
         lotNumber: 'LOT-KIT-P2-B',
         currentQuantity: 1,
         costPrice: 48.0,
-        expirationDate: new Date('2026-10-31'),
+        expirationDate: new Date('2026-11-30'),
         ownershipType: StockOwnership.CLINICAL_ROUTINE,
       },
     });
@@ -393,7 +393,7 @@ describe('FASE 2: Flujo Operativo del Laboratorio Clínico', () => {
         unitCostPerUse: 0.50,
         status: LabUnitStatus.EN_USO,
         assignedLabAreaId: areaInmunoId,
-        expirationDate: new Date('2026-10-31'),
+        expirationDate: new Date('2026-11-30'),
         ownershipType: StockOwnership.CLINICAL_ROUTINE,
       },
     });

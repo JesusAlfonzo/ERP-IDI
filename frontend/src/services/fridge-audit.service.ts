@@ -45,4 +45,12 @@ export const FridgeAuditService = {
     if (!res.data.data) throw new Error(res.data.message || "Error al registrar arqueo físico");
     return res.data.data;
   },
+
+  async reconcileFridgeAudit(auditId: number): Promise<FridgePhysicalAudit> {
+    const res = await apiClient.post<ApiResponse<FridgePhysicalAudit>>(
+      `/fridge-audits/${auditId}/reconcile`
+    );
+    if (!res.data.data) throw new Error(res.data.message || "Error al conciliar arqueo físico");
+    return res.data.data;
+  },
 };

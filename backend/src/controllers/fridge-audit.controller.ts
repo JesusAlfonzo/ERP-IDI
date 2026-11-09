@@ -18,7 +18,7 @@ export const createFridgeAudit = async (
       return;
     }
 
-    const { notes, items } = req.body;
+    const { notes, items, autoReconcile } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       res.status(400).json({
@@ -31,6 +31,7 @@ export const createFridgeAudit = async (
     const audit = await FridgeAuditService.createFridgeAudit({
       performedById,
       notes,
+      autoReconcile: autoReconcile !== undefined ? Boolean(autoReconcile) : undefined,
       items,
     });
 
@@ -87,6 +88,36 @@ export const getFridgeAuditById = async (
 
     res.status(200).json({
       status: 'SUCCESS',
+      data: serializeBigInt(audit),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const reconcileFridgeAudit = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?.id ? Number(req.user.id) : undefined;
+    if (!userId) {
+      res.status(401).json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const auditId = Number(req.params.id);
+    if (isNaN(auditId)) {
+      res.status(400).json({ status: 'BAD_REQUEST', message: 'ID de auditoría inválido' });
+      return;
+    }
+
+    const audit = await FridgeAuditService.reconcileFridgeAudit(auditId, userId);
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Arqueo físico de nevera conciliado y stocks regularizados exitosamente',
       data: serializeBigInt(audit),
     });
   } catch (error) {

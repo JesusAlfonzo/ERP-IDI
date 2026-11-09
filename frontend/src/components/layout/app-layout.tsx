@@ -18,7 +18,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
 
   // Forzar modo claro de forma permanente dentro del sistema interno
   useEffect(() => {
@@ -39,24 +46,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         router.replace("/login");
         return;
       }
+      const token = AuthService.getToken();
+      if (token) {
+        AuthService.setAuthCookie(token);
+      }
       setUser(AuthService.getCurrentUser());
       setLoading(false);
     };
 
     void checkAuth();
   }, [router]);
-
-  // Cargar preferencia persistida del estado del sidebar al montar el componente
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(SIDEBAR_STORAGE_KEY);
-      if (saved !== null) {
-        setSidebarCollapsed(saved === "true");
-      }
-    } catch (e) {
-      console.error("Error al leer preferencia del sidebar:", e);
-    }
-  }, []);
 
   const handleToggleSidebarCollapse = () => {
     setSidebarCollapsed((prev) => {

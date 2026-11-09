@@ -4,7 +4,14 @@ export type FridgeStatus =
   | "DEFECTUOSO"
   | "FUERA_DE_SERVICIO";
 
-export type LabUnitStatus = "SELLADO" | "EN_USO" | "AGOTADO" | "DESCARTADO";
+export type LabUnitStatus =
+  | "IN_TRANSIT_TO_LAB"
+  | "SELLADO"
+  | "EN_USO"
+  | "INTERNAL_QUARANTINE"
+  | "AGOTADO"
+  | "DISCARDED"
+  | "DESCARTADO";
 
 export interface LabFridge {
   id: number;
@@ -26,6 +33,11 @@ export interface ReagentInFridge {
   currentVolume: string | number;
   status: LabUnitStatus;
   expirationDate: string | null;
+  remainingUses?: number;
+  initialTheoreticalUses?: number;
+  ownershipType?: "CLINICAL_ROUTINE" | "RESEARCH_PROJECT" | "INSTITUTIONAL" | string;
+  assignedLabAreaId?: number | null;
+  assignedLabArea?: { id: number; name: string; code?: string } | null;
   product?: {
     name: string;
     sku: string;
@@ -70,6 +82,15 @@ export interface LabReagentUnitItem {
   unitCode: string;
   initialVolume: number | string;
   currentVolume: number | string;
+  remainingUses?: number;
+  initialTheoreticalUses?: number;
+  consumedUses?: number;
+  yieldVariance?: number;
+  unitCostPerUse?: number | string;
+  ownershipType?: "CLINICAL_ROUTINE" | "RESEARCH_PROJECT" | "INSTITUTIONAL" | string;
+  assignedLabAreaId?: number | null;
+  assignedLabArea?: { id: number; name: string; code: string } | null;
+  openedAt?: string | null;
   status: LabUnitStatus;
   expirationDate: string | null;
   product: {

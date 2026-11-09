@@ -31,7 +31,7 @@ import {
   ShieldAlert,
   AlertTriangle,
 } from "lucide-react";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Card, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableHeader,
@@ -60,11 +60,7 @@ export default function DirectPaymentsPage() {
   const [loading, setLoading] = useState(true);
   const [, startTransition] = useTransition();
   // Roles & Permisos
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
-
-  useEffect(() => {
-    setCurrentUser(AuthService.getCurrentUser());
-  }, []);
+  const [currentUser] = useState<AuthUser | null>(() => AuthService.getCurrentUser());
 
   const userRoles = currentUser?.roles || [];
   const isAdmin = userRoles.includes("ADMINISTRADOR");
@@ -236,7 +232,6 @@ export default function DirectPaymentsPage() {
     dynamicEquivalentBs = parsedAmt * rateEur;
     dynamicEquivalentUsd = bcvRates.USD > 0 ? dynamicEquivalentBs / bcvRates.USD : parsedAmt;
   }
-  const dynamicEquivalentUsdVal = dynamicEquivalentUsd;
   const handleSubmitPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!concept.trim()) {

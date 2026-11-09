@@ -13,6 +13,20 @@ import {
   ConsumptionConcept,
 } from '@prisma/client';
 
+const ANALYTICAL_ROLES = [
+  'ADMINISTRADOR',
+  'COORDINADOR_LABORATORIO',
+  'COORDINADOR',
+  'LABORATORIO',
+  'BIOANALISTA',
+];
+
+const SUPERVISORY_ROLES = [
+  'ADMINISTRADOR',
+  'COORDINADOR_LABORATORIO',
+  'COORDINADOR',
+];
+
 export const getFridges = async (
   req: Request,
   res: Response,
@@ -62,9 +76,7 @@ export const assignUnitToFridge = async (
     }
 
     const userRoles = req.user?.roles ?? [];
-    const isAuthorized =
-      userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('LABORATORIO');
+    const isAuthorized = userRoles.some((r) => ANALYTICAL_ROLES.includes(r));
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -109,14 +121,12 @@ export const createFridge = async (
     }
 
     const userRoles = req.user?.roles ?? [];
-    const isAuthorized =
-      userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('LABORATORIO');
+    const isAuthorized = userRoles.some((r) => SUPERVISORY_ROLES.includes(r));
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
         message:
-          'Acceso denegado: Se requieren privilegios de Laboratorio Clínico o Administración.',
+          'Acceso denegado: Se requieren privilegios de Coordinación de Laboratorio o Administración.',
       });
       return;
     }
@@ -165,9 +175,7 @@ export const createLabUnit = async (
     }
 
     const userRoles = req.user?.roles ?? [];
-    const isAuthorized =
-      userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('LABORATORIO');
+    const isAuthorized = userRoles.some((r) => ANALYTICAL_ROLES.includes(r));
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -353,9 +361,7 @@ export const registerReagentConsumption = async (
     }
 
     const userRoles = req.user?.roles ?? [];
-    const isAuthorized =
-      userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('LABORATORIO');
+    const isAuthorized = userRoles.some((r) => ANALYTICAL_ROLES.includes(r));
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -407,9 +413,7 @@ export const assignBatchToFridge = async (
     }
 
     const userRoles = req.user?.roles ?? [];
-    const isAuthorized =
-      userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('LABORATORIO');
+    const isAuthorized = userRoles.some((r) => ANALYTICAL_ROLES.includes(r));
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -502,9 +506,7 @@ export const openLabUnit = async (
     }
 
     const userRoles = req.user?.roles ?? [];
-    const isAuthorized =
-      userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('LABORATORIO');
+    const isAuthorized = userRoles.some((r) => ANALYTICAL_ROLES.includes(r));
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -550,9 +552,7 @@ export const consumeLabUnit = async (
     }
 
     const userRoles = req.user?.roles ?? [];
-    const isAuthorized =
-      userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('LABORATORIO');
+    const isAuthorized = userRoles.some((r) => ANALYTICAL_ROLES.includes(r));
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -613,9 +613,7 @@ export const transferFridge = async (
     }
 
     const userRoles = req.user?.roles ?? [];
-    const isAuthorized =
-      userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('LABORATORIO');
+    const isAuthorized = userRoles.some((r) => ANALYTICAL_ROLES.includes(r));
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -676,14 +674,12 @@ export const discardLabUnit = async (
     }
 
     const userRoles = req.user?.roles ?? [];
-    const isAuthorized =
-      userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('LABORATORIO');
+    const isAuthorized = userRoles.some((r) => SUPERVISORY_ROLES.includes(r));
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
         message:
-          'Acceso denegado: Se requieren privilegios de Laboratorio Clínico o Administración.',
+          'Acceso denegado: Se requieren privilegios de Coordinación de Laboratorio o Administración para descartar unidades.',
       });
       return;
     }
@@ -781,9 +777,7 @@ export const resolveQuarantine = async (
     }
 
     const userRoles = req.user?.roles ?? [];
-    const isAuthorized =
-      userRoles.includes('ADMINISTRADOR') ||
-      userRoles.includes('LABORATORIO');
+    const isAuthorized = userRoles.some((r) => SUPERVISORY_ROLES.includes(r));
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
@@ -966,6 +960,28 @@ export const getUserLabAreas = async (
       return;
     }
 
+    const roles = req.user?.roles ?? [];
+    const isGlobalManager =
+      roles.includes('ADMINISTRADOR') ||
+      roles.includes('COORDINADOR_LABORATORIO') ||
+      roles.includes('COORDINADOR');
+
+    // Si es supervisor global y está consultando sus propias áreas (/my-areas), devolver todas las áreas existentes
+    if (isGlobalManager && !req.params.id) {
+      const allAreas = await LabService.listLabAreas();
+      const mapped = allAreas.map((la) => ({
+        userId,
+        labAreaId: la.id,
+        labArea: la,
+        createdAt: new Date(),
+      }));
+      res.status(200).json({
+        status: 'SUCCESS',
+        data: serializeBigInt(mapped),
+      });
+      return;
+    }
+
     const areas = await LabService.getUserLabAreas(userId);
     res.status(200).json({
       status: 'SUCCESS',
@@ -1029,7 +1045,15 @@ export const createLabExam = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { code, name, description, areaId, compatibleProductIds } = req.body;
+    const {
+      code,
+      name,
+      description,
+      areaId,
+      defaultCalibratorUses,
+      defaultControlUses,
+      compatibleProductIds,
+    } = req.body;
     if (!code || !name) {
       res.status(400).json({ status: 'BAD_REQUEST', message: 'code y name son obligatorios' });
       return;
@@ -1040,6 +1064,10 @@ export const createLabExam = async (
       name: String(name),
       description: description ? String(description) : null,
       areaId: areaId ? Number(areaId) : null,
+      defaultCalibratorUses:
+        defaultCalibratorUses !== undefined ? Number(defaultCalibratorUses) : undefined,
+      defaultControlUses:
+        defaultControlUses !== undefined ? Number(defaultControlUses) : undefined,
       compatibleProductIds: Array.isArray(compatibleProductIds)
         ? compatibleProductIds.map((id: any) => BigInt(id))
         : undefined,
@@ -1061,13 +1089,25 @@ export const updateLabExam = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { name, description, areaId, isActive, compatibleProductIds } = req.body;
+    const {
+      name,
+      description,
+      areaId,
+      isActive,
+      defaultCalibratorUses,
+      defaultControlUses,
+      compatibleProductIds,
+    } = req.body;
 
     const exam = await LabService.updateLabExam(Number(req.params.id), {
       name: name ? String(name) : undefined,
       description: description !== undefined ? String(description) : undefined,
       areaId: areaId !== undefined ? (areaId ? Number(areaId) : null) : undefined,
       isActive: isActive !== undefined ? Boolean(isActive) : undefined,
+      defaultCalibratorUses:
+        defaultCalibratorUses !== undefined ? Number(defaultCalibratorUses) : undefined,
+      defaultControlUses:
+        defaultControlUses !== undefined ? Number(defaultControlUses) : undefined,
       compatibleProductIds: Array.isArray(compatibleProductIds)
         ? compatibleProductIds.map((id: any) => BigInt(id))
         : undefined,
@@ -1450,7 +1490,12 @@ export const closeWeeklyRun = async (
       return;
     }
 
-    const { totalValidPatientExams, notes, consumptions } = req.body;
+    const {
+      totalValidPatientExams,
+      notes,
+      consumptions,
+      allowExpiredOverride,
+    } = req.body;
     if (!Array.isArray(consumptions) || consumptions.length === 0) {
       res.status(400).json({
         status: 'BAD_REQUEST',
@@ -1462,10 +1507,20 @@ export const closeWeeklyRun = async (
     const closedRun = await LabService.closeWeeklyRun({
       runId: Number(req.params.id),
       bioanalystId: req.user.id,
+      userRoles: req.user.roles ?? [],
       totalValidPatientExams: Number(totalValidPatientExams || 0),
       notes: notes ? String(notes) : null,
+      allowExpiredOverride:
+        allowExpiredOverride !== undefined ? Boolean(allowExpiredOverride) : undefined,
       consumptions: consumptions.map((c: any) => ({
         labReagentUnitId: BigInt(c.labReagentUnitId),
+        rolloverUnitId: c.rolloverUnitId ? BigInt(c.rolloverUnitId) : undefined,
+        allowExpiredOverride:
+          c.allowExpiredOverride !== undefined
+            ? Boolean(c.allowExpiredOverride)
+            : allowExpiredOverride !== undefined
+            ? Boolean(allowExpiredOverride)
+            : undefined,
         externalCalibratorUnitId: c.externalCalibratorUnitId
           ? BigInt(c.externalCalibratorUnitId)
           : null,
@@ -1473,15 +1528,35 @@ export const closeWeeklyRun = async (
         repeatUses: Number(c.repeatUses || 0),
         repeatReason: c.repeatReason ? (c.repeatReason as RepeatReason) : null,
         repeatNotes: c.repeatNotes ? String(c.repeatNotes) : null,
-        calibratorUses: Number(c.calibratorUses || 0),
+        calibratorUses:
+          c.calibratorUses !== undefined && c.calibratorUses !== null
+            ? Number(c.calibratorUses)
+            : undefined,
         calibratorNotes: c.calibratorNotes ? String(c.calibratorNotes) : null,
-        controlUses: Number(c.controlUses || 0),
+        controlUses:
+          c.controlUses !== undefined && c.controlUses !== null
+            ? Number(c.controlUses)
+            : undefined,
         wasteUses: Number(c.wasteUses || 0),
-        isPrimaryKitDepleted: Boolean(c.isPrimaryKitDepleted),
+        isPhysicallyExhausted:
+          c.isPhysicallyExhausted !== undefined
+            ? Boolean(c.isPhysicallyExhausted)
+            : Boolean(c.isPrimaryKitDepleted),
+        reportedRemainingUses:
+          c.reportedRemainingUses !== undefined && c.reportedRemainingUses !== null
+            ? Number(c.reportedRemainingUses)
+            : c.primaryKitPhysicalRemainingUses !== undefined &&
+              c.primaryKitPhysicalRemainingUses !== null
+            ? Number(c.primaryKitPhysicalRemainingUses)
+            : undefined,
+        isPrimaryKitDepleted: Boolean(c.isPrimaryKitDepleted || c.isPhysicallyExhausted),
         primaryKitPhysicalRemainingUses:
           c.primaryKitPhysicalRemainingUses !== undefined &&
           c.primaryKitPhysicalRemainingUses !== null
             ? Number(c.primaryKitPhysicalRemainingUses)
+            : c.reportedRemainingUses !== undefined &&
+              c.reportedRemainingUses !== null
+            ? Number(c.reportedRemainingUses)
             : null,
         isExternalCalibratorDepleted: Boolean(c.isExternalCalibratorDepleted),
         externalCalibratorPhysicalRemainingUses:
@@ -1496,6 +1571,180 @@ export const closeWeeklyRun = async (
       status: 'SUCCESS',
       message: 'Corrida semanal cerrada, stock conciliado y auditoría 5D registrada exitosamente',
       data: serializeBigInt(closedRun),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const quickConsumeReagent = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    if (!req.user?.id) {
+      res.status(401).json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const {
+      examId,
+      labAreaId,
+      unitId,
+      validPatientsCount,
+      repeatUses,
+      repeatReason,
+      repeatNotes,
+      wasteUses,
+      isPhysicallyExhausted,
+      reportedRemainingUses,
+      notes,
+      allowExpiredOverride,
+      calibratorUses,
+      controlUses,
+    } = req.body;
+
+    if (!examId || !labAreaId || !unitId) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'examId, labAreaId y unitId son obligatorios para el consumo rápido',
+      });
+      return;
+    }
+
+    const patientsCount = Number(validPatientsCount);
+    if (isNaN(patientsCount) || patientsCount <= 0) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'validPatientsCount debe ser un número entero mayor a 0',
+      });
+      return;
+    }
+
+    const closedRun = await LabService.quickConsumeReagent({
+      examId: Number(examId),
+      labAreaId: Number(labAreaId),
+      unitId: BigInt(unitId),
+      validPatientsCount: patientsCount,
+      repeatUses: repeatUses !== undefined ? Number(repeatUses) : undefined,
+      repeatReason: repeatReason ? (repeatReason as RepeatReason) : null,
+      repeatNotes: repeatNotes ? String(repeatNotes) : null,
+      wasteUses: wasteUses !== undefined ? Number(wasteUses) : undefined,
+      isPhysicallyExhausted: Boolean(isPhysicallyExhausted),
+      reportedRemainingUses:
+        reportedRemainingUses !== undefined && reportedRemainingUses !== null
+          ? Number(reportedRemainingUses)
+          : undefined,
+      notes: notes ? String(notes) : null,
+      allowExpiredOverride: Boolean(allowExpiredOverride),
+      calibratorUses: calibratorUses !== undefined ? Number(calibratorUses) : undefined,
+      controlUses: controlUses !== undefined ? Number(controlUses) : undefined,
+      userId: req.user.id,
+      userRoles: req.user.roles ?? [],
+    });
+
+    res.status(201).json({
+      status: 'SUCCESS',
+      message: 'Prueba rápida registrada, corrida cerrada y auditoría 5D generada exitosamente',
+      data: serializeBigInt(closedRun),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const failRunByCalibration = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    if (!req.user?.id) {
+      res.status(401).json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const runId = Number(req.params.id);
+    if (isNaN(runId)) {
+      res.status(400).json({ status: 'BAD_REQUEST', message: 'ID de corrida inválido' });
+      return;
+    }
+
+    const {
+      unitId,
+      totalWellsWasted,
+      calibratorUses,
+      controlUses,
+      isPhysicallyExhausted,
+      reportedRemainingUses,
+      notes,
+      autoCloneNewRun,
+      allowExpiredOverride,
+    } = req.body;
+
+    if (!unitId || totalWellsWasted === undefined) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'unitId y totalWellsWasted son obligatorios',
+      });
+      return;
+    }
+
+    const result = await LabService.failRunByCalibration({
+      runId,
+      unitId: BigInt(unitId),
+      totalWellsWasted: Number(totalWellsWasted),
+      calibratorUses: calibratorUses !== undefined ? Number(calibratorUses) : undefined,
+      controlUses: controlUses !== undefined ? Number(controlUses) : undefined,
+      isPhysicallyExhausted: Boolean(isPhysicallyExhausted),
+      reportedRemainingUses:
+        reportedRemainingUses !== undefined && reportedRemainingUses !== null
+          ? Number(reportedRemainingUses)
+          : undefined,
+      notes: notes ? String(notes) : null,
+      autoCloneNewRun: autoCloneNewRun !== undefined ? Boolean(autoCloneNewRun) : true,
+      allowExpiredOverride: Boolean(allowExpiredOverride),
+      userId: req.user.id,
+      userRoles: req.user.roles ?? [],
+    });
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Falla de calibración registrada y corrida clonada exitosamente para reproceso',
+      data: serializeBigInt(result),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const reconcileFridgeAudit = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    if (!req.user?.id) {
+      res.status(401).json({ status: 'UNAUTHORIZED', message: 'Usuario no autenticado' });
+      return;
+    }
+
+    const auditId = Number(req.params.id);
+    if (isNaN(auditId)) {
+      res.status(400).json({ status: 'BAD_REQUEST', message: 'ID de arqueo físico inválido' });
+      return;
+    }
+
+    const reconciledAudit = await LabService.reconcileFridgeAudit(
+      auditId,
+      req.user.id
+    );
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Arqueo físico de nevera conciliado y stocks regularizados exitosamente',
+      data: serializeBigInt(reconciledAudit),
     });
   } catch (error) {
     next(error);

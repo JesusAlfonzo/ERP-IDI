@@ -17,7 +17,6 @@ import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
 import { useDebounce } from "@/hooks/use-debounce";
 import { toast } from "@/utils/toast";
-import { RequestWindowAdminCard } from "@/components/requests/RequestWindowAdminCard";
 import { TablePagination } from "@/components/common/TablePagination";
 import type {
   InternalRequest,
@@ -150,9 +149,8 @@ function RequestsContent() {
     userRoles.includes("LABORATORIO") ||
     userRoles.includes("COMPRAS");
 
-  // Validación de ventana y cupo para creación
-  const canCreate =
-    canCreateRole && (isWarehouseStaff || (windowStatus?.canCreate ?? false));
+  // Permisos para creación
+  const canCreate = canCreateRole;
 
   // Modal Despacho Multi-Lote (Solo Almacén)
   const [selectedForDispatch, setSelectedForDispatch] =
@@ -166,9 +164,6 @@ function RequestsContent() {
     status: "success" | "error";
     message: string;
   } | null>(null);
-
-  // Panel de administración de ventana para Administradores
-  const [showAdminConfig, setShowAdminConfig] = useState(false);
 
   // Referencias para evitar re-renders y bucles infinitos
   const batchesRef = useRef(availableBatches);
@@ -368,16 +363,12 @@ function RequestsContent() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  // Reiniciar a la primera página si cambian los filtros
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [statusFilter, debouncedSearchTerm]);
-
   const totalPages = Math.max(1, Math.ceil(filteredRequests.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
   const paginatedRequests = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
+    const start = (safeCurrentPage - 1) * pageSize;
     return filteredRequests.slice(start, start + pageSize);
-  }, [filteredRequests, currentPage, pageSize]);
+  }, [filteredRequests, safeCurrentPage, pageSize]);
 
   const handleApprove = async (req: InternalRequest) => {
     if (!isWarehouseStaff) return;
@@ -614,19 +605,6 @@ function RequestsContent() {
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-          {currentUser?.roles.includes("ADMINISTRADOR") && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowAdminConfig((prev) => !prev)}
-              className="gap-1.5"
-              title="Configurar ventana operativa semanal (Solo Administrador)"
-            >
-              <Sliders className="w-4 h-4 text-primary" />
-              {showAdminConfig ? "Ocultar Config. Ventana" : "Configurar Ventana"}
-            </Button>
-          )}
-
           {isWarehouseStaff && (
             <Button
               variant="outline"
@@ -642,13 +620,8 @@ function RequestsContent() {
 
           {canCreateRole && (
             <Button
-              disabled={!canCreate}
               onClick={() => router.push("/requests/new")}
-              title={
-                !canCreate
-                  ? windowStatus?.message || "Ventana cerrada o cupo agotado"
-                  : "Crear una nueva requisición"
-              }
+              title="Crear una nueva requisición"
               className="gap-2"
             >
               <Plus className="w-4 h-4" />
@@ -657,67 +630,6 @@ function RequestsContent() {
           )}
         </div>
       </div>
-
-      {/* Panel Administrador: Configuración de la Ventana Operativa */}
-      {showAdminConfig && currentUser?.roles.includes("ADMINISTRADOR") && (
-        <RequestWindowAdminCard onConfigUpdated={refreshData} />
-      )}
-
-      {/* Banner Informativo de Ventana Operativa Semanal */}
-      {windowStatus && (
-        <Alert
-          variant={
-            windowStatus.isSuspended
-              ? "destructive"
-              : windowStatus.isOpen
-                ? "success"
-                : "warning"
-          }
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
-        >
-          <div className="flex items-center gap-2.5">
-            {windowStatus.isSuspended ? (
-              <ShieldAlert className="w-5 h-5 shrink-0" />
-            ) : windowStatus.isOpen ? (
-              <Clock className="w-5 h-5 shrink-0" />
-            ) : (
-              <AlertCircle className="w-5 h-5 shrink-0" />
-            )}
-            <div>
-              <span className="font-bold">
-                {windowStatus.isSuspended
-                  ? "Ventana Suspendida: "
-                  : windowStatus.isOpen
-                    ? "Ventana Operativa Abierta: "
-                    : "Ventana Operativa Cerrada: "}
-              </span>
-              <span>{windowStatus.message}</span>
-              {!isWarehouseStaff && (
-                <div className="mt-0.5 text-[11px] opacity-85">
-                  Política institucional: 1 solicitud por semana por usuario
-                  (Lunes 05:00 AM - Miércoles 04:00 PM).{" "}
-                  {windowStatus.hasQuota ? (
-                    <strong className="font-semibold text-emerald-700">
-                      Dispones de 1 cupo activo esta semana.
-                    </strong>
-                  ) : (
-                    <strong className="font-semibold text-destructive">
-                      Ya consumiste tu cupo semanal correspondiente al ciclo{" "}
-                      {windowStatus.currentCycle}.
-                    </strong>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {isWarehouseStaff && (
-            <Badge variant="outline" className="shrink-0 text-[10px] font-bold">
-              Modo Almacén (Acceso 24/7)
-            </Badge>
-          )}
-        </Alert>
-      )}
 
       {feedback && (
         <Alert variant={feedback.status === "success" ? "success" : "destructive"}>
@@ -740,7 +652,10 @@ function RequestsContent() {
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
               <Input
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
                 placeholder="Buscar por N° solicitud, área, solicitante o insumo..."
                 className="pl-9 pr-8 text-xs"
               />
@@ -748,7 +663,10 @@ function RequestsContent() {
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => setSearchTerm("")}
+                  onClick={() => {
+                    setSearchTerm("");
+                    setCurrentPage(1);
+                  }}
                   className="absolute right-1 top-1 text-muted-foreground"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -761,7 +679,10 @@ function RequestsContent() {
               <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
               >
                 <option value="">Todos los estados</option>
@@ -780,6 +701,7 @@ function RequestsContent() {
                 onClick={() => {
                   setSearchTerm("");
                   setStatusFilter("");
+                  setCurrentPage(1);
                 }}
                 className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-9"
                 title="Restablecer búsqueda y filtros"
@@ -967,7 +889,7 @@ function RequestsContent() {
 
         {/* Barra de Paginación */}
         <TablePagination
-          currentPage={currentPage}
+          currentPage={safeCurrentPage}
           totalPages={totalPages}
           pageSize={pageSize}
           totalItems={filteredRequests.length}

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
@@ -14,28 +15,23 @@ import {
   DocumentMetadataGrid,
   DocumentSignatures,
   DocumentFooter,
-  PrintActionButton,
 } from "@/components/common/PrintableDocument";
+import {
+  UniversalPdfDownloadButton,
+  CustomReportPdfDocument,
+} from "@/components/pdf";
 import {
   FileText,
   Search,
   Filter,
   RefreshCw,
   FileSpreadsheet,
-  Calendar,
   Building,
-  User,
-  Package,
   Layers,
   Wallet,
   AlertTriangle,
-  CheckCircle2,
   SlidersHorizontal,
   ChevronRight,
-  TrendingUp,
-  DollarSign,
-  ShieldCheck,
-  Eye,
   Settings2,
 } from "lucide-react";
 
@@ -53,9 +49,9 @@ const REPORT_TYPE_CONFIG: Record<
 > = {
   KARDEX: {
     title: "Auditoría de Kardex y Movimientos",
-    description: "Trazabilidad cronológica de entradas por compras, salidas a sala, mermas, ajustes y egresos.",
+    description: "Historial cronológico de entradas por compras, salidas a sala, mermas, ajustes y egresos.",
     icon: FileText,
-    defaultDocTitle: "REPORTE DE TRAZABILIDAD Y MOVIMIENTOS DE KARDEX",
+    defaultDocTitle: "REPORTE DE AUDITORÍA Y MOVIMIENTOS DE KARDEX",
     accentColor: "blue",
   },
   SUPPLIER_PAYMENTS: {
@@ -250,10 +246,51 @@ export function CustomReportBuilder() {
     searchTerm,
   ]);
 
-  // Carga automática inicial
+  // Carga automática al cambiar filtros o tipo de reporte
   useEffect(() => {
-    void handleGenerateReport();
-  }, [handleGenerateReport]);
+    let active = true;
+    const loadInitial = async () => {
+      try {
+        const filters: CustomReportFilterParams = {
+          reportType,
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          supplierId: selectedSupplierId ? Number(selectedSupplierId) : undefined,
+          departmentId: selectedDepartmentId ? Number(selectedDepartmentId) : undefined,
+          productId: selectedProductId ? Number(selectedProductId) : undefined,
+          categoryId: selectedCategoryId ? Number(selectedCategoryId) : undefined,
+          movementType: selectedMovementType || undefined,
+          status: selectedStatus || undefined,
+          search: searchTerm || undefined,
+        };
+        const data = await ReportClientService.getCustomReport(filters);
+        if (active) {
+          setReportData(data);
+        }
+      } catch (err: unknown) {
+        if (active) {
+          setErrorMessage(
+            err instanceof Error ? err.message : "Error al procesar el reporte personalizado"
+          );
+        }
+      }
+    };
+    void loadInitial();
+    return () => {
+      active = false;
+    };
+  }, [
+    reportType,
+    startDate,
+    endDate,
+    selectedSupplierId,
+    selectedDepartmentId,
+    selectedProductId,
+    selectedCategoryId,
+    selectedMovementType,
+    selectedStatus,
+    searchTerm,
+  ]);
 
   // Exportar a CSV
   const handleExportCSV = () => {
@@ -424,6 +461,173 @@ export function CustomReportBuilder() {
     }
   };
 
+  const pdfConfig = useMemo(() => {
+    if (!reportData) return null;
+    const config = REPORT_TYPE_CONFIG[reportType];
+     
+    let columns: Array<{ key: string; label: string; width: string; align?: "left" | "center" | "right"; bold?: boolean }> = [];
+     
+    let rows: Record<string, any>[] = [];
+    let summaryItems: Array<{ label: string; value: string | number }> = [];
+
+    if (reportType === "KARDEX") {
+      const rowList = reportData.rows || [];
+      columns = [
+        { key: "fecha", label: "Fecha", width: "12%" },
+        { key: "referencia", label: "Referencia", width: "15%", bold: true },
+        { key: "tipo", label: "Tipo", width: "15%" },
+        { key: "insumo", label: "Insumo / Reactivo", width: "24%" },
+        { key: "lote", label: "Lote", width: "12%" },
+        { key: "cantidad", label: "Cantidad", width: "10%", align: "right", bold: true },
+        { key: "responsable", label: "Responsable", width: "12%" },
+      ];
+       
+      rows = rowList.map((r: any) => ({
+        fecha: r.createdAt ? new Date(r.createdAt).toLocaleDateString("es-VE") : "---",
+        referencia: r.referenceNumber || "S/R",
+        tipo: (r.type || "").replace(/_/g, " "),
+        insumo: r.productName || r.sku || "Insumo",
+        lote: r.lotNumber || "---",
+        cantidad: `${r.quantity} ${r.unit || "UND"}`,
+        responsable: r.user || r.responsibleName || "Sistema",
+      }));
+      summaryItems = [
+        { label: "Total Registros", value: rows.length },
+        { label: "Entradas", value: `+${reportData.summary?.totalEntries ?? 0}` },
+        { label: "Salidas / Mermas", value: `-${reportData.summary?.totalExits ?? 0}` },
+        { label: "Valoración Total", value: `$${Number(reportData.summary?.totalValueUsd ?? 0).toFixed(2)} USD` },
+      ];
+    } else if (reportType === "SUPPLIER_PAYMENTS") {
+      // Para compras y pagos, los datos vienen en reportData.orders (o reportData.rows como fallback)
+      const orderList = reportData.orders || reportData.rows || [];
+      columns = [
+        { key: "orden", label: "N° Orden", width: "12%", bold: true },
+        { key: "fecha", label: "Fecha", width: "10%" },
+        { key: "proveedor", label: "Proveedor", width: "22%" },
+        { key: "insumos", label: "Insumos Adquiridos", width: "26%" },
+        { key: "facturado", label: "Facturado ($)", width: "10%", align: "right", bold: true },
+        { key: "pagado", label: "Pagado ($)", width: "10%", align: "right" },
+        { key: "saldo", label: "Saldo ($)", width: "10%", align: "right" },
+      ];
+       
+      rows = orderList.map((ord: any) => {
+         
+        const itemsStr = Array.isArray(ord.items) && ord.items.length > 0
+           
+          ? ord.items.map((it: any) => `${it.name || "Item"} (${it.quantityReceived || it.quantityOrdered || 0} ${it.unit || "UND"})`).join(", ")
+          : ord.productName || "Insumos de orden";
+
+        const invoiced = Number(ord.invoicedUsd ?? ord.totalAmountUsd ?? ord.total ?? 0);
+        const paid = Number(ord.paidUsd ?? 0);
+        const pending = Number(ord.pendingDebtUsd ?? Math.max(0, invoiced - paid));
+
+        return {
+          orden: ord.orderNumber ? `#${ord.orderNumber}` : `#${ord.id}`,
+          fecha: ord.createdAt ? new Date(ord.createdAt).toLocaleDateString("es-VE") : "---",
+          proveedor: ord.supplierName ? `${ord.supplierName} (${ord.supplierRif || "S/R"})` : "Proveedor",
+          insumos: itemsStr,
+          facturado: `$ ${invoiced.toFixed(2)}`,
+          pagado: `$ ${paid.toFixed(2)}`,
+          saldo: `$ ${pending.toFixed(2)}`,
+        };
+      });
+      summaryItems = [
+        { label: "Órdenes Evaluadas", value: reportData.summary?.totalOrdersCount ?? rows.length },
+        { label: "Total Facturado", value: `$${Number(reportData.summary?.totalInvoicedUsd ?? 0).toFixed(2)} USD` },
+        { label: "Total Pagado", value: `$${Number(reportData.summary?.totalPaidUsd ?? 0).toFixed(2)} USD` },
+        { label: "Saldo Pendiente", value: `$${Number(reportData.summary?.totalPendingDebtUsd ?? 0).toFixed(2)} USD` },
+      ];
+    } else if (reportType === "DEPARTMENT_CONSUMPTION") {
+      const reqList = reportData.rows || [];
+      columns = [
+        { key: "solicitud", label: "N° Solicitud", width: "14%", bold: true },
+        { key: "fecha", label: "Fecha", width: "10%" },
+        { key: "depto", label: "Departamento / Sala", width: "20%" },
+        { key: "justificacion", label: "Justificación / Protocolo", width: "20%" },
+        { key: "insumos", label: "Insumos Despachados", width: "24%" },
+        { key: "solicitante", label: "Solicitante", width: "12%" },
+      ];
+       
+      rows = reqList.map((req: any) => {
+         
+        const itemsStr = Array.isArray(req.items) && req.items.length > 0
+           
+          ? req.items.map((it: any) => `${it.productName || it.name} (${it.quantityDispatched ?? it.quantityRequested ?? 0} ${it.unit || "UND"})`).join(", ")
+          : "Insumos varios";
+
+        return {
+          solicitud: req.requestNumber ? `#${req.requestNumber}` : `#${req.id}`,
+          fecha: req.createdAt ? new Date(req.createdAt).toLocaleDateString("es-VE") : "---",
+          depto: `${req.departmentName || ""}${req.section ? ` - ${req.section}` : ""}`,
+          justificacion: req.justification || "Uso clínico general",
+          insumos: itemsStr,
+          solicitante: req.requester || "Personal",
+        };
+      });
+      summaryItems = [
+        { label: "Solicitudes", value: reportData.summary?.totalRequests ?? rows.length },
+        { label: "Insumos Despachados", value: `${reportData.summary?.totalItemsDispatched ?? 0} unid.` },
+        { label: "Departamentos", value: reportData.summary?.totalDepartmentsCount ?? "Varios" },
+        { label: "Período", value: startDate && endDate ? `${startDate} al ${endDate}` : "Histórico" },
+      ];
+    } else if (reportType === "BATCH_EXPIRATION") {
+      const batchList = reportData.rows || [];
+      columns = [
+        { key: "sku", label: "SKU", width: "16%", bold: true },
+        { key: "insumo", label: "Producto / Reactivo", width: "24%" },
+        { key: "lote", label: "Lote", width: "12%", bold: true },
+        { key: "existencia", label: "Existencia", width: "12%", align: "right", bold: true },
+        { key: "total", label: "Valor Total ($)", width: "12%", align: "right" },
+        { key: "vencimiento", label: "Vencimiento", width: "12%" },
+        { key: "estado", label: "Condición", width: "12%", align: "center" },
+      ];
+       
+      rows = batchList.map((b: any) => ({
+        sku: b.sku || "---",
+        insumo: b.productName || "Insumo",
+        lote: b.lotNumber || "---",
+        existencia: `${b.currentQuantity ?? 0} ${b.unit || "UND"}`,
+        total: `$ ${Number(b.totalValueUsd || 0).toFixed(2)}`,
+        vencimiento: b.expirationDate ? new Date(b.expirationDate).toLocaleDateString("es-VE") : "N/A",
+        estado: b.expirationCategory?.replace(/_/g, " ") || b.status || "ACTIVO",
+      }));
+      summaryItems = [
+        { label: "Lotes Evaluados", value: reportData.summary?.totalBatchesCount ?? rows.length },
+        { label: "Valor Inventario", value: `$${Number(reportData.summary?.totalInventoryValueUsd ?? 0).toFixed(2)} USD` },
+        { label: "Lotes Vencidos", value: reportData.summary?.expiredCount ?? 0 },
+        { label: "Próximos a Vencer", value: reportData.summary?.soonToExpireCount ?? 0 },
+      ];
+    } else {
+      const rowList = reportData.rows || reportData.orders || [];
+      const firstRow = rowList[0] || {};
+      const keys = Object.keys(firstRow).filter((k) => typeof firstRow[k] !== "object").slice(0, 6);
+      columns = keys.map((k) => ({
+        key: k,
+        label: k.toUpperCase(),
+        width: `${Math.floor(100 / Math.max(1, keys.length))}%`,
+      }));
+       
+      rows = rowList.map((r: any) => {
+         
+        const item: Record<string, any> = {};
+        keys.forEach((k) => { item[k] = r[k]; });
+        return item;
+      });
+      summaryItems = [
+        { label: "Total Registros", value: rows.length },
+        { label: "Período", value: startDate && endDate ? `${startDate} al ${endDate}` : "Histórico" },
+      ];
+    }
+
+    return {
+      title: customTitle || config.title,
+      subtitle: customSubtitle || config.description,
+      columns,
+      rows,
+      summaryItems,
+    };
+  }, [reportData, reportType, customTitle, customSubtitle, startDate, endDate]);
+
   return (
     <div className="space-y-6">
       {/* Selector de Tipo de Reporte (Pantalla) */}
@@ -435,7 +639,7 @@ export function CustomReportBuilder() {
               Generador de Reportes Personalizados
             </h2>
             <p className="text-xs text-muted-foreground">
-              Auditoría y trazabilidad avanzada de compras, insumos consumidos por sala y pagos a proveedores
+              Auditoría y control de compras, insumos consumidos por sala y pagos a proveedores
             </p>
           </div>
 
@@ -457,7 +661,32 @@ export function CustomReportBuilder() {
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>{downloadingCsv ? "Exportando..." : "Exportar CSV"}</span>
             </button>
-            <PrintActionButton label="Imprimir / PDF Íntegro" />
+            {pdfConfig ? (
+              <UniversalPdfDownloadButton
+                document={
+                  <CustomReportPdfDocument
+                    title={pdfConfig.title}
+                    subtitle={pdfConfig.subtitle}
+                    dateRange={startDate && endDate ? `${startDate} al ${endDate}` : "Período Completo"}
+                    columns={pdfConfig.columns}
+                    rows={pdfConfig.rows}
+                    summaryItems={pdfConfig.summaryItems}
+                    includeSignatures={includeSignatures}
+                  />
+                }
+                fileName={`${reportType.toLowerCase()}_${new Date().toISOString().slice(0, 10)}`}
+                buttonLabel="Descargar PDF"
+                previewLabel="Vista Previa"
+                dialogTitle={`Reporte Oficial: ${pdfConfig.title}`}
+              />
+            ) : (
+              <UniversalPdfDownloadButton
+                document={<CustomReportPdfDocument title="Reporte Oficial ERP-IDI" columns={[]} rows={[]} />}
+                fileName="reporte_erp_idi"
+                buttonLabel="Descargar PDF"
+                previewLabel="Vista Previa"
+              />
+            )}
           </div>
         </div>
 
@@ -1070,14 +1299,14 @@ export function CustomReportBuilder() {
                           </td>
                           <td className="py-1.5 px-2.5 whitespace-nowrap">
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 print:text-black print:bg-white print:border print:border-black">
-                              {row.type.replace(/_/g, " ")}
+                              {(row.type || "MOVIMIENTO").replace(/_/g, " ")}
                             </span>
                           </td>
                           <td className="py-1.5 px-2.5">
                             <div className="font-semibold text-slate-900 print:text-black truncate max-w-xs">
                               {row.productName}
                             </div>
-                            <div className="text-[10px] text-slate-400 font-mono">{row.sku}</div>
+                            <div className="text-[10px] text-slate-400 font-mono break-all">{row.sku}</div>
                           </td>
                           <td className="py-1.5 px-2.5 font-mono text-[11px] text-slate-600 print:text-black whitespace-nowrap">
                             {row.lotNumber}
@@ -1399,7 +1628,7 @@ export function CustomReportBuilder() {
 
                       return (
                         <tr key={idx} className="hover:bg-slate-50/70 print:hover:bg-transparent">
-                          <td className="py-1.5 px-2.5 font-mono font-bold text-slate-800 print:text-black">
+                          <td className="py-1.5 px-2.5 font-mono font-bold text-slate-800 print:text-black break-all max-w-[140px]">
                             {b.sku}
                           </td>
                           <td className="py-1.5 px-2.5 font-semibold text-slate-900 print:text-black">

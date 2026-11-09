@@ -29,9 +29,7 @@ import {
   History,
   FileSpreadsheet,
   Microscope,
-  GitCommit,
-  ClipboardCheck,
-  TrendingUp,
+  PackageCheck,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -71,8 +69,8 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     icon: LayoutDashboard,
   },
   {
-    groupLabel: "LABORATORIO OPERATIVO",
-    label: "Área Operativa",
+    groupLabel: "LABORATORIO CLÍNICO",
+    label: "Laboratorio Clínico",
     icon: FlaskConical,
     roles: [
       "ADMINISTRADOR",
@@ -83,54 +81,40 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     ],
     children: [
       {
-        label: "Dashboard de Neveras",
-        href: "/lab/dashboard",
-        icon: Snowflake,
+        label: "Tablero General",
+        href: "/lab",
+        icon: LayoutDashboard,
         roles: ["ADMINISTRADOR", "LABORATORIO", "COORDINADOR_LABORATORIO", "COORDINADOR", "BIOANALISTA"],
       },
       {
-        label: "Mis Solicitudes de Insumos",
-        href: "/lab/requests",
-        icon: ClipboardList,
-        roles: ["ADMINISTRADOR", "LABORATORIO", "COORDINADOR_LABORATORIO", "COORDINADOR", "BIOANALISTA"],
-      },
-      {
-        label: "Corridas Semanales",
+        label: "Corridas & Consumo",
         href: "/lab/runs",
         icon: FlaskConical,
         roles: ["ADMINISTRADOR", "LABORATORIO", "COORDINADOR_LABORATORIO", "COORDINADOR", "BIOANALISTA"],
       },
       {
-        label: "Consumo de Reactivos",
-        href: "/laboratory/consumption",
-        icon: SlidersHorizontal,
-        roles: ["ADMINISTRADOR", "LABORATORIO"],
-      },
-    ],
-  },
-  {
-    groupLabel: "COORDINACIÓN CLÍNICA",
-    label: "Coordinación",
-    icon: ClipboardCheck,
-    roles: ["ADMINISTRADOR", "COORDINADOR_LABORATORIO", "COORDINADOR", "LABORATORIO"],
-    children: [
-      {
-        label: "Bandeja FEFO de Solicitudes",
-        href: "/coordinator/requests",
+        label: "Solicitudes FEFO",
+        href: "/lab/requests",
         icon: ClipboardList,
-        roles: ["ADMINISTRADOR", "COORDINADOR_LABORATORIO", "COORDINADOR", "LABORATORIO"],
+        roles: ["ADMINISTRADOR", "LABORATORIO", "COORDINADOR_LABORATORIO", "COORDINADOR", "BIOANALISTA"],
       },
       {
-        label: "Gestión de Cuarentena",
-        href: "/coordinator/quarantine",
-        icon: ShieldAlert,
-        roles: ["ADMINISTRADOR", "COORDINADOR_LABORATORIO", "COORDINADOR", "LABORATORIO"],
-      },
-      {
-        label: "Arqueo Físico de Neveras",
-        href: "/coordinator/fridge-audit",
+        label: "Neveras & Cadena de Frío",
+        href: "/lab/fridges",
         icon: Snowflake,
-        roles: ["ADMINISTRADOR", "COORDINADOR_LABORATORIO", "COORDINADOR", "LABORATORIO", "BIOANALISTA"],
+        roles: ["ADMINISTRADOR", "LABORATORIO", "COORDINADOR_LABORATORIO", "COORDINADOR", "BIOANALISTA"],
+      },
+      {
+        label: "Calidad & Cuarentena",
+        href: "/lab/quality",
+        icon: ShieldAlert,
+        roles: ["ADMINISTRADOR", "LABORATORIO", "COORDINADOR_LABORATORIO", "COORDINADOR", "BIOANALISTA"],
+      },
+      {
+        label: "Reportes & Auditoría",
+        href: "/lab/reports",
+        icon: BarChart3,
+        roles: ["ADMINISTRADOR", "LABORATORIO", "COORDINADOR_LABORATORIO", "COORDINADOR", "BIOANALISTA"],
       },
     ],
   },
@@ -184,11 +168,48 @@ const NAVIGATION_GROUPS: NavGroup[] = [
         icon: ShieldAlert,
         roles: ["ADMINISTRADOR", "ALMACENISTA", "LABORATORIO"],
       },
+    ],
+  },
+  {
+    label: "Solicitudes Internas",
+    icon: ClipboardList,
+    roles: [
+      "ADMINISTRADOR",
+      "ALMACENISTA",
+      "LABORATORIO",
+      "SOLICITANTE",
+      "COMPRAS",
+      "ADMINISTRACION",
+      "COORDINADOR_LABORATORIO",
+      "COORDINADOR",
+      "BIOANALISTA",
+      "INVESTIGACION",
+      "DOCENCIA",
+    ],
+    children: [
       {
-        label: "Cadena de Frío & Cavas",
-        href: "/laboratory/fridges",
-        icon: Snowflake,
-        roles: ["ADMINISTRADOR", "LABORATORIO"],
+        label: "Pedidos a Almacén General",
+        href: "/requests",
+        icon: ClipboardList,
+        roles: [
+          "ADMINISTRADOR",
+          "ALMACENISTA",
+          "LABORATORIO",
+          "SOLICITANTE",
+          "COMPRAS",
+          "ADMINISTRACION",
+          "COORDINADOR_LABORATORIO",
+          "COORDINADOR",
+          "BIOANALISTA",
+          "INVESTIGACION",
+          "DOCENCIA",
+        ],
+      },
+      {
+        label: "Despacho de Materiales",
+        href: "/requests/dispatch",
+        icon: PackageCheck,
+        roles: ["ADMINISTRADOR", "ALMACENISTA"],
       },
     ],
   },
@@ -239,33 +260,21 @@ const NAVIGATION_GROUPS: NavGroup[] = [
   },
   {
     groupLabel: "ADMINISTRACIÓN & AUDITORÍA",
-    label: "Reportes & Finanzas",
+    label: "Reportes & Auditoría",
     icon: BarChart3,
-    roles: ["ADMINISTRADOR", "ADMINISTRACION", "COORDINADOR_LABORATORIO"],
+    roles: ["ADMINISTRADOR", "ADMINISTRACION", "COORDINADOR_LABORATORIO", "LABORATORIO"],
     children: [
-      {
-        label: "Costos y Consolidado Financiero",
-        href: "/admin/reports",
-        icon: TrendingUp,
-        roles: ["ADMINISTRADOR", "ADMINISTRACION", "COORDINADOR_LABORATORIO"],
-      },
-      {
-        label: "Trazabilidad Punta a Punta",
-        href: "/admin/reports/traceability",
-        icon: GitCommit,
-        roles: ["ADMINISTRADOR", "ADMINISTRACION", "COORDINADOR_LABORATORIO"],
-      },
       {
         label: "Kardex de Movimientos",
         href: "/inventory/kardex",
         icon: History,
-        roles: ["ADMINISTRADOR"],
+        roles: ["ADMINISTRADOR", "COORDINADOR_LABORATORIO", "LABORATORIO"],
       },
       {
-        label: "Auditoría General",
+        label: "Generador de Reportes",
         href: "/inventory/reports",
         icon: BarChart3,
-        roles: ["ADMINISTRADOR"],
+        roles: ["ADMINISTRADOR", "COORDINADOR_LABORATORIO", "LABORATORIO"],
       },
     ],
   },
@@ -362,8 +371,9 @@ function CollapsedGroupItem({
           {allowedChildren.map((subItem) => {
             const SubIcon = subItem.icon;
             const subActive =
-              pathname === subItem.href ||
-              pathname.startsWith(`${subItem.href}/`);
+              subItem.href === "/lab"
+                ? pathname === "/lab"
+                : pathname === subItem.href || pathname.startsWith(`${subItem.href}/`);
             return (
               <DropdownMenuItem key={subItem.href} asChild>
                 <Link
@@ -664,8 +674,9 @@ export function Sidebar({
                         {allowedChildren.map((subItem) => {
                           const SubIcon = subItem.icon;
                           const subActive =
-                            pathname === subItem.href ||
-                            pathname.startsWith(`${subItem.href}/`);
+                            subItem.href === "/lab"
+                              ? pathname === "/lab"
+                              : pathname === subItem.href || pathname.startsWith(`${subItem.href}/`);
                           return (
                             <Link
                               key={subItem.href}

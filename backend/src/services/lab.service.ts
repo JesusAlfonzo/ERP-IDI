@@ -15,6 +15,7 @@ import {
   LabWeeklyRunStatus,
   RepeatReason,
   ConsumptionConcept,
+  FridgeAuditAdjustmentStatus,
   Prisma,
 } from '@prisma/client';
 
@@ -117,6 +118,8 @@ export interface CreateLabExamDTO {
   name: string;
   description?: string | null;
   areaId?: number | null;
+  defaultCalibratorUses?: number;
+  defaultControlUses?: number;
   compatibleProductIds?: (bigint | number)[];
 }
 
@@ -125,6 +128,8 @@ export interface UpdateLabExamDTO {
   description?: string | null;
   areaId?: number | null;
   isActive?: boolean;
+  defaultCalibratorUses?: number;
+  defaultControlUses?: number;
   compatibleProductIds?: (bigint | number)[];
 }
 
@@ -148,6 +153,7 @@ export interface ItemAssignmentDTO {
 export interface ApproveInternalRequestDTO {
   reviewedById: number;
   reviewNotes?: string | null;
+  preserveSealed?: boolean;
   itemAssignments?: ItemAssignmentDTO[];
 }
 
@@ -162,6 +168,8 @@ export interface CreateWeeklyRunDTO {
 
 export interface CloseWeeklyRunItemDTO {
   labReagentUnitId: bigint | number | string;
+  rolloverUnitId?: bigint | number | string | null;
+  allowExpiredOverride?: boolean;
   externalCalibratorUnitId?: bigint | number | string | null;
   patientUses: number;
   repeatUses?: number;
@@ -171,7 +179,9 @@ export interface CloseWeeklyRunItemDTO {
   calibratorNotes?: string | null;
   controlUses?: number;
   wasteUses?: number;
+  isPhysicallyExhausted?: boolean;
   isPrimaryKitDepleted?: boolean;
+  reportedRemainingUses?: number | null;
   primaryKitPhysicalRemainingUses?: number | null;
   isExternalCalibratorDepleted?: boolean;
   externalCalibratorPhysicalRemainingUses?: number | null;
@@ -180,9 +190,45 @@ export interface CloseWeeklyRunItemDTO {
 export interface CloseWeeklyRunDTO {
   runId: number;
   bioanalystId: number;
+  userRoles?: string[];
   totalValidPatientExams: number;
   notes?: string | null;
+  allowExpiredOverride?: boolean;
   consumptions: CloseWeeklyRunItemDTO[];
+}
+
+export interface QuickConsumeReagentDTO {
+  examId: number;
+  labAreaId: number;
+  unitId: bigint | number | string;
+  validPatientsCount: number;
+  repeatUses?: number;
+  repeatReason?: RepeatReason | null;
+  repeatNotes?: string | null;
+  calibratorUses?: number;
+  controlUses?: number;
+  wasteUses?: number;
+  isPhysicallyExhausted?: boolean;
+  reportedRemainingUses?: number | null;
+  allowExpiredOverride?: boolean;
+  notes?: string | null;
+  userId: number;
+  userRoles?: string[];
+}
+
+export interface FailRunByCalibrationDTO {
+  runId: number;
+  unitId: bigint | number | string;
+  totalWellsWasted: number;
+  calibratorUses?: number;
+  controlUses?: number;
+  isPhysicallyExhausted?: boolean;
+  reportedRemainingUses?: number | null;
+  allowExpiredOverride?: boolean;
+  notes?: string | null;
+  autoCloneNewRun?: boolean;
+  userId: number;
+  userRoles?: string[];
 }
 
 export interface FilterConsumptionAuditLogDTO {
@@ -451,10 +497,12 @@ export class LabService {
                 LabUnitStatus.EN_USO,
                 LabUnitStatus.INTERNAL_QUARANTINE,
                 LabUnitStatus.IN_TRANSIT_TO_LAB,
+                LabUnitStatus.AGOTADO,
               ],
             },
           },
           include: {
+            assignedLabArea: true,
             product: {
               include: {
                 baseUnit: true,
@@ -837,7 +885,28 @@ export class LabService {
       );
     }
 
+    if (unit.expirationDate && new Date(unit.expirationDate) < new Date()) {
+      throw new Error(
+        `No se puede abrir la unidad ${unit.unitCode} porque se encuentra VENCIDA (${new Date(unit.expirationDate).toISOString().slice(0, 10)})`
+      );
+    }
+
     if (unit.status !== LabUnitStatus.SELLADO) {
+      if (unit.status === LabUnitStatus.EN_USO && !unit.openedAt) {
+        return prisma.labReagentUnit.update({
+          where: { id: unitId },
+          data: {
+            openedAt: new Date(),
+            openedById,
+          },
+          include: {
+            product: true,
+            openedBy: {
+              select: { id: true, fullName: true, username: true },
+            },
+          },
+        });
+      }
       throw new Error(`No se puede abrir una unidad en estado ${unit.status}`);
     }
 
@@ -1444,6 +1513,8 @@ export class LabService {
           name: data.name.trim(),
           description: data.description ?? null,
           areaId: data.areaId ?? null,
+          defaultCalibratorUses: data.defaultCalibratorUses ?? 0,
+          defaultControlUses: data.defaultControlUses ?? 0,
         },
       });
 
@@ -1477,6 +1548,8 @@ export class LabService {
           ...(data.description !== undefined ? { description: data.description } : {}),
           ...(data.areaId !== undefined ? { areaId: data.areaId } : {}),
           ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+          ...(data.defaultCalibratorUses !== undefined ? { defaultCalibratorUses: Number(data.defaultCalibratorUses) } : {}),
+          ...(data.defaultControlUses !== undefined ? { defaultControlUses: Number(data.defaultControlUses) } : {}),
         },
       });
 
@@ -1733,7 +1806,8 @@ export class LabService {
     const suggestions = [];
 
     for (const item of request.items) {
-      // Candidatos disponibles en stock clínico
+      // Candidatos disponibles en stock clínico vigentes (no vencidos)
+      const now = new Date();
       const candidateUnits = await prisma.labReagentUnit.findMany({
         where: {
           productId: item.productId,
@@ -1742,6 +1816,10 @@ export class LabService {
             in: [LabUnitStatus.EN_USO, LabUnitStatus.SELLADO],
           },
           remainingUses: { gt: 0 },
+          OR: [
+            { expirationDate: null },
+            { expirationDate: { gte: now } },
+          ],
         },
         include: {
           fridge: true,
@@ -1847,12 +1925,8 @@ export class LabService {
             where: { id: unitId },
             data: {
               assignedLabAreaId: request.labAreaId,
-              ...(unit.status === LabUnitStatus.SELLADO
-                ? {
-                    status: LabUnitStatus.EN_USO,
-                    openedById: data.reviewedById,
-                    openedAt: new Date(),
-                  }
+              ...(!data.preserveSealed && unit.status === LabUnitStatus.SELLADO
+                ? { status: LabUnitStatus.EN_USO }
                 : {}),
             },
           });
@@ -1918,13 +1992,6 @@ export class LabService {
               where: { id: item.assignedLabUnitId },
               data: {
                 assignedLabAreaId: request.labAreaId,
-                ...(unit.status === LabUnitStatus.SELLADO
-                  ? {
-                      status: LabUnitStatus.EN_USO,
-                      openedById: deliveredById,
-                      openedAt: new Date(),
-                    }
-                  : {}),
               },
             });
           }
@@ -2139,7 +2206,19 @@ export class LabService {
     }
 
     return prisma.$transaction(async (tx) => {
-      const run = await tx.labWeeklyRun.findUnique({
+      return LabService.executeCloseWeeklyRun(tx, data);
+    });
+  }
+
+  static async executeCloseWeeklyRun(
+    tx: Prisma.TransactionClient,
+    data: CloseWeeklyRunDTO
+  ) {
+    if (!data.consumptions || data.consumptions.length === 0) {
+      throw new Error('La corrida debe tener al menos un reactivo o consumo registrado');
+    }
+
+    const run = await tx.labWeeklyRun.findUnique({
         where: { id: data.runId },
         include: { labArea: true, labExam: true },
       });
@@ -2151,6 +2230,85 @@ export class LabService {
       if (run.status !== LabWeeklyRunStatus.OPEN_ACCUMULATING) {
         throw new Error('Solo se pueden cerrar corridas en estado OPEN_ACCUMULATING');
       }
+
+      const blockedStatuses: LabUnitStatus[] = [
+        LabUnitStatus.AGOTADO,
+        LabUnitStatus.DISCARDED,
+        LabUnitStatus.DESCARTADO,
+        LabUnitStatus.INTERNAL_QUARANTINE,
+        LabUnitStatus.IN_TRANSIT_TO_LAB,
+      ];
+
+      // Helper de validación clínica de frascos (Casos Borde E2, E3, E4)
+      const validateUnitForClinicalConsumption = (
+        unit: {
+          id: bigint;
+          unitCode: string;
+          status: LabUnitStatus;
+          ownershipType: StockOwnership;
+          expirationDate: Date | null;
+        },
+        roleDesc: string,
+        itemOverride?: boolean
+      ) => {
+        if (unit.ownershipType === StockOwnership.RESEARCH_PROJECT) {
+          throw new Error(
+            `La unidad ${unit.unitCode} (${roleDesc}) es de investigación y no puede consumirse en rutina clínica`
+          );
+        }
+
+        if (blockedStatuses.includes(unit.status)) {
+          throw new Error(
+            `La unidad ${unit.unitCode} (${roleDesc}) está bloqueada para consumo (estado: ${unit.status})`
+          );
+        }
+
+        if (unit.expirationDate) {
+          const expDate = new Date(unit.expirationDate);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const expDay = new Date(expDate);
+          expDay.setHours(0, 0, 0, 0);
+
+          if (expDay < today) {
+            const isOverride =
+              (itemOverride ?? data.allowExpiredOverride) === true;
+            const isSupervisor = (data.userRoles ?? []).some((r) =>
+              [
+                'ADMINISTRADOR',
+                'COORDINADOR_LABORATORIO',
+                'COORDINADOR',
+              ].includes(r)
+            );
+
+            if (!isOverride) {
+              const expStr = expDate.toISOString().split('T')[0];
+              throw new Error(
+                `El reactivo ${unit.unitCode} se encuentra VENCIDO desde ${expStr} y su uso está bloqueado para diagnóstico clínico. Requiere autorización de Coordinación/Administración.`
+              );
+            }
+
+            if (!isSupervisor) {
+              throw new Error(
+                `Solo un usuario con rol de Coordinación o Administración puede autorizar el uso de reactivos vencidos (${unit.unitCode}).`
+              );
+            }
+          }
+        }
+      };
+
+      // Helper para asegurar transición automática SELLADO -> EN_USO
+      const ensureUnitOpened = (unit: {
+        status: LabUnitStatus;
+        openedAt: Date | null;
+        openedById: number | null;
+      }) => {
+        if (unit.status === LabUnitStatus.SELLADO) {
+          unit.status = LabUnitStatus.EN_USO;
+          unit.openedAt = unit.openedAt ?? new Date();
+          unit.openedById = unit.openedById ?? data.bioanalystId;
+        }
+      };
 
       let totalRunCost = new Prisma.Decimal(0);
       const auditLogsToCreate: Prisma.LabConsumptionAuditLogCreateManyInput[] = [];
@@ -2166,29 +2324,23 @@ export class LabService {
           throw new Error(`Unidad de reactivo principal ${item.labReagentUnitId} no encontrada`);
         }
 
-        if (primaryUnit.ownershipType === StockOwnership.RESEARCH_PROJECT) {
-          throw new Error(
-            `La unidad ${primaryUnit.unitCode} es de investigación y no puede consumirse en rutina clínica`
-          );
-        }
-
-        const blockedStatuses: LabUnitStatus[] = [
-          LabUnitStatus.AGOTADO,
-          LabUnitStatus.DISCARDED,
-          LabUnitStatus.DESCARTADO,
-          LabUnitStatus.INTERNAL_QUARANTINE,
-          LabUnitStatus.IN_TRANSIT_TO_LAB,
-        ];
-        if (blockedStatuses.includes(primaryUnit.status)) {
-          throw new Error(
-            `La unidad principal ${primaryUnit.unitCode} está bloqueada (estado: ${primaryUnit.status})`
-          );
-        }
+        validateUnitForClinicalConsumption(
+          primaryUnit,
+          'principal',
+          item.allowExpiredOverride
+        );
+        ensureUnitOpened(primaryUnit);
 
         const patientUses = Math.max(0, item.patientUses || 0);
         const repeatUses = Math.max(0, item.repeatUses || 0);
-        const calibratorUses = Math.max(0, item.calibratorUses || 0);
-        const controlUses = Math.max(0, item.controlUses || 0);
+        const calibratorUses =
+          item.calibratorUses !== undefined && item.calibratorUses !== null
+            ? Math.max(0, item.calibratorUses)
+            : Math.max(0, run.labExam?.defaultCalibratorUses || 0);
+        const controlUses =
+          item.controlUses !== undefined && item.controlUses !== null
+            ? Math.max(0, item.controlUses)
+            : Math.max(0, run.labExam?.defaultControlUses || 0);
         const wasteUses = Math.max(0, item.wasteUses || 0);
 
         const totalDeductedUses =
@@ -2214,66 +2366,61 @@ export class LabService {
             );
           }
 
-          if (calibratorUnit.ownershipType === StockOwnership.RESEARCH_PROJECT) {
-            throw new Error(
-              `El calibrador ${calibratorUnit.unitCode} es de investigación y no puede usarse en rutina clínica`
-            );
-          }
-
-          if (blockedStatuses.includes(calibratorUnit.status)) {
-            throw new Error(
-              `El calibrador ${calibratorUnit.unitCode} está bloqueado (estado: ${calibratorUnit.status})`
-            );
-          }
+          validateUnitForClinicalConsumption(
+            calibratorUnit,
+            'calibrador externo',
+            item.allowExpiredOverride
+          );
+          ensureUnitOpened(calibratorUnit);
 
           calibratorUnitLineCost = new Prisma.Decimal(calibratorUses).mul(
             calibratorUnit.unitCostPerUse
           );
         }
 
-        const primaryKitLineCost = new Prisma.Decimal(totalDeductedUses).mul(
-          primaryUnit.unitCostPerUse
-        );
-        const lineCalculatedCost = primaryKitLineCost.add(calibratorUnitLineCost);
-        totalRunCost = totalRunCost.add(lineCalculatedCost);
+        // ==========================================
+        // CASO BORDE E1: AGOTAMIENTO Y RELEVO (ROLLOVER)
+        // ==========================================
+        if (item.rolloverUnitId) {
+          const rolloverUnitId = BigInt(item.rolloverUnitId);
+          if (rolloverUnitId === primaryUnit.id) {
+            throw new Error(
+              'El frasco de relevo (rollover) no puede ser el mismo frasco principal'
+            );
+          }
 
-        // Conciliación física al vuelo para el Kit Principal
-        const primaryCurrentRem = primaryUnit.remainingUses;
-        const primaryExpectedRem = primaryCurrentRem - totalDeductedUses;
-        let primaryNewRem = primaryExpectedRem;
-        let primaryVarianceDelta = 0;
-        let primaryNewStatus: LabUnitStatus =
-          primaryUnit.status === LabUnitStatus.SELLADO
-            ? LabUnitStatus.EN_USO
-            : primaryUnit.status;
-
-        if (primaryExpectedRem < 0) {
-          // Rendimiento superior al teórico (Over-yield)
-          const extraYield = Math.abs(primaryExpectedRem);
-          primaryVarianceDelta += extraYield;
-          primaryNewRem = 0;
-          primaryNewStatus = LabUnitStatus.AGOTADO;
-
-          auditLogsToCreate.push({
-            userId: data.bioanalystId,
-            labAreaId: run.labAreaId,
-            researchTrialId: null,
-            labExamId: run.labExamId,
-            weeklyRunId: run.id,
-            labReagentUnitId: primaryUnit.id,
-            concept: ConsumptionConcept.YIELD_SURPLUS,
-            usesCount: extraYield,
-            costImpact: new Prisma.Decimal(0),
-            notes: `Rendimiento superior al teórico (+${extraYield} usos extra en corrida ${run.code})`,
+          const rolloverUnit = await tx.labReagentUnit.findUnique({
+            where: { id: rolloverUnitId },
+            include: { product: true, batch: true },
           });
-        } else if (item.isPrimaryKitDepleted === true) {
-          // Agotamiento físico prematuro (Sub-yield / déficit)
-          const missingYield = -primaryExpectedRem;
-          primaryVarianceDelta += missingYield;
-          primaryNewRem = 0;
-          primaryNewStatus = LabUnitStatus.AGOTADO;
 
-          if (missingYield !== 0) {
+          if (!rolloverUnit) {
+            throw new Error(
+              `Unidad de relevo (rollover) ${item.rolloverUnitId} no encontrada`
+            );
+          }
+
+          validateUnitForClinicalConsumption(
+            rolloverUnit,
+            'frasco de relevo',
+            item.allowExpiredOverride
+          );
+          ensureUnitOpened(rolloverUnit);
+
+          const aCurrentRem = primaryUnit.remainingUses;
+          const usesFromA = Math.max(0, Math.min(aCurrentRem, totalDeductedUses));
+          const usesFromB = totalDeductedUses - usesFromA;
+
+          // Frasco A se agota
+          const aTheoreticalRem = aCurrentRem - usesFromA;
+          let aVarianceDelta = 0;
+          const isPhysicallyExhaustedA = Boolean(
+            item.isPhysicallyExhausted ?? item.isPrimaryKitDepleted
+          );
+
+          if (aTheoreticalRem > 0 && isPhysicallyExhaustedA) {
+            const missingA = aTheoreticalRem;
+            aVarianceDelta -= missingA;
             auditLogsToCreate.push({
               userId: data.bioanalystId,
               labAreaId: run.labAreaId,
@@ -2282,23 +2429,79 @@ export class LabService {
               weeklyRunId: run.id,
               labReagentUnitId: primaryUnit.id,
               concept: ConsumptionConcept.YIELD_DEFICIT,
-              usesCount: missingYield,
-              costImpact: new Prisma.Decimal(missingYield).mul(primaryUnit.unitCostPerUse),
-              notes: `Agotamiento físico prematuro de kit (${missingYield} usos no rendidos)`,
+              usesCount: missingA,
+              costImpact: new Prisma.Decimal(missingA).mul(
+                primaryUnit.unitCostPerUse
+              ),
+              notes: `Agotamiento físico prematuro de frasco principal en relevo (${missingA} usos no rendidos)`,
             });
           }
-        } else if (
-          item.primaryKitPhysicalRemainingUses !== undefined &&
-          item.primaryKitPhysicalRemainingUses !== null
-        ) {
-          const physicalRem = Number(item.primaryKitPhysicalRemainingUses);
-          const diff = physicalRem - primaryExpectedRem;
-          primaryVarianceDelta += diff;
-          primaryNewRem = physicalRem;
-          primaryNewStatus =
-            physicalRem === 0 ? LabUnitStatus.AGOTADO : primaryNewStatus;
 
-          if (diff !== 0) {
+          await tx.labReagentUnit.update({
+            where: { id: primaryUnit.id },
+            data: {
+              remainingUses: 0,
+              consumedUses: { increment: usesFromA },
+              yieldVariance: { increment: aVarianceDelta },
+              status: LabUnitStatus.AGOTADO,
+              openedAt: primaryUnit.openedAt ?? new Date(),
+              openedById: primaryUnit.openedById ?? data.bioanalystId,
+            },
+          });
+
+          if (usesFromA > 0) {
+            await tx.labStockMovement.create({
+              data: {
+                labReagentUnitId: primaryUnit.id,
+                movementType: LabMovementType.CONSUMO_PRUEBAS,
+                amountUsed: usesFromA,
+                reason: `Corrida semanal ${run.code}: ${usesFromA} usos deducidos (agotado a mitad de corrida)`,
+                executedById: data.bioanalystId,
+              },
+            });
+          }
+
+          // Distribuir desglose entre Frasco A y Frasco B
+          let remToDistribute = usesFromA;
+          const pA = Math.min(patientUses, remToDistribute);
+          remToDistribute -= pA;
+          const rA = Math.min(repeatUses, remToDistribute);
+          remToDistribute -= rA;
+          const calA = Math.min(calibratorUses, remToDistribute);
+          remToDistribute -= calA;
+          const ctrlA = Math.min(controlUses, remToDistribute);
+          remToDistribute -= ctrlA;
+          const wA = remToDistribute;
+
+          const pB = patientUses - pA;
+          const rB = repeatUses - rA;
+          const calB = calibratorUses - calA;
+          const ctrlB = controlUses - ctrlA;
+          const wB = wasteUses - wA;
+
+          const aLineCost = new Prisma.Decimal(usesFromA).mul(
+            primaryUnit.unitCostPerUse
+          );
+          totalRunCost = totalRunCost.add(aLineCost);
+
+          await tx.labRunConsumption.create({
+            data: {
+              runId: run.id,
+              labReagentUnitId: primaryUnit.id,
+              externalCalibratorUnitId: null,
+              patientUses: pA,
+              repeatUses: rA,
+              repeatReason: rA > 0 ? (item.repeatReason ?? null) : null,
+              calibratorUses: calA,
+              controlUses: ctrlA,
+              wasteUses: wA,
+              totalDeductedUses: usesFromA,
+              calculatedCost: aLineCost,
+            },
+          });
+
+          // Logs 5D Frasco A
+          if (pA > 0) {
             auditLogsToCreate.push({
               userId: data.bioanalystId,
               labAreaId: run.labAreaId,
@@ -2306,42 +2509,479 @@ export class LabService {
               labExamId: run.labExamId,
               weeklyRunId: run.id,
               labReagentUnitId: primaryUnit.id,
-              concept:
-                diff > 0
-                  ? ConsumptionConcept.YIELD_SURPLUS
-                  : ConsumptionConcept.YIELD_DEFICIT,
-              usesCount: diff,
-              costImpact: new Prisma.Decimal(diff).mul(primaryUnit.unitCostPerUse),
-              notes: `Conciliación física de saldo restante (${diff > 0 ? '+' : ''}${diff} usos)`,
+              concept: ConsumptionConcept.PATIENT,
+              usesCount: pA,
+              costImpact: new Prisma.Decimal(pA).mul(
+                primaryUnit.unitCostPerUse
+              ),
+              notes: `Exámenes válidos de pacientes en corrida ${run.code} (Frasco A)`,
+            });
+          }
+          if (rA > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: primaryUnit.id,
+              concept: ConsumptionConcept.REPEAT,
+              usesCount: rA,
+              costImpact: new Prisma.Decimal(rA).mul(
+                primaryUnit.unitCostPerUse
+              ),
+              notes: item.repeatReason
+                ? `[${item.repeatReason}] ${item.repeatNotes?.trim() || ''}`
+                : item.repeatNotes?.trim() || 'Repetición técnica',
+            });
+          }
+          if (calA > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: primaryUnit.id,
+              concept: ConsumptionConcept.CALIBRATION,
+              usesCount: calA,
+              costImpact: new Prisma.Decimal(calA).mul(
+                primaryUnit.unitCostPerUse
+              ),
+              notes: 'Pozos de calibrador en frasco principal A',
+            });
+          }
+          if (ctrlA > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: primaryUnit.id,
+              concept: ConsumptionConcept.CONTROL,
+              usesCount: ctrlA,
+              costImpact: new Prisma.Decimal(ctrlA).mul(
+                primaryUnit.unitCostPerUse
+              ),
+              notes: 'Controles de calidad en frasco principal A',
+            });
+          }
+          if (wA > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: primaryUnit.id,
+              concept: ConsumptionConcept.WASTE,
+              usesCount: wA,
+              costImpact: new Prisma.Decimal(wA).mul(
+                primaryUnit.unitCostPerUse
+              ),
+              notes: 'Desperdicio técnico en frasco principal A',
+            });
+          }
+
+          // Procesar Frasco B (Rollover)
+          const bCurrentRem = rolloverUnit.remainingUses;
+          const bExpectedRem = bCurrentRem - usesFromB;
+          let bNewRem = bExpectedRem;
+          let bVarianceDelta = 0;
+          let bNewStatus: LabUnitStatus =
+            rolloverUnit.status === LabUnitStatus.SELLADO
+              ? LabUnitStatus.EN_USO
+              : rolloverUnit.status;
+
+          if (bExpectedRem < 0) {
+            const extraB = Math.abs(bExpectedRem);
+            bVarianceDelta += extraB;
+            bNewRem = 0;
+            bNewStatus = LabUnitStatus.AGOTADO;
+
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: rolloverUnit.id,
+              concept: ConsumptionConcept.YIELD_SURPLUS,
+              usesCount: extraB,
+              costImpact: new Prisma.Decimal(0),
+              notes: `Rendimiento superior en frasco de relevo B (+${extraB} usos extra en corrida ${run.code})`,
+            });
+          } else if (bNewRem === 0) {
+            bNewStatus = LabUnitStatus.AGOTADO;
+          }
+
+          await tx.labReagentUnit.update({
+            where: { id: rolloverUnit.id },
+            data: {
+              remainingUses: bNewRem,
+              consumedUses: { increment: usesFromB },
+              yieldVariance: { increment: bVarianceDelta },
+              status: bNewStatus,
+              openedAt: rolloverUnit.openedAt ?? new Date(),
+              openedById: rolloverUnit.openedById ?? data.bioanalystId,
+            },
+          });
+
+          if (usesFromB > 0) {
+            await tx.labStockMovement.create({
+              data: {
+                labReagentUnitId: rolloverUnit.id,
+                movementType: LabMovementType.CONSUMO_PRUEBAS,
+                amountUsed: usesFromB,
+                reason: `Corrida semanal ${run.code}: ${usesFromB} usos deducidos (relevo de frasco agotado)`,
+                executedById: data.bioanalystId,
+              },
+            });
+          }
+
+          const bKitLineCost = new Prisma.Decimal(usesFromB).mul(
+            rolloverUnit.unitCostPerUse
+          );
+          const bLineCalculatedCost = bKitLineCost.add(calibratorUnitLineCost);
+          totalRunCost = totalRunCost.add(bLineCalculatedCost);
+
+          await tx.labRunConsumption.create({
+            data: {
+              runId: run.id,
+              labReagentUnitId: rolloverUnit.id,
+              externalCalibratorUnitId: calibratorUnit?.id ?? null,
+              patientUses: pB,
+              repeatUses: rB,
+              repeatReason: rB > 0 ? (item.repeatReason ?? null) : null,
+              calibratorUses: calB,
+              calibratorNotes: item.calibratorNotes?.trim() ?? null,
+              controlUses: ctrlB,
+              wasteUses: wB,
+              totalDeductedUses: usesFromB,
+              calculatedCost: bLineCalculatedCost,
+            },
+          });
+
+          // Logs 5D Frasco B
+          if (pB > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: rolloverUnit.id,
+              concept: ConsumptionConcept.PATIENT,
+              usesCount: pB,
+              costImpact: new Prisma.Decimal(pB).mul(
+                rolloverUnit.unitCostPerUse
+              ),
+              notes: `Exámenes válidos de pacientes en corrida ${run.code} (Frasco B relevo)`,
+            });
+          }
+          if (rB > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: rolloverUnit.id,
+              concept: ConsumptionConcept.REPEAT,
+              usesCount: rB,
+              costImpact: new Prisma.Decimal(rB).mul(
+                rolloverUnit.unitCostPerUse
+              ),
+              notes: item.repeatReason
+                ? `[${item.repeatReason}] ${item.repeatNotes?.trim() || ''}`
+                : item.repeatNotes?.trim() || 'Repetición técnica en relevo',
+            });
+          }
+          if (calB > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: rolloverUnit.id,
+              concept: ConsumptionConcept.CALIBRATION,
+              usesCount: calB,
+              costImpact: new Prisma.Decimal(calB).mul(
+                rolloverUnit.unitCostPerUse
+              ),
+              notes: 'Pozos de calibrador en frasco relevo B',
+            });
+          }
+          if (ctrlB > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: rolloverUnit.id,
+              concept: ConsumptionConcept.CONTROL,
+              usesCount: ctrlB,
+              costImpact: new Prisma.Decimal(ctrlB).mul(
+                rolloverUnit.unitCostPerUse
+              ),
+              notes: 'Controles de calidad en frasco relevo B',
+            });
+          }
+          if (wB > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: rolloverUnit.id,
+              concept: ConsumptionConcept.WASTE,
+              usesCount: wB,
+              costImpact: new Prisma.Decimal(wB).mul(
+                rolloverUnit.unitCostPerUse
+              ),
+              notes: 'Desperdicio técnico en frasco relevo B',
             });
           }
         } else {
-          if (primaryNewRem === 0) {
+          // --- RUTA ESTÁNDAR: UN SOLO FRASCO PRINCIPAL ---
+          const primaryKitLineCost = new Prisma.Decimal(totalDeductedUses).mul(
+            primaryUnit.unitCostPerUse
+          );
+          const lineCalculatedCost = primaryKitLineCost.add(calibratorUnitLineCost);
+          totalRunCost = totalRunCost.add(lineCalculatedCost);
+
+          const primaryCurrentRem = primaryUnit.remainingUses;
+          const primaryExpectedRem = primaryCurrentRem - totalDeductedUses;
+          let primaryNewRem = primaryExpectedRem;
+          let primaryVarianceDelta = 0;
+          let primaryNewStatus: LabUnitStatus =
+            primaryUnit.status === LabUnitStatus.SELLADO
+              ? LabUnitStatus.EN_USO
+              : primaryUnit.status;
+
+          const isPhysicallyDepleted = Boolean(
+            item.isPhysicallyExhausted ?? item.isPrimaryKitDepleted
+          );
+          const physicalReportedRem =
+            item.reportedRemainingUses !== undefined && item.reportedRemainingUses !== null
+              ? Number(item.reportedRemainingUses)
+              : item.primaryKitPhysicalRemainingUses !== undefined &&
+                item.primaryKitPhysicalRemainingUses !== null
+              ? Number(item.primaryKitPhysicalRemainingUses)
+              : null;
+
+          if (primaryExpectedRem < 0) {
+            // Rendimiento superior al teórico (Over-yield)
+            const extraYield = Math.abs(primaryExpectedRem);
+            primaryVarianceDelta += extraYield;
+            primaryNewRem = 0;
             primaryNewStatus = LabUnitStatus.AGOTADO;
+
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: primaryUnit.id,
+              concept: ConsumptionConcept.YIELD_SURPLUS,
+              usesCount: extraYield,
+              costImpact: new Prisma.Decimal(0),
+              notes: `Rendimiento superior al teórico (+${extraYield} usos extra en corrida ${run.code})`,
+            });
+          } else if (isPhysicallyDepleted === true) {
+            // Agotamiento físico prematuro (Sub-yield / déficit)
+            const missingYield = -primaryExpectedRem;
+            primaryVarianceDelta += missingYield;
+            primaryNewRem = 0;
+            primaryNewStatus = LabUnitStatus.AGOTADO;
+
+            if (missingYield !== 0) {
+              auditLogsToCreate.push({
+                userId: data.bioanalystId,
+                labAreaId: run.labAreaId,
+                researchTrialId: null,
+                labExamId: run.labExamId,
+                weeklyRunId: run.id,
+                labReagentUnitId: primaryUnit.id,
+                concept: ConsumptionConcept.YIELD_DEFICIT,
+                usesCount: Math.abs(missingYield),
+                costImpact: new Prisma.Decimal(Math.abs(missingYield)).mul(
+                  primaryUnit.unitCostPerUse
+                ),
+                notes: `Agotamiento físico prematuro de kit (${Math.abs(missingYield)} usos no rendidos)`,
+              });
+            }
+          } else if (physicalReportedRem !== null) {
+            const physicalRem = physicalReportedRem;
+            const diff = physicalRem - primaryExpectedRem;
+            primaryVarianceDelta += diff;
+            primaryNewRem = physicalRem;
+            primaryNewStatus =
+              physicalRem === 0 ? LabUnitStatus.AGOTADO : primaryNewStatus;
+
+            if (diff !== 0) {
+              auditLogsToCreate.push({
+                userId: data.bioanalystId,
+                labAreaId: run.labAreaId,
+                researchTrialId: null,
+                labExamId: run.labExamId,
+                weeklyRunId: run.id,
+                labReagentUnitId: primaryUnit.id,
+                concept:
+                  diff > 0
+                    ? ConsumptionConcept.YIELD_SURPLUS
+                    : ConsumptionConcept.YIELD_DEFICIT,
+                usesCount: Math.abs(diff),
+                costImpact: new Prisma.Decimal(Math.abs(diff)).mul(
+                  primaryUnit.unitCostPerUse
+                ),
+                notes: `Conciliación física de saldo restante (${diff > 0 ? '+' : ''}${diff} usos)`,
+              });
+            }
+          } else {
+            if (primaryNewRem === 0) {
+              primaryNewStatus = LabUnitStatus.AGOTADO;
+            }
+          }
+
+          await tx.labReagentUnit.update({
+            where: { id: primaryUnit.id },
+            data: {
+              remainingUses: primaryNewRem,
+              consumedUses: { increment: totalDeductedUses },
+              yieldVariance: { increment: primaryVarianceDelta },
+              status: primaryNewStatus,
+              openedAt: primaryUnit.openedAt ?? new Date(),
+              openedById: primaryUnit.openedById ?? data.bioanalystId,
+            },
+          });
+
+          await tx.labStockMovement.create({
+            data: {
+              labReagentUnitId: primaryUnit.id,
+              movementType: LabMovementType.CONSUMO_PRUEBAS,
+              amountUsed: totalDeductedUses,
+              reason: `Corrida semanal ${run.code}: ${totalDeductedUses} usos deducidos`,
+              executedById: data.bioanalystId,
+            },
+          });
+
+          await tx.labRunConsumption.create({
+            data: {
+              runId: run.id,
+              labReagentUnitId: primaryUnit.id,
+              externalCalibratorUnitId: calibratorUnit?.id ?? null,
+              patientUses,
+              repeatUses,
+              repeatReason: item.repeatReason ?? null,
+              calibratorUses,
+              calibratorNotes: item.calibratorNotes?.trim() ?? null,
+              controlUses,
+              wasteUses,
+              totalDeductedUses,
+              calculatedCost: lineCalculatedCost,
+            },
+          });
+
+          // Auditoría 5D para el kit principal
+          if (patientUses > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: primaryUnit.id,
+              concept: ConsumptionConcept.PATIENT,
+              usesCount: patientUses,
+              costImpact: new Prisma.Decimal(patientUses).mul(
+                primaryUnit.unitCostPerUse
+              ),
+              notes: `Exámenes válidos de pacientes en corrida ${run.code}`,
+            });
+          }
+
+          if (repeatUses > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: primaryUnit.id,
+              concept: ConsumptionConcept.REPEAT,
+              usesCount: repeatUses,
+              costImpact: new Prisma.Decimal(repeatUses).mul(
+                primaryUnit.unitCostPerUse
+              ),
+              notes: item.repeatReason
+                ? `[${item.repeatReason}] ${item.repeatNotes?.trim() || ''}`
+                : item.repeatNotes?.trim() || 'Repetición técnica',
+            });
+          }
+
+          if (calibratorUses > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: primaryUnit.id,
+              concept: ConsumptionConcept.CALIBRATION,
+              usesCount: calibratorUses,
+              costImpact: new Prisma.Decimal(calibratorUses).mul(
+                primaryUnit.unitCostPerUse
+              ),
+              notes: item.calibratorNotes
+                ? `Pozo/reacción en placa principal: ${item.calibratorNotes}`
+                : 'Pozos/reacciones de calibrador en placa principal',
+            });
+          }
+
+          if (controlUses > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: primaryUnit.id,
+              concept: ConsumptionConcept.CONTROL,
+              usesCount: controlUses,
+              costImpact: new Prisma.Decimal(controlUses).mul(
+                primaryUnit.unitCostPerUse
+              ),
+              notes: 'Controles de calidad (positivo/negativo)',
+            });
+          }
+
+          if (wasteUses > 0) {
+            auditLogsToCreate.push({
+              userId: data.bioanalystId,
+              labAreaId: run.labAreaId,
+              researchTrialId: null,
+              labExamId: run.labExamId,
+              weeklyRunId: run.id,
+              labReagentUnitId: primaryUnit.id,
+              concept: ConsumptionConcept.WASTE,
+              usesCount: wasteUses,
+              costImpact: new Prisma.Decimal(wasteUses).mul(
+                primaryUnit.unitCostPerUse
+              ),
+              notes: 'Desperdicio técnico / purga / cebado',
+            });
           }
         }
 
-        await tx.labReagentUnit.update({
-          where: { id: primaryUnit.id },
-          data: {
-            remainingUses: primaryNewRem,
-            consumedUses: { increment: totalDeductedUses },
-            yieldVariance: { increment: primaryVarianceDelta },
-            status: primaryNewStatus,
-          },
-        });
-
-        await tx.labStockMovement.create({
-          data: {
-            labReagentUnitId: primaryUnit.id,
-            movementType: LabMovementType.CONSUMO_PRUEBAS,
-            amountUsed: totalDeductedUses,
-            reason: `Corrida semanal ${run.code}: ${totalDeductedUses} usos deducidos`,
-            executedById: data.bioanalystId,
-          },
-        });
-
-        // Conciliación física para el Calibrador Externo (Micro-ajuste 2)
+        // ==========================================
+        // CONCILIACIÓN FÍSICA PARA CALIBRADOR EXTERNO
+        // ==========================================
         if (calibratorUnit && calibratorUses > 0) {
           const calCurrentRem = calibratorUnit.remainingUses;
           const calExpectedRem = calCurrentRem - calibratorUses;
@@ -2385,9 +3025,11 @@ export class LabService {
                 weeklyRunId: run.id,
                 labReagentUnitId: calibratorUnit.id,
                 concept: ConsumptionConcept.YIELD_DEFICIT,
-                usesCount: missing,
-                costImpact: new Prisma.Decimal(missing).mul(calibratorUnit.unitCostPerUse),
-                notes: `Agotamiento físico prematuro de calibrador (${missing} usos)`,
+                usesCount: Math.abs(missing),
+                costImpact: new Prisma.Decimal(Math.abs(missing)).mul(
+                  calibratorUnit.unitCostPerUse
+                ),
+                notes: `Agotamiento físico prematuro de calibrador (${Math.abs(missing)} usos)`,
               });
             }
           } else if (
@@ -2413,8 +3055,10 @@ export class LabService {
                   diff > 0
                     ? ConsumptionConcept.YIELD_SURPLUS
                     : ConsumptionConcept.YIELD_DEFICIT,
-                usesCount: diff,
-                costImpact: new Prisma.Decimal(diff).mul(calibratorUnit.unitCostPerUse),
+                usesCount: Math.abs(diff),
+                costImpact: new Prisma.Decimal(Math.abs(diff)).mul(
+                  calibratorUnit.unitCostPerUse
+                ),
                 notes: `Conciliación física calibrador (${diff > 0 ? '+' : ''}${diff} usos)`,
               });
             }
@@ -2431,6 +3075,8 @@ export class LabService {
               consumedUses: { increment: calibratorUses },
               yieldVariance: { increment: calVarianceDelta },
               status: calNewStatus,
+              openedAt: calibratorUnit.openedAt ?? new Date(),
+              openedById: calibratorUnit.openedById ?? data.bioanalystId,
             },
           });
 
@@ -2457,103 +3103,6 @@ export class LabService {
             notes: item.calibratorNotes
               ? `Vial calibrador externo: ${item.calibratorNotes}`
               : 'Consumo de vial calibrador externo',
-          });
-        }
-
-        await tx.labRunConsumption.create({
-          data: {
-            runId: run.id,
-            labReagentUnitId: primaryUnit.id,
-            externalCalibratorUnitId: calibratorUnit?.id ?? null,
-            patientUses,
-            repeatUses,
-            repeatReason: item.repeatReason ?? null,
-            calibratorUses,
-            calibratorNotes: item.calibratorNotes?.trim() ?? null,
-            controlUses,
-            wasteUses,
-            totalDeductedUses,
-            calculatedCost: lineCalculatedCost,
-          },
-        });
-
-        // Auditoría 5D para el kit principal
-        if (patientUses > 0) {
-          auditLogsToCreate.push({
-            userId: data.bioanalystId,
-            labAreaId: run.labAreaId,
-            researchTrialId: null,
-            labExamId: run.labExamId,
-            weeklyRunId: run.id,
-            labReagentUnitId: primaryUnit.id,
-            concept: ConsumptionConcept.PATIENT,
-            usesCount: patientUses,
-            costImpact: new Prisma.Decimal(patientUses).mul(primaryUnit.unitCostPerUse),
-            notes: `Exámenes válidos de pacientes en corrida ${run.code}`,
-          });
-        }
-
-        if (repeatUses > 0) {
-          auditLogsToCreate.push({
-            userId: data.bioanalystId,
-            labAreaId: run.labAreaId,
-            researchTrialId: null,
-            labExamId: run.labExamId,
-            weeklyRunId: run.id,
-            labReagentUnitId: primaryUnit.id,
-            concept: ConsumptionConcept.REPEAT,
-            usesCount: repeatUses,
-            costImpact: new Prisma.Decimal(repeatUses).mul(primaryUnit.unitCostPerUse),
-            notes: item.repeatReason
-              ? `[${item.repeatReason}] ${item.repeatNotes?.trim() || ''}`
-              : item.repeatNotes?.trim() || 'Repetición técnica',
-          });
-        }
-
-        if (calibratorUses > 0) {
-          auditLogsToCreate.push({
-            userId: data.bioanalystId,
-            labAreaId: run.labAreaId,
-            researchTrialId: null,
-            labExamId: run.labExamId,
-            weeklyRunId: run.id,
-            labReagentUnitId: primaryUnit.id,
-            concept: ConsumptionConcept.CALIBRATION,
-            usesCount: calibratorUses,
-            costImpact: new Prisma.Decimal(calibratorUses).mul(primaryUnit.unitCostPerUse),
-            notes: item.calibratorNotes
-              ? `Pozo/reacción en placa principal: ${item.calibratorNotes}`
-              : 'Pozos/reacciones de calibrador en placa principal',
-          });
-        }
-
-        if (controlUses > 0) {
-          auditLogsToCreate.push({
-            userId: data.bioanalystId,
-            labAreaId: run.labAreaId,
-            researchTrialId: null,
-            labExamId: run.labExamId,
-            weeklyRunId: run.id,
-            labReagentUnitId: primaryUnit.id,
-            concept: ConsumptionConcept.CONTROL,
-            usesCount: controlUses,
-            costImpact: new Prisma.Decimal(controlUses).mul(primaryUnit.unitCostPerUse),
-            notes: 'Controles de calidad (positivo/negativo)',
-          });
-        }
-
-        if (wasteUses > 0) {
-          auditLogsToCreate.push({
-            userId: data.bioanalystId,
-            labAreaId: run.labAreaId,
-            researchTrialId: null,
-            labExamId: run.labExamId,
-            weeklyRunId: run.id,
-            labReagentUnitId: primaryUnit.id,
-            concept: ConsumptionConcept.WASTE,
-            usesCount: wasteUses,
-            costImpact: new Prisma.Decimal(wasteUses).mul(primaryUnit.unitCostPerUse),
-            notes: 'Desperdicio técnico / purga / cebado',
           });
         }
       }
@@ -2596,6 +3145,305 @@ export class LabService {
       }
 
       return closedRun;
+  }
+
+  // ==========================================
+  // 15B. ACCIONES RÁPIDAS Y CASOS BORDE E5 / E6 (FASE 2B)
+  // ==========================================
+
+  /**
+   * Consumo Rápido / Prueba Individual (1 Clic)
+   * Apertura y cierre atómico de corrida semanal para pruebas de cassette/emergencia
+   * preservando trazabilidad 5D, costo efectivo y actualización de stock.
+   */
+  static async quickConsumeReagent(data: QuickConsumeReagentDTO) {
+    if (data.validPatientsCount <= 0) {
+      throw new Error('El conteo de pacientes válidos debe ser al menos 1');
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const unit = await tx.labReagentUnit.findUnique({
+        where: { id: BigInt(data.unitId) },
+      });
+      if (!unit) {
+        throw new Error(`Unidad de reactivo #${data.unitId} no encontrada`);
+      }
+
+      const exam = await tx.labExam.findUnique({
+        where: { id: data.examId },
+      });
+      if (!exam) {
+        throw new Error(`Examen #${data.examId} no encontrado`);
+      }
+
+      const count = await tx.labWeeklyRun.count();
+      const code = `RUN-QC-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}-${Date.now().toString().slice(-4)}`;
+      const now = new Date();
+
+      const run = await tx.labWeeklyRun.create({
+        data: {
+          code,
+          labAreaId: data.labAreaId,
+          labExamId: data.examId,
+          bioanalystId: data.userId,
+          weekStartDate: now,
+          weekEndDate: now,
+          status: LabWeeklyRunStatus.OPEN_ACCUMULATING,
+          notes: data.notes?.trim()
+            ? `[Consumo Rápido] ${data.notes.trim()}`
+            : '[Consumo Rápido / Prueba Individual]',
+        },
+      });
+
+      const closedRun = await LabService.executeCloseWeeklyRun(tx, {
+        runId: run.id,
+        bioanalystId: data.userId,
+        userRoles: data.userRoles,
+        totalValidPatientExams: data.validPatientsCount,
+        notes: run.notes,
+        allowExpiredOverride: data.allowExpiredOverride,
+        consumptions: [
+          {
+            labReagentUnitId: data.unitId,
+            patientUses: data.validPatientsCount,
+            repeatUses: data.repeatUses ?? 0,
+            repeatReason: data.repeatReason ?? null,
+            repeatNotes: data.repeatNotes ?? null,
+            calibratorUses: data.calibratorUses !== undefined ? data.calibratorUses : 0,
+            controlUses: data.controlUses !== undefined ? data.controlUses : 0,
+            wasteUses: data.wasteUses ?? 0,
+            isPhysicallyExhausted: data.isPhysicallyExhausted,
+            reportedRemainingUses: data.reportedRemainingUses,
+          },
+        ],
+      });
+
+      return closedRun;
+    });
+  }
+
+  /**
+   * Corrida Fallida por Calibración (Caso Borde E5)
+   * Deduce los pozos gastados del reactivo, asigna 0 pacientes válidos y traslada las
+   * muestras a repeatUses (CALIBRATION_FAILURE). Opcionalmente clona una nueva corrida abierta.
+   */
+  static async failRunByCalibration(data: FailRunByCalibrationDTO) {
+    return prisma.$transaction(async (tx) => {
+      const run = await tx.labWeeklyRun.findUnique({
+        where: { id: data.runId },
+        include: { labArea: true, labExam: true },
+      });
+
+      if (!run) {
+        throw new Error(`Corrida semanal #${data.runId} no encontrada`);
+      }
+
+      if (run.status !== LabWeeklyRunStatus.OPEN_ACCUMULATING) {
+        throw new Error(
+          `Solo se pueden fallar corridas en estado ${LabWeeklyRunStatus.OPEN_ACCUMULATING}`
+        );
+      }
+
+      const totalWasted = Math.max(1, data.totalWellsWasted);
+      const calUses =
+        data.calibratorUses !== undefined && data.calibratorUses !== null
+          ? Math.max(0, data.calibratorUses)
+          : Math.max(0, run.labExam?.defaultCalibratorUses || 0);
+
+      const ctrlUses =
+        data.controlUses !== undefined && data.controlUses !== null
+          ? Math.max(0, data.controlUses)
+          : Math.max(0, run.labExam?.defaultControlUses || 0);
+
+      const repeatUses = Math.max(0, totalWasted - calUses - ctrlUses);
+
+      const failNotes = data.notes?.trim()
+        ? `[FALLA DE CALIBRACIÓN] ${data.notes.trim()}`
+        : '[FALLA DE CALIBRACIÓN] Curva de calibración o controles fuera de rango analítico';
+
+      const closedRun = await LabService.executeCloseWeeklyRun(tx, {
+        runId: run.id,
+        bioanalystId: data.userId,
+        userRoles: data.userRoles,
+        totalValidPatientExams: 0,
+        notes: failNotes,
+        allowExpiredOverride: data.allowExpiredOverride,
+        consumptions: [
+          {
+            labReagentUnitId: data.unitId,
+            patientUses: 0,
+            repeatUses,
+            repeatReason: RepeatReason.CALIBRATION_FAILURE,
+            repeatNotes: failNotes,
+            calibratorUses: calUses,
+            controlUses: ctrlUses,
+            wasteUses: 0,
+            isPhysicallyExhausted: data.isPhysicallyExhausted,
+            reportedRemainingUses: data.reportedRemainingUses,
+          },
+        ],
+      });
+
+      let clonedRun = null;
+      if (data.autoCloneNewRun !== false) {
+        const count = await tx.labWeeklyRun.count();
+        const newCode = `RUN-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}-${Date.now().toString().slice(-4)}`;
+
+        clonedRun = await tx.labWeeklyRun.create({
+          data: {
+            code: newCode,
+            labAreaId: run.labAreaId,
+            labExamId: run.labExamId,
+            bioanalystId: data.userId,
+            weekStartDate: run.weekStartDate,
+            weekEndDate: run.weekEndDate,
+            status: LabWeeklyRunStatus.OPEN_ACCUMULATING,
+            notes: `[REPROCESO POST-FALLA] Corrida aperturada automáticamente tras falla de calibración en ${run.code}`,
+          },
+          include: {
+            labArea: true,
+            labExam: true,
+            bioanalyst: {
+              select: { id: true, fullName: true, username: true },
+            },
+          },
+        });
+      }
+
+      return {
+        failedRun: closedRun,
+        clonedRun,
+      };
+    });
+  }
+
+  /**
+   * Reconciliación en 1 Clic de Arqueo Físico de Nevera (Caso Borde E6)
+   * Regulariza ítems con discrepancia (PENDING_ADJUSTMENT), actualiza saldo en LabReagentUnit,
+   * asienta movimiento en LabStockMovement y registra variaciones 5D en LabConsumptionAuditLog.
+   */
+  static async reconcileFridgeAudit(auditId: number, userId: number) {
+    return prisma.$transaction(async (tx) => {
+      const audit = await tx.fridgePhysicalAudit.findUnique({
+        where: { id: auditId },
+        include: {
+          items: {
+            include: {
+              labReagentUnit: {
+                include: { product: true, batch: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (!audit) {
+        throw new Error(`Auditoría de nevera #${auditId} no encontrada`);
+      }
+
+      for (const item of audit.items) {
+        if (
+          item.adjustmentStatus === FridgeAuditAdjustmentStatus.PENDING_ADJUSTMENT ||
+          item.adjustmentStatus === FridgeAuditAdjustmentStatus.FLAGGED_DISCREPANCY
+        ) {
+          const unit = item.labReagentUnit;
+          const physicalRemainingUses = item.physicalRemainingUses;
+          const variance = item.variance;
+
+          let newStatus = unit.status;
+          if (physicalRemainingUses === 0) {
+            newStatus = LabUnitStatus.AGOTADO;
+          } else if (unit.status === LabUnitStatus.AGOTADO && physicalRemainingUses > 0) {
+            newStatus = LabUnitStatus.EN_USO;
+          } else if (
+            unit.status === LabUnitStatus.SELLADO &&
+            physicalRemainingUses < unit.initialTheoreticalUses
+          ) {
+            newStatus = LabUnitStatus.EN_USO;
+          }
+
+          await tx.labReagentUnit.update({
+            where: { id: unit.id },
+            data: {
+              remainingUses: physicalRemainingUses,
+              yieldVariance: { increment: variance },
+              status: newStatus,
+            },
+          });
+
+          if (variance !== 0) {
+            await tx.labStockMovement.create({
+              data: {
+                labReagentUnitId: unit.id,
+                movementType:
+                  variance < 0
+                    ? LabMovementType.DESCARTE
+                    : LabMovementType.CONSUMO_PRUEBAS,
+                amountUsed: Math.abs(variance),
+                fromFridgeId: unit.fridgeId,
+                reason: `Conciliación de arqueo físico #${audit.code}: Ajuste por ${
+                  variance < 0 ? 'merma' : 'sobrante'
+                } de ${Math.abs(variance)} usos`,
+                executedById: userId,
+              },
+            });
+
+            const costImpact = Math.abs(variance) * Number(unit.unitCostPerUse || 0);
+            const concept =
+              variance < 0
+                ? ConsumptionConcept.YIELD_DEFICIT
+                : ConsumptionConcept.YIELD_SURPLUS;
+
+            await tx.labConsumptionAuditLog.create({
+              data: {
+                userId,
+                concept,
+                labReagentUnitId: unit.id,
+                labAreaId: unit.assignedLabAreaId ?? null,
+                usesCount: Math.abs(variance),
+                costImpact: new Prisma.Decimal(costImpact.toFixed(4)),
+                notes:
+                  item.notes?.trim() ||
+                  (variance < 0
+                    ? `Déficit de ${Math.abs(variance)} usos detectado en arqueo ${audit.code}`
+                    : `Sobrante de +${variance} usos detectado en arqueo ${audit.code}`),
+              },
+            });
+          }
+
+          await tx.fridgePhysicalAuditItem.update({
+            where: { id: item.id },
+            data: {
+              adjustmentStatus: FridgeAuditAdjustmentStatus.ADJUSTED_AND_RECONCILED,
+            },
+          });
+        }
+      }
+
+      return tx.fridgePhysicalAudit.findUnique({
+        where: { id: audit.id },
+        include: {
+          performedBy: {
+            select: { id: true, fullName: true, username: true, department: true },
+          },
+          items: {
+            include: {
+              labReagentUnit: {
+                include: {
+                  product: {
+                    select: { id: true, name: true, sku: true, theoreticalYield: true },
+                  },
+                  batch: {
+                    select: { id: true, lotNumber: true, expirationDate: true },
+                  },
+                  fridge: true,
+                  assignedLabArea: true,
+                },
+              },
+            },
+          },
+        },
+      });
     });
   }
 

@@ -13,8 +13,11 @@ import {
   DocumentMetadataGrid,
   DocumentSignatures,
   DocumentFooter,
-  PrintActionButton,
 } from "@/components/common/PrintableDocument";
+import {
+  UniversalPdfDownloadButton,
+  RequestDispatchPdfDocument,
+} from "@/components/pdf";
 import {
   ArrowLeft,
   Loader2,
@@ -306,7 +309,13 @@ export default function RequestDetailPage() {
             </>
           )}
 
-          <PrintActionButton label="Imprimir / Exportar PDF" />
+          <UniversalPdfDownloadButton
+            document={<RequestDispatchPdfDocument request={request} />}
+            fileName={`Vale_Despacho_${String(request.requestNumber || request.id).replace(/[^a-zA-Z0-9_-]/g, "_")}`}
+            buttonLabel="Descargar PDF"
+            previewLabel="Vista Previa"
+            dialogTitle={`Vale de Requisición y Despacho: ${request.requestNumber}`}
+          />
         </div>
       </div>
 
@@ -408,7 +417,7 @@ export default function RequestDetailPage() {
                   <th className="py-2 px-3 border-r border-slate-300 print:border-black">
                     Insumo / Reactivo
                   </th>
-                  <th className="py-2 px-2.5 text-center border-r border-slate-300 print:border-black">
+                  <th className="py-2 px-2.5 text-center border-r border-slate-300 print:border-black w-32 min-w-[120px]">
                     SKU
                   </th>
                   <th className="py-2 px-2.5 text-center border-r border-slate-300 print:border-black">
@@ -500,12 +509,12 @@ export default function RequestDetailPage() {
                       <td className="py-2 px-2.5 text-center font-mono text-slate-600 print:text-black border-r border-slate-200 print:border-black font-semibold">
                         {index + 1}
                       </td>
-                      <td className="py-2 px-3 border-r border-slate-200 print:border-black">
+                      <td className="py-2 px-3 border-r border-slate-200 print:border-black break-words">
                         <div className="font-bold text-slate-900 print:text-black">
                           {item.product?.name || "Insumo sin nombre"}
                         </div>
                       </td>
-                      <td className="py-2 px-2.5 text-center font-mono text-[11px] text-slate-600 print:text-black border-r border-slate-200 print:border-black">
+                      <td className="py-2 px-2.5 text-center font-mono text-[11px] text-slate-600 print:text-black border-r border-slate-200 print:border-black break-all max-w-[150px]">
                         {item.product?.sku || "-"}
                       </td>
                       <td className="py-2 px-2.5 text-center text-slate-700 print:text-black border-r border-slate-200 print:border-black uppercase">

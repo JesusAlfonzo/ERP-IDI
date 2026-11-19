@@ -1,0 +1,2878 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Manual de Usuario Integral por Módulos para ERP-IDI - Instituto de Inmunología Dr. Nicolás E. Bianco Colmenares (IDI - UCV)">
+  <meta name="author" content="Instituto de Inmunología Dr. Nicolás E. Bianco Colmenares (IDI - UCV)">
+  <title>Manual de Usuario por Módulos - ERP-IDI</title>
+  <style>
+
+  /* Reset y Variables Globales */
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  :root {
+    --primary: #1e3a8a;
+    --primary-light: #3b82f6;
+    --primary-dark: #172554;
+    --primary-soft: #eff6ff;
+    --accent: #0284c7;
+    --accent-soft: #f0f9ff;
+    --success: #059669;
+    --success-soft: #ecfdf5;
+    --warning: #d97706;
+    --warning-soft: #fffbeb;
+    --danger: #dc2626;
+    --danger-soft: #fef2f2;
+    --purple: #7c3aed;
+    --purple-soft: #f5f3ff;
+    --slate-50: #f8fafc;
+    --slate-100: #f1f5f9;
+    --slate-200: #e2e8f0;
+    --slate-300: #cbd5e1;
+    --slate-400: #94a3b8;
+    --slate-500: #64748b;
+    --slate-600: #475569;
+    --slate-700: #334155;
+    --slate-800: #1e293b;
+    --slate-900: #0f172a;
+    
+    --sidebar-width: 320px;
+    --header-height: 70px;
+    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    font-size: 16px;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    color: var(--slate-800);
+    background-color: var(--slate-50);
+    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  /* Header Superior Institucional */
+  .top-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--header-height);
+    background: #ffffff;
+    border-bottom: 1px solid var(--slate-200);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.5rem;
+    z-index: 100;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  }
+
+  .brand-area {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .brand-logo-badge {
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: white;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 1.15rem;
+    letter-spacing: -0.5px;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+  }
+
+  .brand-text h1 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--slate-900);
+    line-height: 1.2;
+  }
+
+  .brand-text p {
+    font-size: 0.75rem;
+    color: var(--slate-500);
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .search-container {
+    position: relative;
+    width: 320px;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 0.5rem 0.75rem 0.5rem 2.25rem;
+    border: 1px solid var(--slate-300);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    background: var(--slate-100);
+    color: var(--slate-800);
+    transition: all 0.2s ease;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: var(--primary-light);
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--slate-400);
+    pointer-events: none;
+    width: 16px;
+    height: 16px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.825rem;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+    text-decoration: none;
+  }
+
+  .btn-outline {
+    background: #ffffff;
+    border-color: var(--slate-300);
+    color: var(--slate-700);
+  }
+
+  .btn-outline:hover {
+    background: var(--slate-100);
+    border-color: var(--slate-400);
+    color: var(--slate-900);
+  }
+
+  .btn-primary {
+    background: var(--primary);
+    color: #ffffff;
+  }
+
+  .btn-primary:hover {
+    background: var(--primary-dark);
+  }
+
+  /* Contenedor Principal con Sidebar */
+  .layout-container {
+    display: flex;
+    margin-top: var(--header-height);
+    min-height: calc(100vh - var(--header-height));
+  }
+
+  /* Barra Lateral de Navegación */
+  .sidebar {
+    width: var(--sidebar-width);
+    position: fixed;
+    top: var(--header-height);
+    bottom: 0;
+    left: 0;
+    background: #ffffff;
+    border-right: 1px solid var(--slate-200);
+    overflow-y: auto;
+    padding: 1.25rem 0.75rem 2rem;
+    z-index: 50;
+  }
+
+  .sidebar-section-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--slate-400);
+    padding: 0.75rem 0.75rem 0.35rem;
+    margin-top: 0.5rem;
+  }
+
+  .nav-list {
+    list-style: none;
+  }
+
+  .nav-item {
+    margin-bottom: 2px;
+  }
+
+  .nav-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.45rem 0.75rem;
+    border-radius: 6px;
+    color: var(--slate-600);
+    text-decoration: none;
+    font-size: 0.825rem;
+    font-weight: 500;
+    transition: all 0.15s ease;
+  }
+
+  .nav-link:hover {
+    background: var(--slate-100);
+    color: var(--slate-900);
+  }
+
+  .nav-link.active {
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-weight: 600;
+  }
+
+  .nav-badge {
+    font-size: 0.65rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 9999px;
+    background: var(--slate-200);
+    color: var(--slate-700);
+    font-weight: 600;
+  }
+
+  .nav-link.active .nav-badge {
+    background: var(--primary-light);
+    color: #ffffff;
+  }
+
+  /* Área Principal de Contenido */
+  .main-content {
+    margin-left: var(--sidebar-width);
+    flex: 1;
+    padding: 2.5rem 3.5rem;
+    max-width: 1180px;
+  }
+
+  /* Portada del Manual */
+  .manual-hero {
+    background: linear-gradient(135deg, var(--slate-900) 0%, var(--primary-dark) 100%);
+    color: #ffffff;
+    border-radius: 16px;
+    padding: 3rem 2.5rem;
+    margin-bottom: 3rem;
+    box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.3);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .manual-hero::after {
+    content: "";
+    position: absolute;
+    top: -50px;
+    right: -50px;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.25) 0%, rgba(255, 255, 255, 0) 70%);
+    border-radius: 50%;
+  }
+
+  .hero-tag {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(8px);
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 1.25rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .manual-hero h1 {
+    font-size: 2.3rem;
+    font-weight: 800;
+    line-height: 1.15;
+    margin-bottom: 0.75rem;
+    letter-spacing: -0.02em;
+  }
+
+  .manual-hero p.subtitle {
+    font-size: 1.05rem;
+    color: var(--slate-300);
+    max-width: 800px;
+    margin-bottom: 1.75rem;
+    line-height: 1.5;
+  }
+
+  .hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    padding-top: 1.25rem;
+    font-size: 0.8rem;
+    color: var(--slate-300);
+  }
+
+  .hero-meta-item strong {
+    color: #ffffff;
+  }
+
+  /* Secciones y Módulos */
+  .module-card {
+    background: #ffffff;
+    border: 1px solid var(--slate-200);
+    border-radius: 14px;
+    padding: 2.25rem;
+    margin-bottom: 2.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+    scroll-margin-top: calc(var(--header-height) + 1.5rem);
+  }
+
+  .module-header {
+    border-bottom: 2px solid var(--slate-100);
+    padding-bottom: 1.25rem;
+    margin-bottom: 1.75rem;
+  }
+
+  .module-category {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 0.35rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .module-title {
+    font-size: 1.65rem;
+    font-weight: 700;
+    color: var(--slate-900);
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+  }
+
+  .module-route-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--slate-100);
+    border: 1px solid var(--slate-200);
+    border-radius: 6px;
+    padding: 0.35rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--slate-700);
+    margin-top: 0.75rem;
+  }
+
+  .module-route-banner svg {
+    color: var(--slate-500);
+  }
+
+  /* Subsecciones h3 y h4 */
+  h3.section-heading {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--slate-800);
+    margin: 1.75rem 0 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-left: 4px solid var(--primary);
+    padding-left: 0.65rem;
+  }
+
+  h4.subsection-heading {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--slate-700);
+    margin: 1.25rem 0 0.5rem;
+  }
+
+  p {
+    margin-bottom: 1rem;
+    color: var(--slate-700);
+    font-size: 0.925rem;
+  }
+
+  ul, ol {
+    margin-bottom: 1.25rem;
+    padding-left: 1.5rem;
+    color: var(--slate-700);
+    font-size: 0.925rem;
+  }
+
+  li {
+    margin-bottom: 0.35rem;
+  }
+
+  /* Cajas de Aviso / Callouts */
+  .callout {
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: 1.25rem 0;
+    display: flex;
+    gap: 0.85rem;
+    border-left: 4px solid;
+    font-size: 0.875rem;
+  }
+
+  .callout-icon {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    margin-top: 2px;
+  }
+
+  .callout-content {
+    flex: 1;
+  }
+
+  .callout-title {
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+
+  .callout-info {
+    background: var(--accent-soft);
+    border-left-color: var(--accent);
+    color: #0369a1;
+  }
+  .callout-info .callout-title { color: #0284c7; }
+
+  .callout-note {
+    background: var(--primary-soft);
+    border-left-color: var(--primary-light);
+    color: #1e40af;
+  }
+  .callout-note .callout-title { color: var(--primary); }
+
+  .callout-tip {
+    background: var(--success-soft);
+    border-left-color: var(--success);
+    color: #065f46;
+  }
+  .callout-tip .callout-title { color: #059669; }
+
+  .callout-warning {
+    background: var(--warning-soft);
+    border-left-color: var(--warning);
+    color: #92400e;
+  }
+  .callout-warning .callout-title { color: #d97706; }
+
+  .callout-danger {
+    background: var(--danger-soft);
+    border-left-color: var(--danger);
+    color: #991b1b;
+  }
+  .callout-danger .callout-title { color: #dc2626; }
+
+  /* Badges de Estados e Insignias */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 6px;
+    font-size: 0.725rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+
+  .badge-success {
+    background: #dcfce7;
+    color: #15803d;
+    border-color: #bbf7d0;
+  }
+
+  .badge-warning {
+    background: #fef3c7;
+    color: #b45309;
+    border-color: #fde68a;
+  }
+
+  .badge-danger {
+    background: #fee2e2;
+    color: #b91c1c;
+    border-color: #fecaca;
+  }
+
+  .badge-info {
+    background: #e0f2fe;
+    color: #0369a1;
+    border-color: #bae6fd;
+  }
+
+  .badge-purple {
+    background: #ede9fe;
+    color: #6d28d9;
+    border-color: #ddd6fe;
+  }
+
+  .badge-neutral {
+    background: var(--slate-100);
+    color: var(--slate-700);
+    border-color: var(--slate-300);
+  }
+
+  /* Tablas de Datos */
+  .table-container {
+    overflow-x: auto;
+    margin: 1.25rem 0 1.5rem;
+    border: 1px solid var(--slate-200);
+    border-radius: 8px;
+    background: #ffffff;
+  }
+
+  table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    text-align: left;
+  }
+
+  table.data-table th {
+    background: var(--slate-100);
+    color: var(--slate-700);
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--slate-200);
+  }
+
+  table.data-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--slate-100);
+    color: var(--slate-700);
+    vertical-align: top;
+  }
+
+  table.data-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  table.data-table tr:hover td {
+    background-color: var(--slate-50);
+  }
+
+  code.field-name {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    background: var(--slate-100);
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
+    color: var(--primary);
+    font-weight: 600;
+  }
+
+  /* Secuencias de Pasos Paso a Paso */
+  .step-flow {
+    list-style: none;
+    padding: 0;
+    margin: 1.25rem 0;
+    position: relative;
+  }
+
+  .step-flow-item {
+    display: flex;
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+  }
+
+  .step-flow-item:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    left: 17px;
+    top: 36px;
+    bottom: -16px;
+    width: 2px;
+    background: var(--slate-200);
+  }
+
+  .step-number {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+    box-shadow: 0 2px 4px rgba(30, 58, 138, 0.2);
+  }
+
+  .step-content {
+    flex: 1;
+    background: var(--slate-50);
+    border: 1px solid var(--slate-200);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+  }
+
+  .step-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--slate-900);
+    margin-bottom: 0.35rem;
+  }
+
+  .step-desc {
+    font-size: 0.875rem;
+    color: var(--slate-600);
+    margin-bottom: 0;
+  }
+
+  /* Diagramas de Flujo en CSS Puro */
+  .flowchart {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--slate-100);
+    padding: 1.25rem;
+    border-radius: 10px;
+    border: 1px dashed var(--slate-300);
+    margin: 1.25rem 0;
+  }
+
+  .flow-node {
+    background: #ffffff;
+    border: 1px solid var(--slate-300);
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    font-size: 0.825rem;
+    font-weight: 600;
+    color: var(--slate-800);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .flow-node.active-state {
+    border-color: var(--primary-light);
+    background: var(--primary-soft);
+    color: var(--primary);
+  }
+
+  .flow-node small {
+    font-size: 0.7rem;
+    color: var(--slate-500);
+    font-weight: 400;
+    margin-top: 2px;
+  }
+
+  .flow-arrow {
+    color: var(--slate-400);
+    font-weight: 700;
+    font-size: 1.1rem;
+  }
+
+  /* Grid de Tarjetas de Características */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1rem;
+    margin: 1.25rem 0;
+  }
+
+  .card-feature {
+    background: var(--slate-50);
+    border: 1px solid var(--slate-200);
+    border-radius: 8px;
+    padding: 1.25rem;
+  }
+
+  .card-feature h5 {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--slate-900);
+    margin-bottom: 0.35rem;
+  }
+
+  .card-feature p {
+    font-size: 0.825rem;
+    color: var(--slate-600);
+    margin-bottom: 0;
+  }
+
+  /* Footer */
+  .manual-footer {
+    background: #ffffff;
+    border-top: 1px solid var(--slate-200);
+    padding: 2.5rem 2rem;
+    text-align: center;
+    color: var(--slate-500);
+    font-size: 0.85rem;
+    margin-top: auto;
+  }
+
+  /* Botón Volver Arriba */
+  .back-to-top {
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+    background: var(--slate-900);
+    color: white;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: all 0.2s ease;
+    border: none;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 90;
+  }
+
+  .back-to-top.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .back-to-top:hover {
+    background: var(--primary);
+    transform: translateY(-2px);
+  }
+
+  /* Estilos de Impresión */
+  @media print {
+    .top-header,
+    .sidebar,
+    .back-to-top,
+    .btn-print {
+      display: none !important;
+    }
+
+    body {
+      background: white !important;
+      color: black !important;
+      font-size: 10pt;
+    }
+
+    .layout-container {
+      margin-top: 0 !important;
+    }
+
+    .main-content {
+      margin-left: 0 !important;
+      padding: 0 !important;
+      max-width: 100% !important;
+    }
+
+    .manual-hero {
+      background: #f1f5f9 !important;
+      color: black !important;
+      box-shadow: none !important;
+      border: 1px solid #cbd5e1 !important;
+      page-break-after: always;
+    }
+
+    .manual-hero h1,
+    .manual-hero p.subtitle,
+    .hero-meta,
+    .hero-meta-item strong {
+      color: black !important;
+    }
+
+    .module-card {
+      box-shadow: none !important;
+      border: 1px solid #e2e8f0 !important;
+      page-break-inside: avoid;
+      page-break-before: auto;
+      margin-bottom: 2cm;
+    }
+
+    table.data-table {
+      page-break-inside: avoid;
+    }
+  }
+
+  /* Responsive Design */
+  @media (max-width: 1024px) {
+    .sidebar {
+      display: none;
+    }
+    .main-content {
+      margin-left: 0;
+      padding: 1.5rem;
+    }
+    .search-container {
+      width: 200px;
+    }
+  }
+
+  </style>
+</head>
+<body>
+
+  <!-- BARRA DE ENCABEZADO SUPERIOR -->
+  <header class="top-header">
+    <div class="brand-area">
+      <div class="brand-logo-badge">IDI</div>
+      <div class="brand-text">
+        <h1>ERP-IDI &bull; Manual de Usuario</h1>
+        <p>Inst. Inmunología "Dr. Nicolás E. Bianco Colmenares" &bull; UCV</p>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <div class="search-container">
+        <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" id="manualSearchInput" class="search-input" placeholder="Buscar módulo, campo o procedimiento..." aria-label="Buscar en el manual">
+      </div>
+      <button type="button" class="btn btn-outline btn-print" onclick="window.print()">
+        <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+        Imprimir / Guardar PDF
+      </button>
+    </div>
+  </header>
+
+  <!-- CONTENEDOR PRINCIPAL CON MENÚ LATERAL Y CONTENIDO -->
+  <div class="layout-container">
+    
+  <aside class="sidebar">
+    <div class="sidebar-section-title">Marco General</div>
+    <ul class="nav-list">
+      <li class="nav-item">
+        <a href="#seccion-introduccion" class="nav-link">
+          <span>Introducción Institucional</span>
+          <span class="nav-badge">IDI</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-principios" class="nav-link">
+          <span>Principios Transversales</span>
+          <span class="nav-badge">Normas</span>
+        </a>
+      </li>
+    </ul>
+
+    <div class="sidebar-section-title">Seguridad y Acceso</div>
+    <ul class="nav-list">
+      <li class="nav-item">
+        <a href="#modulo-auth" class="nav-link">
+          <span>Módulo 1: Acceso y Perfil</span>
+          <span class="nav-badge">JWT</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-dashboard" class="nav-link">
+          <span>Módulo 2: Panel de Control</span>
+          <span class="nav-badge">KPI</span>
+        </a>
+      </li>
+    </ul>
+
+    <div class="sidebar-section-title">Catálogo e Inventario</div>
+    <ul class="nav-list">
+      <li class="nav-item">
+        <a href="#modulo-productos" class="nav-link">
+          <span>Módulo 3: Catálogo General</span>
+          <span class="nav-badge">SKU</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-maestros" class="nav-link">
+          <span>Módulo 4: Maestros de Almacén</span>
+          <span class="nav-badge">Base</span>
+        </a>
+      </li>
+    </ul>
+
+    <div class="sidebar-section-title">Procura y Finanzas</div>
+    <ul class="nav-list">
+      <li class="nav-item">
+        <a href="#modulo-proveedores-requisiciones" class="nav-link">
+          <span>Módulo 5: Proveedores y Requisiciones</span>
+          <span class="nav-badge">Procura</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-ordenes-compra" class="nav-link">
+          <span>Módulo 6: Órdenes de Compra</span>
+          <span class="nav-badge">Bimoneda</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-recepcion-almacen" class="nav-link">
+          <span>Módulo 7: Recepción en Muelle</span>
+          <span class="nav-badge">Lotes</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-finanzas-tesoreria" class="nav-link">
+          <span>Módulo 8: Finanzas y Cuentas por Pagar</span>
+          <span class="nav-badge">Pagos</span>
+        </a>
+      </li>
+    </ul>
+
+    <div class="sidebar-section-title">Operaciones de Almacén</div>
+    <ul class="nav-list">
+      <li class="nav-item">
+        <a href="#modulo-solicitudes-internas" class="nav-link">
+          <span>Módulo 9: Solicitudes Internas</span>
+          <span class="nav-badge">Ventana</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-despacho-materiales" class="nav-link">
+          <span>Módulo 10: Despacho de Materiales</span>
+          <span class="nav-badge">FEFO</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-kardex" class="nav-link">
+          <span>Módulo 11: Libro de Kardex</span>
+          <span class="nav-badge">Asientos</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-ajustes-mermas" class="nav-link">
+          <span>Módulo 12: Ajustes y Mermas</span>
+          <span class="nav-badge">Conteo</span>
+        </a>
+      </li>
+    </ul>
+
+    <div class="sidebar-section-title">Laboratorio y Calidad</div>
+    <ul class="nav-list">
+      <li class="nav-item">
+        <a href="#modulo-calidad-cuarentena" class="nav-link">
+          <span>Módulo 13: Calidad y Cuarentena</span>
+          <span class="nav-badge">Control</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-laboratorio-frio" class="nav-link">
+          <span>Módulo 14: Neveras y Cadena de Frío</span>
+          <span class="nav-badge">2-8°C</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-corridas-laboratorio" class="nav-link">
+          <span>Módulo 15: Corridas y Consumo 5D</span>
+          <span class="nav-badge">Costos</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-auditoria-neveras" class="nav-link">
+          <span>Módulo 16: Auditoría de Neveras</span>
+          <span class="nav-badge">Arqueo</span>
+        </a>
+      </li>
+    </ul>
+
+    <div class="sidebar-section-title">I+D, Analítica y Gobernanza</div>
+    <ul class="nav-list">
+      <li class="nav-item">
+        <a href="#modulo-investigacion-docencia" class="nav-link">
+          <span>Módulo 17: Investigación y Docencia</span>
+          <span class="nav-badge">Blindado</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-reportes-trazabilidad" class="nav-link">
+          <span>Módulo 18: Reportes y Trazabilidad</span>
+          <span class="nav-badge">Auditoría</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#modulo-administracion-usuarios" class="nav-link">
+          <span>Módulo 19: Administración y Políticas</span>
+          <span class="nav-badge">RBAC</span>
+        </a>
+      </li>
+    </ul>
+
+    <div class="sidebar-section-title">Apéndices y Ayuda</div>
+    <ul class="nav-list">
+      <li class="nav-item">
+        <a href="#apendice-glosario" class="nav-link">
+          <span>Apéndice A: Glosario</span>
+          <span class="nav-badge">Términos</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#apendice-errores" class="nav-link">
+          <span>Apéndice B: Errores y Solución</span>
+          <span class="nav-badge">FAQ</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="#apendice-buenas-practicas" class="nav-link">
+          <span>Apéndice C: Buenas Prácticas</span>
+          <span class="nav-badge">Bioética</span>
+        </a>
+      </li>
+    </ul>
+  </aside>
+
+
+    <main class="main-content">
+      
+  <!-- HERO INSTITUCIONAL -->
+  <section class="manual-hero" id="seccion-introduccion">
+    <span class="hero-tag">Documentación Oficial del Sistema</span>
+    <h1>Manual de Usuario por Módulos ERP-IDI</h1>
+    <p class="subtitle">
+      Guía integral de operación, procedimientos paso a paso, reglas de negocio y catálogo de módulos del Sistema ERP del <strong>Instituto de Inmunología "Dr. Nicolás E. Bianco Colmenares" (IDI - UCV)</strong>.
+    </p>
+    <div class="hero-meta">
+      <div class="hero-meta-item"><strong>Institución:</strong> IDI - Universidad Central de Venezuela</div>
+      <div class="hero-meta-item"><strong>Versión del Sistema:</strong> ERP-IDI v2.5 Enterprise</div>
+      <div class="hero-meta-item"><strong>Enfoque:</strong> Operativo por Módulo Funcional</div>
+      <div class="hero-meta-item"><strong>Formato:</strong> HTML5 / CSS Puro Autónomo</div>
+    </div>
+  </section>
+
+  <!-- PRINCIPIOS Y ARQUITECTURA TRANSVERSAL -->
+  <article class="module-card" id="modulo-principios">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        Arquitectura & Marco Operativo
+      </div>
+      <h2 class="module-title">Principios Transversales del Sistema</h2>
+      <div class="module-route-banner">
+        <span>Alcance Institucional Hospitalario, Académico y Científico</span>
+      </div>
+    </div>
+
+    <p>
+      El <strong>ERP-IDI</strong> ha sido concebido para resolver las demandas altamente especializadas de un centro de referencia nacional que combina la <strong>atención asistencial y diagnóstico inmunológico a pacientes</strong> con la <strong>investigación biomédica de posgrado y docencia universitaria</strong>. A diferencia de un sistema comercial convencional, el ERP-IDI opera bajo cinco principios rectores obligatorios:
+    </p>
+
+    <div class="grid-2">
+      <div class="card-feature">
+        <h5>1. Cadena de Frío Estricta (-80°C, -20°C, 2°C a 8°C)</h5>
+        <p>
+          Los reactivos (anticuerpos monoclonales, sustratos enzimáticos, cebadores y conjugados) sufren inactivación biológica irreversible ante variaciones térmicas. Cada vial cuenta con asignación física obligatoria a una cava o nevera clínica con monitoreo de estatus operativo.
+        </p>
+      </div>
+      <div class="card-feature">
+        <h5>2. Despacho FEFO (First Expired, First Out)</h5>
+        <p>
+          Tanto en el Almacén General como en las cavas de laboratorio, las solicitudes y los consumos priorizan automáticamente los lotes o viales cuya fecha de vencimiento esté más próxima a expirar, evitando mermas por caducidad en anaquel.
+        </p>
+      </div>
+      <div class="card-feature">
+        <h5>3. Segregación Clínico-Asistencial vs. Investigación (I+D)</h5>
+        <p>
+          Los insumos adquiridos mediante proyectos de investigación (FONACIT, OPS, subvenciones) o donaciones institucionales cuentan con <strong>blindaje a nivel de base de datos</strong>: el sistema prohíbe terminantemente su consumo en la rutina de diagnóstico clínico para evitar desvíos presupuestarios.
+        </p>
+      </div>
+      <div class="card-feature">
+        <h5>4. Operación Bimoneda Integrada (USD / VES / EUR)</h5>
+        <p>
+          Las órdenes de compra, deudas con proveedores, facturaciones y pagos amortizados permiten registro simultáneo en divisas (USD/EUR) y moneda nacional (Bolívares), aplicando de forma auditable la tasa oficial del Banco Central de Venezuela (BCV) correspondiente a la fecha de cada transacción.
+        </p>
+      </div>
+    </div>
+
+    <div class="callout callout-warning">
+      <div class="callout-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+      </div>
+      <div class="callout-content">
+        <div class="callout-title">Regla de la Ventana Operativa Semanal</div>
+        <p>
+          Para mantener la disciplina logística del Almacén Central y garantizar la preparación técnica de los materiales, las solicitudes departamentales de insumos <strong>solo pueden radicarse dentro del horario programado por la Dirección</strong> (ej. lunes a miércoles de 08:00 a 16:00). Fuera de dicha ventana, el sistema bloquea los nuevos pedidos.
+        </p>
+      </div>
+    </div>
+
+    <h3 class="section-heading">Estructura Global de Navegación de la Interfaz</h3>
+    <p>
+      La aplicación web del ERP-IDI se organiza mediante una barra de navegación superior fija y un menú lateral categorizado que se adapta de manera dinámica a los privilegios del usuario:
+    </p>
+
+    <div class="flowchart">
+      <div class="flow-node">
+        <strong>Barra Superior</strong>
+        <small>Identidad UCV / IDI, Notificaciones y Menú de Usuario</small>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-node">
+        <strong>Menú Lateral (Sidebar)</strong>
+        <small>Agrupaciones temáticas por proceso de negocio</small>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-node active-state">
+        <strong>Espacio de Trabajo</strong>
+        <small>Formularios, Tablas dinámicas, Modales y Reportes</small>
+      </div>
+    </div>
+  </article>
+
+      
+  <!-- MÓDULO 1: ACCESO, AUTENTICACIÓN Y PERFIL -->
+  <article class="module-card" id="modulo-auth">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+        Seguridad Institucional
+      </div>
+      <h2 class="module-title">Módulo 1: Control de Acceso, Autenticación y Perfil</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /login &bull; /settings/users &bull; Perfil en barra superior</span>
+      </div>
+    </div>
+
+    <p>
+      El módulo de autenticación gestiona la identidad digital de todos los miembros del instituto mediante tokens criptográficos portadores (JWT) firmados en HMAC SHA-256. El sistema garantiza que cada petición verifique la identidad del usuario y sus roles asignados antes de ejecutar cualquier transacción.
+    </p>
+
+    <h3 class="section-heading">1.1 Inicio de Sesión y Verificación de Identidad</h3>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Ingreso a la pantalla de acceso</div>
+          <p class="step-desc">Abra su navegador web e ingrese a la dirección del sistema. Si no cuenta con una sesión activa, el sistema lo redirigirá inmediatamente a <code>/login</code>.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Captura de credenciales</div>
+          <p class="step-desc">Ingrese su nombre de usuario (<code>username</code>) o correo electrónico institucional y su contraseña. Haga clic en el botón <strong>"Iniciar Sesión"</strong>.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Generación de sesión y redirección</div>
+          <p class="step-desc">El servidor valida la contraseña mediante encriptación segura bcrypt. Si es correcta, emite el token de acceso, configura los datos de sesión en el almacenamiento local seguro y carga el <strong>Dashboard Principal</strong>.</p>
+        </div>
+      </li>
+    </ol>
+
+    <div class="callout callout-danger">
+      <div class="callout-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+      </div>
+      <div class="callout-content">
+        <div class="callout-title">Expiración de Sesión y Auto-Logout Defensivo</div>
+        <p>
+          Por estrictas políticas de bioseguridad y confidencialidad clínica, el token tiene una vigencia estándar de <strong>8 horas</strong>. Al vencer o si el servidor detecta un código <code>401 Unauthorized</code>, el sistema purgará la sesión y redirigirá al formulario de acceso para evitar operaciones no autorizadas en estaciones de trabajo compartidas.
+        </p>
+      </div>
+    </div>
+
+    <h3 class="section-heading">1.2 Procedimiento de Cambio de Contraseña</h3>
+    <p>
+      Cualquier usuario autenticado puede actualizar su clave de acceso en cualquier momento desde el menú desplegable de su avatar en la esquina superior derecha:
+    </p>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Abrir el modal de perfil</div>
+          <p class="step-desc">Haga clic sobre su nombre o avatar en la barra superior y seleccione la opción <strong>"Cambiar Contraseña"</strong>.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Validación de contraseña actual y nueva</div>
+          <p class="step-desc">Debe ingresar su contraseña actual por seguridad, seguida de la nueva contraseña (mínimo 8 caracteres, alfanumérica recomendada) y su confirmación idéntica.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Confirmación del cambio</div>
+          <p class="step-desc">Haga clic en <strong>"Guardar Nueva Contraseña"</strong>. El sistema actualizará el hash criptográfico en la base de datos y mostrará un mensaje de éxito.</p>
+        </div>
+      </li>
+    </ol>
+  </article>
+
+  <!-- MÓDULO 2: DASHBOARD EJECUTIVO -->
+  <article class="module-card" id="modulo-dashboard">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+        Centro de Operaciones
+      </div>
+      <h2 class="module-title">Módulo 2: Panel de Control Principal (Dashboard)</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /dashboard &bull; Acceso: Todos los usuarios autenticados</span>
+      </div>
+    </div>
+
+    <p>
+      El Dashboard es la consola central del ERP-IDI. Consolida métricas operativas en tiempo real, alertas preventivas de caducidad y accesos directos para agilizar las rutinas de trabajo diarias.
+    </p>
+
+    <h3 class="section-heading">2.1 Indicadores Clave de Rendimiento (KPIs)</h3>
+    <div class="grid-2">
+      <div class="card-feature">
+        <h5>Total Insumos en Catálogo</h5>
+        <p>Número total de productos activos codificados en el catálogo institucional del IDI, distinguiendo entre consumibles y reactivos.</p>
+      </div>
+      <div class="card-feature">
+        <h5>Valorización de Inventario</h5>
+        <p>Monto financiero global del stock almacenado, calculado a costo promedio ponderado de compra expresado en USD y Bolívares.</p>
+      </div>
+      <div class="card-feature">
+        <h5>Alertas de Stock Mínimo</h5>
+        <p>Contador de reactivos cuya existencia total en almacén se encuentra por debajo de su punto de reorden configurado.</p>
+      </div>
+      <div class="card-feature">
+        <h5>Lotes Críticos por Vencer</h5>
+        <p>Lotes con fecha de caducidad en los próximos 30, 60 o 90 días, alertando al personal para priorizar su uso o tramitar descartes.</p>
+      </div>
+    </div>
+
+    <h3 class="section-heading">2.2 Panel de Alertas Preventivas y Vencimientos</h3>
+    <p>
+      La tabla de alertas del dashboard aplica un sistema de <strong>semaforización automática</strong>:
+    </p>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Nivel de Alerta</th>
+            <th>Criterio Técnico</th>
+            <th>Impacto Operativo</th>
+            <th>Acción Recomendada</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge badge-danger">CRÍTICO (&lt; 30 días)</span></td>
+            <td>El lote vence en menos de 30 días continuos.</td>
+            <td>Riesgo inminente de merma financiera y descarte.</td>
+            <td>Consumo inmediato en corridas analíticas prioritarias.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-warning">PREVENTIVO (30 - 60 días)</span></td>
+            <td>El lote vence en el rango de 1 a 2 meses.</td>
+            <td>Tiempo hábil para asignación y rotación FEFO.</td>
+            <td>Verificar programación de solicitudes departamentales.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-info">STOCK BAJO</span></td>
+            <td>Existencia física &le; Nivel Mínimo definido.</td>
+            <td>Riesgo de rotura de stock y desabastecimiento.</td>
+            <td>Generar Requisición de Compra al departamento de procura.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <!-- MÓDULO 3: CATÁLOGO GENERAL DE INSUMOS Y REACTIVOS -->
+  <article class="module-card" id="modulo-productos">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 2h7v5h-7V4zm-7 0h5v8H5V4zm0 10h5v6H5v-6zm7 6v-9h7v9h-7z"/></svg>
+        Inventario Base
+      </div>
+      <h2 class="module-title">Módulo 3: Catálogo General de Insumos y Reactivos</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /inventory/products &bull; /inventory/products/new &bull; /inventory/products/[id]</span>
+      </div>
+    </div>
+
+    <p>
+      El catálogo centraliza la definición técnica de todos los bienes consumibles, reactivos analíticos, medios de cultivo, material médico-quirúrgico y papelería institucional. Constituye la columna vertebral para las compras, el inventario y los despachos.
+    </p>
+
+    <h3 class="section-heading">3.1 Alta de un Nuevo Producto en el Catálogo</h3>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Ingresar a la vista de creación</div>
+          <p class="step-desc">En el menú lateral, diríjase a <strong>Inventario & Stock &gt; Catálogo & Lotes</strong> y haga clic en el botón superior derecho <strong>"+ Nuevo Insumo"</strong>.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Diligenciar la información técnica del insumo</div>
+          <p class="step-desc">Complete los campos requeridos conforme a la especificación técnica del fabricante o distribuidor médico.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Guardar y codificar</div>
+          <p class="step-desc">Haga clic en <strong>"Crear Producto"</strong>. El sistema verificará que el código SKU y el código de barras no existan previamente y registrará la ficha técnica.</p>
+        </div>
+      </li>
+    </ol>
+
+    <h3 class="section-heading">3.2 Diccionario de Campos de la Ficha de Producto</h3>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Campo</th>
+            <th>Tipo</th>
+            <th>Obligatorio</th>
+            <th>Regla de Negocio / Validación</th>
+            <th>Descripción Operativa</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code class="field-name">name</code></td>
+            <td>Texto</td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Mínimo 3 caracteres, descriptivo único.</td>
+            <td>Nombre comercial o denominación técnica (ej. <em>Kit ELISA Anti-TPO 96 Determinaciones</em>).</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">sku</code></td>
+            <td>Texto</td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Único en el sistema, alfanumérico en mayúsculas.</td>
+            <td>Código institucional de inventario (ej. <code>REA-ELISA-0042</code>).</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">barcode</code></td>
+            <td>Texto</td>
+            <td>No</td>
+            <td>Único si se suministra, formato EAN-13/Code-128.</td>
+            <td>Código de barras impreso por el fabricante para lectura óptica por pistola láser.</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">categoryId</code></td>
+            <td>Selector</td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Debe existir en la tabla de Categorías.</td>
+            <td>Clasificación funcional (ej. Inmunodiagnóstico, Biología Molecular, Consumibles de Vidrio).</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">brandId</code></td>
+            <td>Selector</td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Debe existir en la tabla de Marcas.</td>
+            <td>Fabricante o casa comercial (ej. Bio-Rad, Roche, Sigma-Aldrich).</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">baseUnitId</code></td>
+            <td>Selector</td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Unidad mínima de consumo.</td>
+            <td>Unidad de medida en la que se consume o despacha internamente (ej. Vial, Determinación, Mililitro).</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">purchaseUnitId</code></td>
+            <td>Selector</td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Unidad de presentación del proveedor.</td>
+            <td>Presentación comercial de compra (ej. Caja x 96 determinaciones, Frasco x 500 ml, Bulto).</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">conversionFactor</code></td>
+            <td>Decimal</td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Mayor que 0 (ej. 96.00).</td>
+            <td>Factor multiplicador para convertir 1 unidad de compra a unidades base en almacén.</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">isReagent</code></td>
+            <td>Booleano</td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Por defecto falso.</td>
+            <td>Si se activa en <strong>VERDADERO</strong>, habilita la cadena de frío, trazabilidad de viales y corridas de laboratorio.</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">isTaxExempt</code></td>
+            <td>Booleano</td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Ley Orgánica de Salud / IVA.</td>
+            <td>Exime de la alícuota del 16% de IVA en la emisión de órdenes de compra para reactivos médicos.</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">minStockAlert</code></td>
+            <td>Numérico</td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Entero &ge; 0.</td>
+            <td>Nivel umbral que dispara las notificaciones preventivas de reposición en el Dashboard.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <!-- MÓDULO 4: MAESTROS DEL SISTEMA -->
+  <article class="module-card" id="modulo-maestros">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+        Configuración Base
+      </div>
+      <h2 class="module-title">Módulo 4: Maestros del Sistema y Configuración de Almacén</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /inventory/settings &bull; /inventory/catalog &bull; Acceso: ADMINISTRADOR</span>
+      </div>
+    </div>
+
+    <p>
+      Este módulo permite estructurar las tablas maestras de datos de las cuales dependen las operaciones diarias. Proporciona la infraestructura clasificatoria y espacial para la trazabilidad.
+    </p>
+
+    <div class="grid-2">
+      <div class="card-feature">
+        <h5>Categorías de Insumos</h5>
+        <p>Agrupaciones de nivel superior para organizar el catálogo institucional y generar balances valorizados por rubro (ej. Medios de Cultivo, Reactivos Serológicos, Descartables).</p>
+      </div>
+      <div class="card-feature">
+        <h5>Marcas y Fabricantes</h5>
+        <p>Directorio de casas comerciales fabricantes, necesario para evaluar el rendimiento técnico por proveedor en las auditorías analíticas de laboratorio.</p>
+      </div>
+      <div class="card-feature">
+        <h5>Unidades de Medida</h5>
+        <p>Definición de magnitudes físicas, abreviaturas normalizadas (ej. <code>ml</code>, <code>vial</code>, <code>caja</code>, <code>kit</code>) y factores de equivalencia volumétrica.</p>
+      </div>
+      <div class="card-feature">
+        <h5>Ubicaciones Físicas (Location)</h5>
+        <p>Estructuración espacial de las áreas de custodia física: Almacén Central, Estantes de Depósito, Mesones Analíticos y Cavas Térmicas.</p>
+      </div>
+    </div>
+
+    <h3 class="section-heading">4.1 Tipos de Ubicación en el Sistema (LocationType)</h3>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Tipo de Ubicación</th>
+            <th>Código de Sistema</th>
+            <th>Propósito Operativo</th>
+            <th>Reglas de Custodia</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Almacén General</strong></td>
+            <td><code>ALMACEN_GENERAL</code></td>
+            <td>Área de recepción inicial, muelle de carga y custodia central de bultos cerrados.</td>
+            <td>Custodia directa exclusiva del Almacenista.</td>
+          </tr>
+          <tr>
+            <td><strong>Laboratorio</strong></td>
+            <td><code>LABORATORIO</code></td>
+            <td>Mesones de trabajo, bancos analíticos y cuartos de preparación de muestras.</td>
+            <td>Área de consumo activo y fraccionamiento por analistas.</td>
+          </tr>
+          <tr>
+            <td><strong>Depósito Seco</strong></td>
+            <td><code>DEPOSITO</code></td>
+            <td>Almacenamiento secundario para material no perecedero o papelería.</td>
+            <td>Control periódico de stock por inventarios cíclicos.</td>
+          </tr>
+          <tr>
+            <td><strong>Oficina Administrativa</strong></td>
+            <td><code>OFICINA</code></td>
+            <td>Destinos finales de consumibles de administración y suministros de oficina.</td>
+            <td>No admite almacenamiento de reactivos clínicos.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+      
+  <!-- MÓDULO 5: PROVEEDORES Y REQUISICIONES DE COMPRA -->
+  <article class="module-card" id="modulo-proveedores-requisiciones">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/></svg>
+        Cadena de Procura
+      </div>
+      <h2 class="module-title">Módulo 5: Gestión de Compras y Directorio de Proveedores</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /purchasing/suppliers &bull; /purchasing/requisitions &bull; /purchasing/requisitions/new</span>
+      </div>
+    </div>
+
+    <p>
+      El aprovisionamiento de reactivos de alta sensibilidad y consumibles biológicos requiere una gestión rigurosa de cotizaciones, proveedores calificados y justificaciones técnicas de necesidad institucional.
+    </p>
+
+    <h3 class="section-heading">5.1 Directorio y Ficha de Proveedores</h3>
+    <p>
+      En <strong>Compras &gt; Directorio de Proveedores</strong> se mantiene el registro fiscal y comercial de las casas distribuidoras. Cada ficha incluye:
+    </p>
+    <ul>
+      <li><strong>RIF / Identificación Fiscal:</strong> Registro tributario único (ej. <code>J-12345678-9</code>).</li>
+      <li><strong>Razón Social & Nombre Comercial:</strong> Nombre legal de la empresa suministradora.</li>
+      <li><strong>Contactos Comerciales:</strong> Teléfonos, correos corporativos y dirección física para despachos.</li>
+      <li><strong>Historial Comercial & Balance de Deuda:</strong> Acceso directo a las órdenes históricas emitidas y el saldo pendiente por amortizar en dólares y bolívares.</li>
+    </ul>
+
+    <h3 class="section-heading">5.2 Preórdenes y Requisiciones de Compra (Purchase Requisitions)</h3>
+    <p>
+      La requisición es el instrumento previo a la orden de compra. Permite consolidar requerimientos de múltiples áreas, recabar cotizaciones de precios en el mercado y someter la procura a la aprobación presupuestaria.
+    </p>
+
+    <div class="flowchart">
+      <div class="flow-node active-state">
+        <strong>BORRADOR</strong>
+        <small>Carga inicial de necesidades y justificación</small>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-node">
+        <strong>EN_COTIZACION</strong>
+        <small>Comparación de ofertas con proveedores</small>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-node">
+        <strong>ADJUDICADA</strong>
+        <small>Proveedor seleccionado y orden generada</small>
+      </div>
+    </div>
+
+    <h4 class="subsection-heading">Paso a paso para crear una Requisición de Compra:</h4>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Iniciar la Requisición</div>
+          <p class="step-desc">Ingrese a <strong>Compras &gt; Preórdenes de Compra</strong> y pulse <strong>"+ Nueva Requisición"</strong>.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Indicar Justificación y Sección Solicitante</div>
+          <p class="step-desc">Seleccione el departamento técnico beneficiario e indique una justificación detallada (ej. <em>"Reposición trimestral de sueros control y kits ELISA para despistaje de autoinmunidad"</em>).</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Agregar renglones de insumos requeridos</div>
+          <p class="step-desc">Seleccione los productos del catálogo, especifique la cantidad solicitada en unidades comerciales y un precio estimado de referencia.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <div class="step-title">Guardar y pasar a cotización</div>
+          <p class="step-desc">Guarde en estado <code>BORRADOR</code>. Cuando el equipo de procura reciba las ofertas comerciales, cambie el estado a <code>EN_COTIZACION</code>.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">5</div>
+        <div class="step-content">
+          <div class="step-title">Adjudicación y Conversión en Orden Oficial</div>
+          <p class="step-desc">Al elegir al proveedor ganador, pulse el botón <strong>"Convertir a Orden de Compra"</strong>. El sistema vinculará al proveedor, heredará los ítems acordados y creará la Orden de Compra oficial de manera automática.</p>
+        </div>
+      </li>
+    </ol>
+  </article>
+
+  <!-- MÓDULO 6: ÓRDENES DE COMPRA Y FACTURACIÓN -->
+  <article class="module-card" id="modulo-ordenes-compra">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
+        Gestión Comercial
+      </div>
+      <h2 class="module-title">Módulo 6: Órdenes de Compra y Facturación de Proveedores</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /purchasing/orders &bull; /purchasing/orders/new &bull; /purchasing/orders/[id]</span>
+      </div>
+    </div>
+
+    <p>
+      La Orden de Compra representa el compromiso contractual y financiero del IDI frente al proveedor. Admite emisión multimoneda (USD/VES) con cálculo automático de bases imponibles y alícuotas del IVA.
+    </p>
+
+    <h3 class="section-heading">6.1 Emisión de una Nueva Orden de Compra</h3>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Selección del Proveedor y Datos Cambiarios</div>
+          <p class="step-desc">Seleccione el proveedor comercial adjudicado, la moneda de cotización (USD o Bolívares) y confirme la tasa de cambio de referencia del BCV.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Carga de Renglones de Insumos</div>
+          <p class="step-desc">Por cada producto, indique la cantidad ordenada, la unidad de compra, el precio unitario pactado y verifique si el ítem está exento de IVA o grava la alícuota general (16%).</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Cálculo Automático del Resumen Financiero</div>
+          <p class="step-desc">El sistema calcula en tiempo real: <code>Subtotal</code>, <code>Base Imponible</code>, <code>Total Exento</code>, <code>IVA 16%</code> y <code>Total de la Orden</code> tanto en USD como en Bolívares.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <div class="step-title">Emisión y Envío al Proveedor</div>
+          <p class="step-desc">Al guardar, la orden queda en estado <code>ENVIADA</code>, lista para imprimir en PDF oficial o enviar por correo al distribuidor para su despacho.</p>
+        </div>
+      </li>
+    </ol>
+
+    <h3 class="section-heading">6.2 Expediente Digital y Carga de Facturas Comerciales</h3>
+    <p>
+      Dentro de la ficha de la orden (<code>/purchasing/orders/[id]</code>), la pestaña <strong>Facturación</strong> permite respaldar las facturas fiscales recibidas:
+    </p>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Dato de Factura</th>
+            <th>Obligatorio</th>
+            <th>Propósito Fiscal</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code class="field-name">invoiceNumber</code></td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Número impreso de la factura legal del proveedor.</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">controlNumber</code></td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Número de control fiscal del SENIAT exigido en Venezuela.</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">invoiceDate</code></td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Fecha formal de emisión de la factura comercial.</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">totalAmount</code></td>
+            <td><span class="badge badge-danger">Sí</span></td>
+            <td>Monto total facturado por el proveedor para conciliar saldos.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <!-- MÓDULO 7: RECEPCIÓN FÍSICA EN ALMACÉN -->
+  <article class="module-card" id="modulo-recepcion-almacen">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M20 8h-3V4H7v4H4c-1.1 0-2 .9-2 2v10h20V10c0-1.1-.9-2-2-2zM9 6h6v2H9V6zm11 12H4v-6h16v6z"/></svg>
+        Entrada de Existencias
+      </div>
+      <h2 class="module-title">Módulo 7: Recepción Física de Mercancía en Almacén Central</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /purchasing/orders/[id]/receive &bull; Roles: ADMINISTRADOR, ALMACENISTA</span>
+      </div>
+    </div>
+
+    <p>
+      La recepción física es el punto crítico de control donde los insumos ingresan legal y físicamente a la custodia del instituto. En este proceso <strong>se generan los lotes de inventario y se auditan las fechas de vencimiento</strong>.
+    </p>
+
+    <div class="callout callout-danger">
+      <div class="callout-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+      </div>
+      <div class="callout-content">
+        <div class="callout-title">Obligatoriedad Inviolable de Lote y Vencimiento</div>
+        <p>
+          Bajo ninguna circunstancia el sistema permite ingresar reactivos o insumos biológicos sin asignar el <strong>Número de Lote físico del fabricante</strong> y su <strong>Fecha de Vencimiento legal</strong>. Esta regla garantiza la trazabilidad clínica y el cumplimiento de las normas de Buenas Prácticas de Laboratorio.
+        </p>
+      </div>
+    </div>
+
+    <h3 class="section-heading">7.1 Procedimiento de Recepción en Muelle de Almacén</h3>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Acceder al formulario de recepción de la orden</div>
+          <p class="step-desc">Desde el listado de órdenes en estado <code>ENVIADA</code> o <code>PARCIAL</code>, haga clic en el botón <strong>"Recibir Pedido"</strong>.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Inspección física y conteo de bultos</div>
+          <p class="step-desc">El almacenista verifica físicamente los empaques, precintos de seguridad de los reactivos y que los geles refrigerantes de la cadena de frío vengan a la temperatura adecuada.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Registro de cantidades y lotes por renglón</div>
+          <p class="step-desc">Por cada ítem ordenado, indique:
+            <ul>
+              <li><strong>Cantidad Recibida:</strong> Unidades físicas conformes que ingresan al stock disponible.</li>
+              <li><strong>Cantidad Rechazada:</strong> Unidades defectuosas, rotas o calientes que se devuelven al proveedor.</li>
+              <li><strong>Número de Lote (Lot Number):</strong> Código impreso en la caja por el laboratorio productor.</li>
+              <li><strong>Fecha de Vencimiento:</strong> Fecha límite de estabilidad biológica garantizada.</li>
+              <li><strong>Ubicación de Destino:</strong> Selección del depósito físico (Almacén Central o Cava de Entrada).</li>
+            </ul>
+          </p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <div class="step-title">Procesamiento de la Transacción Atómica</div>
+          <p class="step-desc">Al pulsar <strong>"Confirmar Recepción"</strong>, el backend ejecuta una transacción atómica protegida:
+            <ol>
+              <li>Crea o actualiza el registro en <code>StockBatch</code> con estado <code>DISPONIBLE</code>.</li>
+              <li>Inserta el asiento en el libro diario Kardex como <code>ENTRADA_COMPRA</code>.</li>
+              <li>Actualiza las cantidades recibidas/pendientes en la orden.</li>
+              <li>Si la orden se completó, actualiza su estado a <code>COMPLETADA</code>; si faltan ítems, a <code>PARCIAL</code>.</li>
+            </ol>
+          </p>
+        </div>
+      </li>
+    </ol>
+  </article>
+
+  <!-- MÓDULO 8: FINANZAS, TESORERÍA Y CUENTAS POR PAGAR -->
+  <article class="module-card" id="modulo-finanzas-tesoreria">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+        Tesorería Institucional
+      </div>
+      <h2 class="module-title">Módulo 8: Finanzas, Tesorería y Cuentas por Pagar</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /purchasing/debts &bull; /admin/financial/payments &bull; /purchasing/debts/payment</span>
+      </div>
+    </div>
+
+    <p>
+      El módulo financiero permite supervisar en tiempo real los pasivos comerciales con los proveedores, tramitar amortizaciones parciales de órdenes y registrar egresos operativos directos del instituto.
+    </p>
+
+    <h3 class="section-heading">8.1 Monitor de Deudas y Cuentas por Pagar</h3>
+    <p>
+      En <strong>Finanzas &gt; Cuentas por Pagar & Deudas</strong> se presenta la cartera de compromisos financieros pendientes, clasificada por proveedor y orden de compra. La pantalla muestra:
+    </p>
+    <ul>
+      <li>Monto Total Adjudicado (USD y VES).</li>
+      <li>Monto Total Amortizado a la fecha.</li>
+      <li>Saldo Deudor Pendiente.</li>
+      <li>Estado Financiero de la Orden: <span class="badge badge-warning">PENDIENTE</span>, <span class="badge badge-info">PAGADO_PARCIAL</span>, <span class="badge badge-success">PAGADO</span> o <span class="badge badge-purple">EXONERADO</span>.</li>
+    </ul>
+
+    <h3 class="section-heading">8.2 Registro de Pagos Amortizados a Órdenes</h3>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Seleccionar la orden por amortizar</div>
+          <p class="step-desc">Haga clic en el botón <strong>"Registrar Pago"</strong> junto a la orden correspondiente.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Definir método y monto del desembolso</div>
+          <p class="step-desc">Indique el método de pago empleado (Transferencia bancaria nacional/internacional, Pago Móvil, Efectivo USD/VES), el importe transferido y el número de referencia de la entidad bancaria.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Adjuntar comprobante y aplicar amortización</div>
+          <p class="step-desc">Adjunte el soporte digital del comprobante bancario y pulse <strong>"Guardar Pago"</strong>. El saldo deudor de la orden se reducirá instantáneamente.</p>
+        </div>
+      </li>
+    </ol>
+
+    <h3 class="section-heading">8.3 Egresos y Pagos Directos Institucionales</h3>
+    <p>
+      En <strong>Finanzas &gt; Egresos & Pagos Directos</strong> (<code>/admin/financial/payments</code>), la administración puede tramitar erogaciones operativas que no nacen de una orden de compra tradicional (ej. calibración técnica externa de equipos, aranceles aduanales de donaciones, suministros de emergencia inmediata). Permite asociar la cuenta bancaria de egreso, la referencia fiscal y la justificación administrativa.
+    </p>
+  </article>
+
+      
+  <!-- MÓDULO 9: SOLICITUDES INTERNAS Y VENTANA SEMANAL -->
+  <article class="module-card" id="modulo-solicitudes-internas">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+        Abastecimiento Departamental
+      </div>
+      <h2 class="module-title">Módulo 9: Solicitudes Internas y Ventana Operativa Semanal</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /requests &bull; /requests/new &bull; /requests/[id]</span>
+      </div>
+    </div>
+
+    <p>
+      El abastecimiento de insumos a los departamentos clínicos, docentes y de investigación no se ejecuta de forma arbitraria o caótica. El ERP-IDI implementa una <strong>Ventana Operativa Semanal Programada</strong> para coordinar la reposición regular de materiales hacia las secciones técnicas del IDI.
+    </p>
+
+    <div class="callout callout-warning">
+      <div class="callout-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+      </div>
+      <div class="callout-content">
+        <div class="callout-title">Reglas de la Ventana Operativa Semanal</div>
+        <p>
+          Las solicitudes están sujetas a validación de fecha y hora del servidor (Zona Horaria <code>America/Caracas</code>):
+          <ul>
+            <li><strong>Estado Activo:</strong> Solo se admiten nuevas solicitudes cuando el indicador de ventana muestra <span class="badge badge-success">VENTANA ABIERTA</span>.</li>
+            <li><strong>Cuota Semanal:</strong> Cada usuario solicitante cuenta con un límite máximo parametrizado de solicitudes por ciclo semanal (ej. máximo 2 solicitudes en el ciclo <code>2026-W46</code>).</li>
+            <li><strong>Ventana Cerrada o Suspendida:</strong> Si la ventana está cerrada o suspendida por inventario general, el botón de radicación quedará bloqueado y la API rechazará cualquier petición con error <code>400 Bad Request</code>.</li>
+          </ul>
+        </p>
+      </div>
+    </div>
+
+    <h3 class="section-heading">9.1 Cómo Radicar una Solicitud Departamental</h3>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Verificar la Ventana Operativa</div>
+          <p class="step-desc">Ingrese a <strong>Solicitudes Internas &gt; Pedidos a Almacén General</strong> y verifique en la tarjeta informativa que la ventana esté activa y cuál es su cuota semanal restante.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Iniciar la Solicitud</div>
+          <p class="step-desc">Haga clic en <strong>"+ Nueva Solicitud"</strong>. Se abrirá el formulario de requisición departamental.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Indicar Prioridad y Justificación de Uso</div>
+          <p class="step-desc">Seleccione el nivel de prioridad (<span class="badge badge-info">BAJA</span>, <span class="badge badge-neutral">RUTINA</span> o <span class="badge badge-danger">URGENTE</span>) y redacte una justificación clara de necesidad para su servicio técnico o laboratorio.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <div class="step-title">Seleccionar los Insumos requeridos</div>
+          <p class="step-desc">Busque los productos en el catálogo, verifique la existencia física actual disponible en almacén e indique la cantidad exacta solicitada en unidades base.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">5</div>
+        <div class="step-content">
+          <div class="step-title">Enviar la Solicitud</div>
+          <p class="step-desc">Pulse <strong>"Enviar Solicitud"</strong>. El pedido quedará en estado <span class="badge badge-warning">PENDIENTE</span> en la bandeja del Almacén Central.</p>
+        </div>
+      </li>
+    </ol>
+
+    <h3 class="section-heading">9.2 Aprobación y Dictamen del Almacén Central</h3>
+    <p>
+      El personal del Almacén Central (o el Administrador) revisa las solicitudes radicadas desde la bandeja general:
+    </p>
+    <ul>
+      <li><strong>Aprobar con ajuste de cantidad:</strong> El almacenista puede evaluar el stock total disponible y modificar la cantidad aprobada hacia abajo si la existencia institucional es limitada para compartir insumos con otras secciones. Al confirmar, el estado pasa a <span class="badge badge-info">APROBADA</span>.</li>
+      <li><strong>Rechazar solicitud:</strong> Si no hay existencia o la justificación no procede, el almacenista debe registrar de manera obligatoria el <strong>Motivo de Rechazo</strong>. El estado pasa a <span class="badge badge-danger">RECHAZADA</span> y el solicitante recibe la notificación del motivo.</li>
+    </ul>
+  </article>
+
+  <!-- MÓDULO 10: DESPACHO FÍSICO DE MATERIALES -->
+  <article class="module-card" id="modulo-despacho-materiales">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M18 6h-2c0-2.21-1.79-4-4-4S8 3.79 8 6H6c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6-2c1.1 0 2 .9 2 2h-4c0-1.1.9-2 2-2zm6 16H6V8h2v2c0 .55.45 1 1 1s1-.45 1-1V8h4v2c0 .55.45 1 1 1s1-.45 1-1V8h2v12z"/></svg>
+        Salida y Custodia
+      </div>
+      <h2 class="module-title">Módulo 10: Despacho Físico de Materiales</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /requests/dispatch &bull; /requests/[id]/dispatch &bull; Roles: ALMACENISTA, ADMINISTRADOR</span>
+      </div>
+    </div>
+
+    <p>
+      El despacho es el acto material en el que los bienes abandonan el Almacén Central y son entregados al solicitante. Este proceso formal <strong>rebaja el saldo físico de los lotes seleccionados y genera un asiento legal en el Kardex</strong>.
+    </p>
+
+    <h3 class="section-heading">10.1 Procedimiento de Despacho Paso a Paso</h3>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Ingresar a la Solicitud Aprobada</div>
+          <p class="step-desc">Desde <strong>Solicitudes &gt; Despacho de Materiales</strong>, abra la solicitud que se encuentra en estado <span class="badge badge-info">APROBADA</span>.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Selección de Lotes Físicos (FEFO Obligatorio)</div>
+          <p class="step-desc">Por cada ítem aprobado, el sistema desplegará los lotes disponibles en almacén. El almacenista debe seleccionar preferentemente el lote más próximo a caducar (criterio FEFO) e indicar la cantidad a despachar de cada uno.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Ejecutar el Despacho Físico</div>
+          <p class="step-desc">Haga clic en el botón <strong>"Confirmar Despacho"</strong>. El backend ejecuta la deducción atómica de <code>currentQuantity</code> en los lotes involucrados.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <div class="step-title">Comprobante y Asiento Kardex</div>
+          <p class="step-desc">El sistema genera el asiento Kardex <code>DESPACHO_SOLICITUD</code> con número de referencia único y actualiza el estado de la solicitud a <span class="badge badge-success">COMPLETADA</span> (o <span class="badge badge-warning">DESPACHADA_PARCIAL</span> si quedaron renglones pendientes).</p>
+        </div>
+      </li>
+    </ol>
+  </article>
+
+  <!-- MÓDULO 11: KARDEX Y MOVIMIENTOS DE INVENTARIO -->
+  <article class="module-card" id="modulo-kardex">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+        Trazabilidad Contable
+      </div>
+      <h2 class="module-title">Módulo 11: Libro Diario de Kardex y Movimientos</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /inventory/kardex &bull; /inventory/kardex/[id] &bull; Acceso: ALMACENISTA, ADMINISTRADOR</span>
+      </div>
+    </div>
+
+    <p>
+      El Kardex es el registro contable inmutable de todas las entradas, traslados, salidas y deducciones del inventario. Cumple con los estándares de auditoría fiscal, patrimonial e institucional de la Universidad Central de Venezuela.
+    </p>
+
+    <h3 class="section-heading">11.1 Tipos de Movimiento de Kardex (StockMovementType)</h3>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Tipo de Movimiento</th>
+            <th>Naturaleza</th>
+            <th>Origen / Destino Típico</th>
+            <th>Documento Respaldante</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge badge-success">ENTRADA_COMPRA</span></td>
+            <td>Ingreso positivo (+)</td>
+            <td>Proveedor &rarr; Almacén Central</td>
+            <td>Orden de Compra y Recepción en Muelle</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-info">TRASLADO_A_LABORATORIO</span></td>
+            <td>Transferencia (&harr;)</td>
+            <td>Almacén Central &rarr; Laboratorio / Cava</td>
+            <td>Requisición FEFO de reactivos a frío</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-warning">DESPACHO_SOLICITUD</span></td>
+            <td>Egreso definitivo (-)</td>
+            <td>Almacén Central &rarr; Departamento Solicitante</td>
+            <td>Solicitud Interna Semanal Aprobada</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-purple">AJUSTE_INVENTARIO</span></td>
+            <td>Positivo / Negativo (&plusmn;)</td>
+            <td>Ajuste directo sobre anaquel</td>
+            <td>Acta de Conteo Físico de Inventario</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-danger">DESCARTE_MERMA</span></td>
+            <td>Egreso definitivo (-)</td>
+            <td>Almacén Central &rarr; Desecho Técnico</td>
+            <td>Informe de Merma / Rotura / Deterioro</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="section-heading">11.2 Comprobante Digital del Asiento de Kardex</h3>
+    <p>
+      Al hacer clic en cualquier movimiento de la tabla, se abre la vista de detalle (<code>/inventory/kardex/[id]</code>) que contiene:
+    </p>
+    <ul>
+      <li>Número de Comprobante Único (ej. <code>MOV-2026-00084</code>).</li>
+      <li>Fecha, hora exacta y nombre completo del custodio que ejecutó la transacción.</li>
+      <li>Tabla detallada de lotes afectados: número de lote, fecha de vencimiento, cantidad movida, costo unitario en divisas y costo total de la línea.</li>
+      <li>Botón de descarga de comprobante en formato listo para impresión y archivo físico.</li>
+    </ul>
+  </article>
+
+  <!-- MÓDULO 12: AJUSTES Y MERMAS DIRECTAS -->
+  <article class="module-card" id="modulo-ajustes-mermas">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+        Regularización de Existencias
+      </div>
+      <h2 class="module-title">Módulo 12: Ajustes de Inventario y Mermas Directas</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /inventory/adjustments &bull; Roles: ALMACENISTA, ADMINISTRADOR</span>
+      </div>
+    </div>
+
+    <p>
+      En la operativa diaria pueden existir discrepancias entre el saldo del sistema y el conteo físico en anaquel (ej. rotura accidental de un frasco de vidrio en almacén, hallazgo de unidades sobrantes en un estante durante un arqueo). Este módulo permite regularizar el inventario formalmente.
+    </p>
+
+    <h3 class="section-heading">12.1 Procedimiento para Ajuste por Conteo Físico</h3>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Acceder al panel de ajustes</div>
+          <p class="step-desc">En <strong>Inventario & Stock</strong>, seleccione <strong>Ajustes & Mermas</strong> y pulse la pestaña <strong>"Nuevo Ajuste de Inventario"</strong>.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Seleccionar Lote y Tipo de Ajuste</div>
+          <p class="step-desc">Seleccione el producto y el lote físico específico. Elija el sentido del ajuste:
+            <ul>
+              <li><strong>Ajuste Positivo (+):</strong> Se incrementa el saldo (ej. sobrante detectado en conteo cíclico).</li>
+              <li><strong>Ajuste Negativo (-):</strong> Se deduce el saldo (ej. faltante injustificado en conteo).</li>
+            </ul>
+          </p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Justificación Técnica Obligatoria</div>
+          <p class="step-desc">El sistema exige redactar una justificación obligatoria detallada (mínimo 10 caracteres) para respaldar la auditoría patrimonial antes de aplicar la modificación.</p>
+        </div>
+      </li>
+    </ol>
+
+    <h3 class="section-heading">12.2 Registro de Mermas Directas y Deterioro</h3>
+    <p>
+      Cuando un insumo sufre daño físico (frasco roto por caída, contaminación evidente o fallo de almacenamiento no imputable a calidad analítica), se utiliza la opción <strong>"Registrar Merma"</strong>. Esta operación da de baja definitiva la cantidad afectada del lote, genera el movimiento de Kardex <code>DESCARTE_MERMA</code> y deja constancia documental del siniestro.
+    </p>
+  </article>
+
+      
+  <!-- MÓDULO 13: CALIDAD, INCIDENCIAS Y CUARENTENA -->
+  <article class="module-card" id="modulo-calidad-cuarentena">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+        Seguridad Biológica
+      </div>
+      <h2 class="module-title">Módulo 13: Control de Calidad, Incidencias y Cuarentena</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /quality/quarantine &bull; /coordinator/quarantine &bull; Roles: CALIDAD, LABORATORIO, ADMINISTRADOR</span>
+      </div>
+    </div>
+
+    <p>
+      El control de calidad hospitalario garantiza que ningún reactivo o lote con sospecha de contaminación, pérdida de cadena de frío o alteración en sus curvas de calibración sea suministrado a los pacientes.
+    </p>
+
+    <h3 class="section-heading">13.1 Tipos de Incidencias Técnicas sobre Lotes</h3>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Tipo de Incidencia</th>
+            <th>Código de Sistema</th>
+            <th>Causa Raíz Típica</th>
+            <th>Acción Inmediata</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge badge-danger">Falla Control Calidad</span></td>
+            <td><code>FALLA_CONTROL_CALIDAD</code></td>
+            <td>Controles positivos/negativos fuera del rango aceptable (&gt; 3 DE).</td>
+            <td>Bloqueo automático del lote para diagnósticos.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-warning">Cadena de Frío Rota</span></td>
+            <td><code>CADENA_FRIO_ROTA</code></td>
+            <td>Corte de energía o fallo de compresión en cava/nevera (&gt; 8°C).</td>
+            <td>Retención preventiva en cuarentena térmica.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-purple">Daño Físico</span></td>
+            <td><code>DANO_FISICO</code></td>
+            <td>Frasco agrietado, tapa con fuga o precinto violado.</td>
+            <td>Inspección de integridad por el supervisor.</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-danger">Contaminación / Precipitado</span></td>
+            <td><code>CONTAMINACION_PRECIPITADO</code></td>
+            <td>Turbidez inusual, precipitación proteica o crecimiento fúngico en vial.</td>
+            <td>Descarte técnico inmediato y notificación a compras.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="section-heading">13.2 Procedimiento de Dictamen Técnico de Cuarentena</h3>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Detección y Envío a Cuarentena</div>
+          <p class="step-desc">Al detectar una anomalía, el analista o coordinador selecciona el lote y activa la opción <strong>"Poner en Cuarentena"</strong>. El estado del lote pasa de <code>DISPONIBLE</code> a <span class="badge badge-warning">EN_CUARENTENA</span> y queda bloqueado en todas las solicitudes y corridas analíticas.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Evaluación Técnica y Pruebas Confirmatorias</div>
+          <p class="step-desc">El personal de Calidad ejecuta pruebas con sueros de referencia conocidos o verifica el registro del registrador de temperatura (DataLogger).</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Emisión del Dictamen Definitivo</div>
+          <p class="step-desc">Desde <strong>/quality/quarantine</strong>, el supervisor emite la resolución formal:
+            <ul>
+              <li><strong>Liberar Lote:</strong> Si la prueba confirma que el reactivo está íntegro, se registra el informe de liberación y el lote retorna a <span class="badge badge-success">DISPONIBLE</span>.</li>
+              <li><strong>Condenar Lote:</strong> Si se confirma el daño, se califica como <span class="badge badge-danger">DEFECTUOSO</span> o <span class="badge badge-purple">DESCARTADO</span>, procediendo al descarte definitivo y reclamo de garantía ante el proveedor.</li>
+            </ul>
+          </p>
+        </div>
+      </li>
+    </ol>
+  </article>
+
+  <!-- MÓDULO 14: LABORATORIO CLÍNICO Y CADENA DE FRÍO -->
+  <article class="module-card" id="modulo-laboratorio-frio">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2c1.1 0 2 .9 2 2v6.2c1.2.7 2 2 2 3.5 0 2.2-1.8 4-4 4s-4-1.8-4-4c0-1.5.8-2.8 2-3.5V4c0-1.1.9-2 2-2zm0 2h-1v6.7l-.4.2C9.6 11.4 9 12.6 9 13.7c0 1.7 1.3 3 3 3s3-1.3 3-3c0-1.1-.6-2.3-1.6-2.8l-.4-.2V4h-1v5h2V4h-1z"/></svg>
+        Preservación y Frío
+      </div>
+      <h2 class="module-title">Módulo 14: Laboratorio Clínico y Cadena de Frío</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /lab/fridges &bull; /laboratory/fridges &bull; /laboratory/consumption</span>
+      </div>
+    </div>
+
+    <p>
+      Este módulo gestiona la infraestructura de refrigeración biológica del instituto: neveras clínicas (2°C a 8°C), congeladores (-20°C) y ultracongeladores (-80°C). Cada equipo tiene su código único, su temperatura programada y el inventario fraccionado de frascos y viales alojados en su interior.
+    </p>
+
+    <h3 class="section-heading">14.1 Monitor de Neveras y Cavas Térmicas</h3>
+    <p>
+      En <strong>Laboratorio &gt; Neveras & Cadena de Frío</strong> se supervisa el parque de equipos. Cada tarjeta de nevera refleja:
+    </p>
+    <ul>
+      <li><strong>Código Identificador:</strong> Código visible en la puerta del equipo (ej. <code>FRIDGE-INM-01</code>).</li>
+      <li><strong>Temperatura Objetivo:</strong> Temperatura nominal asignada (ej. 4.00°C o -20.00°C).</li>
+      <li><strong>Estado Operativo del Equipo:</strong> <span class="badge badge-success">OPERATIVO</span>, <span class="badge badge-warning">MANTENIMIENTO</span>, <span class="badge badge-danger">DEFECTUOSO</span> o <span class="badge badge-neutral">FUERA_DE_SERVICIO</span>.</li>
+      <li><strong>Total de Frascos Almacenados:</strong> Contador de unidades biológicas en custodia.</li>
+    </ul>
+
+    <h3 class="section-heading">14.2 Ciclo de Vida del Frasco / Vial Individual (LabReagentUnit)</h3>
+    <p>
+      Cuando un lote de reactivos ingresa a laboratorio, se fracciona en unidades físicas individuales (<code>LabReagentUnit</code>), cada una identificada con un código de barras único:
+    </p>
+
+    <div class="flowchart">
+      <div class="flow-node active-state">
+        <strong>SELLADO</strong>
+        <small>Frasco cerrado en nevera original</small>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-node">
+        <strong>EN_USO</strong>
+        <small>Abierto en mesón analítico</small>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-node">
+        <strong>AGOTADO</strong>
+        <small>Volumen / Usos restantes = 0</small>
+      </div>
+      <span class="flow-arrow">o</span>
+      <div class="flow-node">
+        <strong>DESCARTADO</strong>
+        <small>Por vencimiento o contaminación</small>
+      </div>
+    </div>
+
+    <div class="callout callout-info">
+      <div class="callout-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <div class="callout-content">
+        <div class="callout-title">Regla de Estabilidad Post-Apertura</div>
+        <p>
+          Al ejecutar la acción <strong>"Abrir Frasco"</strong> (<code>PATCH /api/lab/units/:id/open</code>), el sistema marca la fecha y hora exacta de apertura y el usuario responsable. A partir de ese momento, la vida útil efectiva se supedita a la estabilidad del reactivo reconstituido (ej. 30 días para conjugados de fluorescencia), alertando al bioanalista si se aproxima su degradación.
+        </p>
+      </div>
+    </div>
+  </article>
+
+  <!-- MÓDULO 15: CORRIDAS ANALÍTICAS Y CONSUMO 5D -->
+  <article class="module-card" id="modulo-corridas-laboratorio">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
+        Diagnóstico & Auditoría 5D
+      </div>
+      <h2 class="module-title">Módulo 15: Corridas Analíticas y Consumo en Laboratorio</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /lab/runs &bull; /lab/runs/[id]/close &bull; Roles: BIOANALISTA, COORDINADOR_LABORATORIO</span>
+      </div>
+    </div>
+
+    <p>
+      En inmunología clínica diagnóstica, las muestras no se procesan una a una. Se agrupan en <strong>corridas semanales en bloque (batch testing)</strong>. Además, un kit de 96 pruebas nunca rinde para 96 pacientes debido a los pozos gastados en controles, calibradores y repeticiones. El ERP-IDI resuelve esto mediante el <strong>Motor de Auditoría en 5 Dimensiones</strong>.
+    </p>
+
+    <h3 class="section-heading">15.1 Las 5 Dimensiones del Consumo de Reactivos</h3>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Dimensión</th>
+            <th>Campo en Sistema</th>
+            <th>Propósito Clínico</th>
+            <th>Impacto en Costos</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>1. Determinaciones de Pacientes</strong></td>
+            <td><code>patientUses</code></td>
+            <td>Pruebas efectivas con resultado diagnóstico emitido.</td>
+            <td>Unidades de facturación / servicio asistencial.</td>
+          </tr>
+          <tr>
+            <td><strong>2. Calibradores</strong></td>
+            <td><code>calibratorUses</code></td>
+            <td>Pozos dedicados a la curva estándar de calibración.</td>
+            <td>Costo absorbido proporcionalmente por la corrida.</td>
+          </tr>
+          <tr>
+            <td><strong>3. Controles de Calidad</strong></td>
+            <td><code>controlUses</code></td>
+            <td>Pozos para control positivo, negativo y punto de corte.</td>
+            <td>Requisito mandatorio de garantía analítica.</td>
+          </tr>
+          <tr>
+            <td><strong>4. Repeticiones Técnicas</strong></td>
+            <td><code>repeatUses</code></td>
+            <td>Muestras repetidas por valor crítico o interferencia (lipemia/hemólisis).</td>
+            <td>Auditoría de causa de repetición.</td>
+          </tr>
+          <tr>
+            <td><strong>5. Merma Técnica / Purga</strong></td>
+            <td><code>wasteUses</code></td>
+            <td>Volumen muerto en mangueras de analizadores o purga de pipetas.</td>
+            <td>Merma justificada de proceso analítico.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="section-heading">15.2 Procedimiento de Cierre de Corrida y Costo Real por Paciente</h3>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Abrir la Corrida Semanal</div>
+          <p class="step-desc">Al iniciar la semana de trabajo, el bioanalista crea la corrida para el examen respectivo (ej. <em>ELISA Anticuerpos Anti-ADN Doble Cadena</em>) desde <strong>/lab/runs</strong>.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Acumular Muestras de Pacientes</div>
+          <p class="step-desc">Durante la semana se asocian las solicitudes y pacientes atendidos que se procesarán en el lote analítico.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Cierre de Corrida y Desglose 5D</div>
+          <p class="step-desc">Al culminar el procesamiento físico en el lector de placas o citómetro, pulse <strong>"Cerrar Corrida"</strong> e introduzca:
+            <ul>
+              <li>Total de pacientes válidos diagnosticados (ej. 36 pacientes).</li>
+              <li>Pozos de calibración (ej. 4 pozos).</li>
+              <li>Pozos de control (ej. 2 pozos).</li>
+              <li>Repeticiones técnicas justificadas (ej. 2 muestras dudosas).</li>
+              <li>Merma de purga (ej. 2 pozos).</li>
+              <li><strong>Total Deducido del Kit:</strong> 46 determinaciones.</li>
+            </ul>
+          </p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <div class="step-title">Conciliación de Rendimiento y Costo Efectivo</div>
+          <p class="step-desc">El sistema descuenta las 46 pruebas del saldo del frasco (<code>LabReagentUnit.remainingUses</code>) y calcula el <strong>Costo Efectivo Real por Paciente</strong>:
+            <br>
+            <code>Costo Real Paciente = (Total Determinaciones Deducidas &times; Costo Unitario) / Pacientes Válidos</code>
+          </p>
+        </div>
+      </li>
+    </ol>
+  </article>
+
+  <!-- MÓDULO 16: AUDITORÍA FÍSICA DE NEVERAS -->
+  <article class="module-card" id="modulo-auditoria-neveras">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+        Inspección Física
+      </div>
+      <h2 class="module-title">Módulo 16: Auditoría Física de Neveras (Fridge Audit)</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /coordinator/fridge-audit &bull; Roles: COORDINADOR_LABORATORIO, ADMINISTRADOR</span>
+      </div>
+    </div>
+
+    <p>
+      Para prevenir desviaciones entre el saldo lógico del software y la existencia física en las cavas, el Coordinador de Laboratorio realiza arqueos periódicos mediante la herramienta <strong>Fridge Audit</strong>.
+    </p>
+
+    <h3 class="section-heading">16.1 Flujo de Arqueo Físico y Conciliación</h3>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Seleccionar el Equipo de Frío</div>
+          <p class="step-desc">En <strong>/coordinator/fridge-audit</strong>, seleccione la nevera clínica que se auditará físicamente.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Cotejo Vial por Vial</div>
+          <p class="step-desc">El sistema lista todos los frascos teóricos asignados a esa nevera. El auditor escanea o verifica visualmente cada frasco físico, confirmando su presencia y el volumen restante estimado.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Registro de Discrepancias</div>
+          <p class="step-desc">Si un frasco no aparece o su saldo difiere significativamente, el sistema marca el ítem como <span class="badge badge-warning">PENDING_ADJUSTMENT</span>.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <div class="step-title">Cierre y Regularización</div>
+          <p class="step-desc">El coordinador justifica la discrepancia (ej. <em>"Vial extraviado o desechado sin registrar"</em>) y emite el cierre del arqueo, actualizando de forma inmutable el libro de auditoría de laboratorio.</p>
+        </div>
+      </li>
+    </ol>
+  </article>
+
+      
+  <!-- MÓDULO 17: INVESTIGACIÓN Y DOCENCIA (I+D) -->
+  <article class="module-card" id="modulo-investigacion-docencia">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M4.5 10.5C3.67 10.5 3 11.17 3 12s.67 1.5 1.5 1.5h15c.83 0 1.5-.67 1.5-1.5s-.67-1.5-1.5-1.5h-15z"/></svg>
+        Ciencia y Posgrado
+      </div>
+      <h2 class="module-title">Módulo 17: Investigación Científica, Docencia y Donaciones (I+D)</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /research/projects &bull; /research/donations &bull; /research/trials</span>
+      </div>
+    </div>
+
+    <p>
+      El IDI desarrolla proyectos de investigación biomédica financiados por subvenciones científicas (OPS, FONACIT, convenios universitarios). Este módulo garantiza la <strong>segregación estricta del financiamiento, blindaje de reactivos donados y bitácora formal de ensayos de laboratorio</strong>.
+    </p>
+
+    <h3 class="section-heading">17.1 Proyectos de Investigación y Presupuestos</h3>
+    <p>
+      En <strong>Investigación &gt; Proyectos & Presupuesto</strong> (<code>/research/projects</code>), los directores de línea registran las líneas de indagación. Cada proyecto define:
+    </p>
+    <ul>
+      <li><strong>Tipo de Proyecto:</strong>
+        <span class="badge badge-info">EXPERIMENTAL_DEVELOPMENT</span>, 
+        <span class="badge badge-purple">CLINICAL_VALIDATION</span>, 
+        <span class="badge badge-success">ACADEMIC_THESIS</span> (Tesis de Maestría/Doctorado), 
+        <span class="badge badge-warning">PILOT_STUDY</span> o 
+        <span class="badge badge-neutral">QUALITY_ASSURANCE</span>.
+      </li>
+      <li><strong>Presupuesto Estimado y Fechas:</strong> Monto total adjudicado en divisas, fecha de inicio y fecha prevista de culminación.</li>
+      <li><strong>Investigador Principal:</strong> Custodio académico responsable de la ejecución técnica.</li>
+    </ul>
+
+    <h3 class="section-heading">17.2 Donaciones y Stock Blindado</h3>
+    <div class="callout callout-danger">
+      <div class="callout-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+      </div>
+      <div class="callout-content">
+        <div class="callout-title">Blindaje Anti-Consumo Asistencial</div>
+        <p>
+          Los insumos registrados en el módulo de donaciones (<code>/research/donations</code>) quedan etiquetados en la base de datos con el flag <code>ownershipType: RESEARCH_PROJECT</code>. Si un bioanalista intenta incluir un frasco de donación en una corrida clínica asistencial ordinaria, el servidor rechazará la transacción con error bloqueante: <em>"La unidad seleccionada pertenece a un proyecto de investigación y no puede consumirse en rutina clínica de pacientes"</em>.
+        </p>
+      </div>
+    </div>
+
+    <h3 class="section-heading">17.3 Bitácora de Ensayos Experimentales y Hallazgos</h3>
+    <p>
+      En <strong>/research/trials</strong>, el equipo científico documenta sus experimentos:
+    </p>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Creación del Ensayo</div>
+          <p class="step-desc">Se vincula el ensayo al proyecto de investigación, indicando título experimental, objetivo técnico y fecha de ejecución.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Ejecución y Deducción de Reactivos</div>
+          <p class="step-desc">Se registran las muestras analizadas y se descuenta el volumen consumido de los frascos asignados exclusivamente a la subvención.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Registro de Hallazgos y Cierre</div>
+          <p class="step-desc">Se redactan los hallazgos biológicos, interpretaciones estadísticas y conclusiones para respaldo de las publicaciones científicas.</p>
+        </div>
+      </li>
+    </ol>
+  </article>
+
+  <!-- MÓDULO 18: REPORTES Y TRAZABILIDAD -->
+  <article class="module-card" id="modulo-reportes-trazabilidad">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
+        Auditoría y Analítica
+      </div>
+      <h2 class="module-title">Módulo 18: Generador de Reportes, Trazabilidad y Exportaciones</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /inventory/reports &bull; /admin/reports/traceability &bull; /lab/reports</span>
+      </div>
+    </div>
+
+    <p>
+      El sistema cuenta con un generador de analítica multicriterio y herramientas de trazabilidad que satisfacen los requerimientos de la Contraloría Interna de la UCV y los comités bioéticos.
+    </p>
+
+    <h3 class="section-heading">18.1 Constructor de Reportes Personalizados de Inventario</h3>
+    <p>
+      En <strong>Inventario &gt; Generador de Reportes</strong> (<code>/inventory/reports</code>), el usuario puede combinar filtros para construir consultas específicas:
+    </p>
+    <ul>
+      <li>Filtro por Tipo de Movimiento (entradas, compras, traslados, ajustes, mermas).</li>
+      <li>Filtro por Rango de Fechas (desde / hasta con selector de calendario).</li>
+      <li>Filtro por Almacén o Ubicación Física de custodia.</li>
+      <li>Filtro por Categoría de Insumo y Producto Específico.</li>
+    </ul>
+
+    <h3 class="section-heading">18.2 Trazabilidad Punta a Punta (End-to-End Traceability)</h3>
+    <p>
+      En <strong>/admin/reports/traceability</strong>, la dirección puede introducir el código de cualquier frasco o número de lote y reconstruir su árbol genealógico completo en un solo clic:
+    </p>
+    <div class="flowchart">
+      <div class="flow-node">
+        <strong>Orden de Compra</strong>
+        <small>Proveedor, Cotización, Tasa BCV</small>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-node">
+        <strong>Factura Comercial</strong>
+        <small>N° Control SENIAT, Comprobante</small>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-node">
+        <strong>Recepción Muelle</strong>
+        <small>Lote físico, Vencimiento, Almacén</small>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-node">
+        <strong>Despacho a Frío</strong>
+        <small>Asignación a Nevera Clínica</small>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-node active-state">
+        <strong>Corrida Analítica</strong>
+        <small>Bioanalista, Pacientes, Costo Real</small>
+      </div>
+    </div>
+
+    <h3 class="section-heading">18.3 Exportaciones Oficiales a Formato CSV</h3>
+    <p>
+      Todas las tablas maestras de datos, el libro diario de Kardex y los balances consolidados disponen de botones de <strong>"Exportar CSV"</strong>. Los archivos generados son compatibles con Microsoft Excel, LibreOffice Calc y software de análisis estadístico R/SPSS.
+    </p>
+  </article>
+
+  <!-- MÓDULO 19: ADMINISTRACIÓN Y SEGURIDAD -->
+  <article class="module-card" id="modulo-administracion-usuarios">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+        Gobernanza del Sistema
+      </div>
+      <h2 class="module-title">Módulo 19: Administración, Seguridad y Usuarios</h2>
+      <div class="module-route-banner">
+        <span>Ruta URL: /admin/users &bull; /admin/security &bull; Acceso: ADMINISTRADOR</span>
+      </div>
+    </div>
+
+    <p>
+      Este módulo es de uso reservado exclusivo para la Dirección y los Administradores de Tecnología del IDI. Permite gestionar el ciclo de vida de los usuarios institucionales y gobernar las políticas de la ventana semanal de solicitudes.
+    </p>
+
+    <h3 class="section-heading">19.1 Gestión Integral de Cuentas de Usuario</h3>
+    <ol class="step-flow">
+      <li class="step-flow-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <div class="step-title">Creación de Nuevo Usuario</div>
+          <p class="step-desc">Desde <strong>Configuración del Sistema &gt; Usuarios y Accesos</strong>, pulse <strong>"+ Nuevo Usuario"</strong>. Ingrese nombre completo, correo institucional, departamento de adscripción y contraseña inicial temporal.</p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <div class="step-title">Asignación de Roles del Sistema (RBAC)</div>
+          <p class="step-desc">Un usuario puede tener uno o múltiples roles concurrentes conforme a su perfil laboral:
+            <ul>
+              <li><code>ADMINISTRADOR</code>: Control total institucional.</li>
+              <li><code>COMPRAS</code>: Procura, cotizaciones, órdenes de compra y deudas.</li>
+              <li><code>ALMACENISTA</code>: Custodia del almacén, recepciones, aprobaciones y despachos Kardex.</li>
+              <li><code>ANALISTA_LABORATORIO</code> / <code>BIOANALISTA</code>: Gestión de viales en frío, consumos y corridas.</li>
+              <li><code>COORDINADOR_LABORATORIO</code>: Aprobación FEFO, auditorías de neveras y cuarentenas.</li>
+              <li><code>INVESTIGACION</code> / <code>DOCENCIA</code>: Proyectos científicos, ensayos y donaciones.</li>
+              <li><code>SOLICITANTE</code>: Radicación de pedidos departamentales en ventana activa.</li>
+            </ul>
+          </p>
+        </div>
+      </li>
+      <li class="step-flow-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <div class="step-title">Blanqueo de Contraseña y Desactivación</div>
+          <p class="step-desc">El administrador puede blanquear la contraseña de un usuario que la haya extraviado o suspender temporalmente el acceso con el conmutador de estado <code>isActive</code> sin borrar su historial transaccional de auditoría.</p>
+        </div>
+      </li>
+    </ol>
+
+    <h3 class="section-heading">19.2 Configuración de la Ventana Operativa Semanal</h3>
+    <p>
+      En <strong>Configuración del Sistema &gt; Seguridad y Auditoría Técnica</strong> (<code>/admin/security</code>), el Administrador programa el horario de servicio del almacén:
+    </p>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Parámetro</th>
+            <th>Tipo</th>
+            <th>Ejemplo de Configuración</th>
+            <th>Impacto en los Solicitantes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Día y Hora de Inicio</strong></td>
+            <td>Día (1-7) y Hora/Min</td>
+            <td>Lunes a las 08:00 AM</td>
+            <td>Apertura automática de la recepción de solicitudes.</td>
+          </tr>
+          <tr>
+            <td><strong>Día y Hora de Cierre</strong></td>
+            <td>Día (1-7) y Hora/Min</td>
+            <td>Miércoles a las 16:00 PM</td>
+            <td>Cierre automático de la recepción; el sistema no admite más envíos.</td>
+          </tr>
+          <tr>
+            <td><strong>Límite Semanal por Usuario</strong></td>
+            <td>Entero &ge; 1</td>
+            <td>2 solicitudes por ciclo semanal</td>
+            <td>Evita saturación de pedidos fragmentados por una misma sección.</td>
+          </tr>
+          <tr>
+            <td><strong>Suspensión de Emergencia</strong></td>
+            <td>Conmutador Booleano</td>
+            <td>Activo / Inactivo</td>
+            <td>Permite congelar la ventana de forma extraordinaria por toma física de inventario general.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+      
+  <!-- APÉNDICE A: GLOSARIO DE TÉRMINOS -->
+  <article class="module-card" id="apendice-glosario">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z"/></svg>
+        Vocabulario Técnico
+      </div>
+      <h2 class="module-title">Apéndice A: Glosario de Términos Institucionales</h2>
+    </div>
+
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Término</th>
+            <th>Definición Técnica en ERP-IDI</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Cadena de Frío</strong></td>
+            <td>Condición de almacenamiento continuo a temperatura controlada (2°C a 8°C, -20°C o -80°C) indispensable para preservar la actividad biológica de enzimas, anticuerpos y antígenos.</td>
+          </tr>
+          <tr>
+            <td><strong>Costo Efectivo por Paciente</strong></td>
+            <td>Cálculo financiero resultante de dividir el costo total de los reactivos consumidos en una corrida (incluyendo calibradores, controles y mermas) entre el total de pacientes diagnosticados.</td>
+          </tr>
+          <tr>
+            <td><strong>Determinación (Pozo / Uso)</strong></td>
+            <td>Unidad mínima teórica de volumen o pozo en placa para procesar una reacción analítica individual en el laboratorio clínico.</td>
+          </tr>
+          <tr>
+            <td><strong>FEFO (First Expired, First Out)</strong></td>
+            <td>Regla de despacho que prioriza la salida y consumo del lote o frasco que tenga la fecha de vencimiento más próxima en el calendario.</td>
+          </tr>
+          <tr>
+            <td><strong>Kardex</strong></td>
+            <td>Libro contable oficial donde se registran cronológicamente todas las entradas, salidas, traslados y ajustes de inventario con sus respectivos costos.</td>
+          </tr>
+          <tr>
+            <td><strong>Over-yield / Sub-yield</strong></td>
+            <td>Variación entre el rendimiento real obtenido de un kit diagnóstico y las determinaciones teóricas prometidas por el prospecto del fabricante.</td>
+          </tr>
+          <tr>
+            <td><strong>Stock Blindado (I+D)</strong></td>
+            <td>Reactivos e insumos adquiridos por donaciones o proyectos de investigación científica que el sistema bloquea para impedir su uso en la rutina asistencial de pacientes.</td>
+          </tr>
+          <tr>
+            <td><strong>Ventana Operativa Semanal</strong></td>
+            <td>Intervalo programado en días y horas durante el cual las secciones del IDI pueden ingresar pedidos de materiales al Almacén Central.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <!-- APÉNDICE B: MATRIZ DE ERRORES FRECUENTES Y SOLUCIÓN -->
+  <article class="module-card" id="apendice-errores">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+        Resolución de Problemas
+      </div>
+      <h2 class="module-title">Apéndice B: Matriz de Errores Frecuentes y Solución</h2>
+    </div>
+
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Mensaje de Error en Pantalla</th>
+            <th>Causa Raíz</th>
+            <th>Procedimiento de Solución</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code class="field-name">400 Bad Request: "Ventana de solicitudes no activa"</code></td>
+            <td>El usuario intentó radicar un pedido fuera de los días y horarios programados de la ventana.</td>
+            <td>Consulte el horario en <strong>/requests</strong> o espere la apertura del próximo ciclo semanal. En casos de urgencia médica, notifique al Administrador.</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">400 Bad Request: "Superó el límite semanal de solicitudes"</code></td>
+            <td>El usuario ya alcanzó su cuota máxima de pedidos permitidos para la semana corriente.</td>
+            <td>Espere al siguiente ciclo semanal o coordine la inclusión de ítems con su jefe de departamento.</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">403 Forbidden: "La unidad X es de investigación y no puede consumirse en rutina"</code></td>
+            <td>El bioanalista intentó usar un reactivo donado o de subvención en una corrida clínica asistencial.</td>
+            <td>Seleccione un frasco que tenga la etiqueta <code>CLINICAL_ROUTINE</code>. Los reactivos de I+D son para proyectos científicos exclusivamente.</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">401 Unauthorized: "Token inválido o expirado"</code></td>
+            <td>La sesión del usuario superó las 8 horas de vigencia o se cerró en otra pestaña.</td>
+            <td>Haga clic en <strong>"Iniciar Sesión"</strong> e introduzca nuevamente sus credenciales.</td>
+          </tr>
+          <tr>
+            <td><code class="field-name">400 Bad Request: "Existencia física insuficiente en el lote"</code></td>
+            <td>Se intentó despachar o consumir una cantidad mayor al saldo actual del lote.</td>
+            <td>Verifique el inventario disponible en <strong>/inventory/products/[id]</strong> o distribuya el consumo entre varios lotes activos.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <!-- APÉNDICE C: BUENAS PRÁCTICAS Y BIOSEGURIDAD -->
+  <article class="module-card" id="apendice-buenas-practicas">
+    <div class="module-header">
+      <div class="module-category">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></svg>
+        Excelencia Operativa
+      </div>
+      <h2 class="module-title">Apéndice C: Buenas Prácticas y Protocolos de Bioseguridad</h2>
+    </div>
+
+    <div class="grid-2">
+      <div class="card-feature">
+        <h5>1. Registro Inmediato de Apertura de Viales</h5>
+        <p>Nunca postergue la acción <strong>"Abrir Frasco"</strong> para el final de la jornada. Registrar la apertura en el instante exacto garantiza que las alertas de caducidad post-apertura protejan a los pacientes.</p>
+      </div>
+      <div class="card-feature">
+        <h5>2. Verificación Visual de Fríos en Recepción</h5>
+        <p>Al recibir pedidos en almacén, verifique inmediatamente con termómetro infrarrojo que los bultos no hayan superado la temperatura crítica antes de firmar la guía de entrega al proveedor.</p>
+      </div>
+      <div class="card-feature">
+        <h5>3. Custodia de Soportes Digitales</h5>
+        <p>Adjunte siempre fotografías legibles de comprobantes bancarios, facturas fiscales y actas de rotura. Esto agiliza las auditorías de la Contraloría de la UCV.</p>
+      </div>
+      <div class="card-feature">
+        <h5>4. Descarte Técnico Responsable</h5>
+        <p>Los viales vencidos o contaminados deben someterse a inactivación por autoclave o disposición en contenedores de riesgo biológico conforme a las normas del IDI.</p>
+      </div>
+    </div>
+  </article>
+
+    </main>
+  </div>
+
+  <!-- PIE DE PÁGINA -->
+  <footer class="manual-footer">
+    <p>
+      <strong>ERP-IDI v2.5 Enterprise</strong> &mdash; Sistema de Gestión Integral de Inventarios, Procura, Cadena de Frío e Investigación.<br>
+      Instituto de Inmunología "Dr. Nicolás E. Bianco Colmenares" &bull; Facultad de Medicina &bull; Universidad Central de Venezuela (UCV).<br>
+      Documento técnico generado para acceso directo fuera de rutas sin dependencias externas.
+    </p>
+  </footer>
+
+  <!-- BOTÓN VOLVER ARRIBA -->
+  <button type="button" id="backToTopBtn" class="back-to-top" title="Volver arriba" aria-label="Volver arriba">
+    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>
+  </button>
+
+  <script>
+
+  // Script Interactivo Autónomo para el Manual de Usuario ERP-IDI
+  document.addEventListener('DOMContentLoaded', () => {
+    // 1. Botón Volver Arriba
+    const backToTopBtn = document.getElementById('backToTopBtn');
+    window.addEventListener('scroll', () => {
+      if (window.scrollY > 400) {
+        backToTopBtn.classList.add('visible');
+      } else {
+        backToTopBtn.classList.remove('visible');
+      }
+    });
+
+    backToTopBtn.addEventListener('click', () => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    // 2. Buscador en Tiempo Real de Módulos y Secciones
+    const searchInput = document.getElementById('manualSearchInput');
+    const moduleCards = document.querySelectorAll('.module-card');
+    const navLinks = document.querySelectorAll('.nav-link');
+
+    searchInput.addEventListener('input', (e) => {
+      const term = e.target.value.toLowerCase().trim();
+
+      moduleCards.forEach(card => {
+        const text = card.textContent.toLowerCase();
+        if (text.includes(term)) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+
+      navLinks.forEach(link => {
+        const linkText = link.textContent.toLowerCase();
+        const targetId = link.getAttribute('href').replace('#', '');
+        const targetCard = document.getElementById(targetId);
+
+        if (linkText.includes(term) || (targetCard && targetCard.style.display !== 'none')) {
+          link.parentElement.style.display = 'block';
+        } else if (term.length > 0) {
+          link.parentElement.style.display = 'none';
+        } else {
+          link.parentElement.style.display = 'block';
+        }
+      });
+    });
+
+    // 3. Seguimiento de Navegación Activa en el Menú Lateral
+    const observerOptions = {
+      root: null,
+      rootMargin: '-80px 0px -70% 0px',
+      threshold: 0
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const id = entry.target.getAttribute('id');
+          navLinks.forEach(link => {
+            if (link.getAttribute('href') === '#' + id) {
+              link.classList.add('active');
+            } else {
+              link.classList.remove('active');
+            }
+          });
+        }
+      });
+    }, observerOptions);
+
+    moduleCards.forEach(card => observer.observe(card));
+  });
+
+  </script>
+</body>
+</html>

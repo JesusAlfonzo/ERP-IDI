@@ -1,0 +1,1987 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Roadmap Visual y Flujo Operativo Integral por Módulos - ERP-IDI - Instituto de Inmunología Dr. Nicolás E. Bianco Colmenares (IDI - UCV)">
+  <meta name="author" content="Instituto de Inmunología Dr. Nicolás E. Bianco Colmenares (IDI - UCV)">
+  <title>Roadmap y Flujo Operativo Integral - ERP-IDI</title>
+  <style>
+
+  /* Reset y Variables Globales */
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  :root {
+    --primary: #1e3a8a;
+    --primary-light: #2563eb;
+    --primary-dark: #0f172a;
+    --primary-soft: #eff6ff;
+    --accent: #0284c7;
+    --accent-soft: #f0f9ff;
+    --teal: #0d9488;
+    --teal-soft: #ccfbf1;
+    --success: #059669;
+    --success-soft: #ecfdf5;
+    --warning: #d97706;
+    --warning-soft: #fffbeb;
+    --danger: #dc2626;
+    --danger-soft: #fef2f2;
+    --purple: #7c3aed;
+    --purple-soft: #f5f3ff;
+    --indigo: #4338ca;
+    
+    --slate-50: #f8fafc;
+    --slate-100: #f1f5f9;
+    --slate-200: #e2e8f0;
+    --slate-300: #cbd5e1;
+    --slate-400: #94a3b8;
+    --slate-500: #64748b;
+    --slate-600: #475569;
+    --slate-700: #334155;
+    --slate-800: #1e293b;
+    --slate-900: #0f172a;
+
+    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    font-size: 16px;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    color: var(--slate-800);
+    background-color: #f8fafc;
+    line-height: 1.6;
+    padding-bottom: 5rem;
+  }
+
+  /* Header Superior Fijo */
+  .roadmap-header {
+    position: sticky;
+    top: 0;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--slate-200);
+    z-index: 1000;
+    padding: 0.75rem 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+
+  .header-brand {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .brand-logo {
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: white;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 1.15rem;
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
+  }
+
+  .header-titles h1 {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--slate-900);
+    line-height: 1.2;
+  }
+
+  .header-titles p {
+    font-size: 0.75rem;
+    color: var(--slate-500);
+  }
+
+  .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .role-filter-select {
+    padding: 0.45rem 0.85rem;
+    border-radius: 8px;
+    border: 1px solid var(--slate-300);
+    background: #ffffff;
+    font-size: 0.825rem;
+    color: var(--slate-700);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .role-filter-select:focus {
+    outline: none;
+    border-color: var(--primary-light);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.825rem;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+    text-decoration: none;
+  }
+
+  .btn-outline {
+    background: #ffffff;
+    border-color: var(--slate-300);
+    color: var(--slate-700);
+  }
+
+  .btn-outline:hover {
+    background: var(--slate-100);
+    border-color: var(--slate-400);
+    color: var(--slate-900);
+  }
+
+  /* Ribbon de Fases / Barra de Progreso del Roadmap */
+  .roadmap-nav-ribbon {
+    background: #ffffff;
+    border-bottom: 1px solid var(--slate-200);
+    padding: 0.75rem 2rem;
+    overflow-x: auto;
+    white-space: nowrap;
+    position: sticky;
+    top: 61px;
+    z-index: 900;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+  }
+
+  .ribbon-track {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 100%;
+    justify-content: space-between;
+  }
+
+  .ribbon-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 9999px;
+    background: var(--slate-100);
+    color: var(--slate-600);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+  }
+
+  .ribbon-step:hover {
+    background: var(--primary-soft);
+    color: var(--primary);
+    border-color: var(--primary-light);
+  }
+
+  .ribbon-step.active {
+    background: var(--primary);
+    color: white;
+  }
+
+  .ribbon-step-num {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.1);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+  }
+
+  .ribbon-step.active .ribbon-step-num {
+    background: white;
+    color: var(--primary);
+  }
+
+  .ribbon-arrow {
+    color: var(--slate-300);
+    font-size: 0.9rem;
+    font-weight: bold;
+  }
+
+  /* Contenedor Principal */
+  .container {
+    max-width: 1280px;
+    margin: 2rem auto;
+    padding: 0 1.5rem;
+  }
+
+  /* Hero del Roadmap */
+  .roadmap-hero {
+    background: linear-gradient(135deg, var(--slate-900) 0%, #172554 100%);
+    color: white;
+    border-radius: 16px;
+    padding: 3rem 2.5rem;
+    margin-bottom: 2.5rem;
+    box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.3);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .roadmap-hero::after {
+    content: "";
+    position: absolute;
+    top: -60px;
+    right: -60px;
+    width: 320px;
+    height: 320px;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.3) 0%, rgba(255, 255, 255, 0) 70%);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  .hero-pill {
+    display: inline-block;
+    padding: 0.3rem 0.85rem;
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(8px);
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .roadmap-hero h2 {
+    font-size: 2.25rem;
+    font-weight: 800;
+    margin-bottom: 0.75rem;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+  }
+
+  .roadmap-hero p.lead {
+    font-size: 1.05rem;
+    color: var(--slate-300);
+    max-width: 860px;
+    line-height: 1.6;
+    margin-bottom: 1.75rem;
+  }
+
+  .hero-stats-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    padding-top: 1.5rem;
+  }
+
+  .hero-stat-card {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(6px);
+    border-radius: 10px;
+    padding: 0.75rem 1.25rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .hero-stat-card .stat-number {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #60a5fa;
+  }
+
+  .hero-stat-card .stat-label {
+    font-size: 0.75rem;
+    color: var(--slate-300);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Sección de Arquitectura Visual Macro (Swimlanes / Carriles) */
+  .macro-architecture-section {
+    background: #ffffff;
+    border: 1px solid var(--slate-200);
+    border-radius: 16px;
+    padding: 2.25rem;
+    margin-bottom: 3rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.04);
+  }
+
+  .section-header-box {
+    margin-bottom: 1.75rem;
+    border-bottom: 2px solid var(--slate-100);
+    padding-bottom: 1rem;
+  }
+
+  .section-header-box h3 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--slate-900);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .section-header-box p {
+    font-size: 0.875rem;
+    color: var(--slate-500);
+    margin-top: 0.25rem;
+  }
+
+  /* Canvas de Carriles / Swimlanes */
+  .swimlanes-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .swimlane {
+    display: flex;
+    border: 1px solid var(--slate-200);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--slate-50);
+  }
+
+  .swimlane-header {
+    width: 220px;
+    background: var(--slate-800);
+    color: white;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    flex-shrink: 0;
+    border-right: 1px solid var(--slate-700);
+  }
+
+  .swimlane-header.lane-gov { background: linear-gradient(135deg, #1e293b, #334155); }
+  .swimlane-header.lane-proc { background: linear-gradient(135deg, #1e3a8a, #2563eb); }
+  .swimlane-header.lane-wh { background: linear-gradient(135deg, #065f46, #059669); }
+  .swimlane-header.lane-dept { background: linear-gradient(135deg, #92400e, #d97706); }
+  .swimlane-header.lane-lab { background: linear-gradient(135deg, #0369a1, #0284c7); }
+  .swimlane-header.lane-sci { background: linear-gradient(135deg, #5b21b6, #7c3aed); }
+
+  .swimlane-header h4 {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+
+  .swimlane-header span.lane-role {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.8);
+    font-family: var(--font-mono);
+  }
+
+  .swimlane-body {
+    padding: 1.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.85rem;
+    flex: 1;
+    background: #ffffff;
+  }
+
+  /* Nodos de Proceso */
+  .p-node {
+    background: #ffffff;
+    border: 1px solid var(--slate-300);
+    border-radius: 8px;
+    padding: 0.65rem 0.9rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
+    min-width: 170px;
+    transition: all 0.2s ease;
+    cursor: default;
+    position: relative;
+  }
+
+  .p-node:hover {
+    border-color: var(--primary-light);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(37, 99, 235, 0.12);
+  }
+
+  .p-node-title {
+    font-size: 0.825rem;
+    font-weight: 700;
+    color: var(--slate-900);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .p-node-route {
+    font-family: var(--font-mono);
+    font-size: 0.675rem;
+    color: var(--slate-500);
+    margin-top: 0.25rem;
+    display: block;
+  }
+
+  .p-node-status {
+    margin-top: 0.35rem;
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+  }
+
+  .p-connector {
+    color: var(--slate-400);
+    font-size: 1.15rem;
+    font-weight: 900;
+  }
+
+  /* Tarjetas Detalladas de Fase (Roadmap Steps) */
+  .phases-stream {
+    display: flex;
+    flex-direction: column;
+    gap: 2.5rem;
+  }
+
+  .phase-card {
+    background: #ffffff;
+    border: 1px solid var(--slate-200);
+    border-radius: 16px;
+    padding: 2.25rem;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.03);
+    position: relative;
+    scroll-margin-top: 140px;
+    transition: border-color 0.2s ease;
+  }
+
+  .phase-card.active-target {
+    border-color: var(--primary-light);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  }
+
+  .phase-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 2px solid var(--slate-100);
+    padding-bottom: 1.25rem;
+    margin-bottom: 1.75rem;
+  }
+
+  .phase-title-group {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .phase-badge-number {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: var(--primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 1.3rem;
+    box-shadow: 0 4px 8px rgba(30, 58, 138, 0.25);
+    flex-shrink: 0;
+  }
+
+  .phase-badge-number.num-teal { background: var(--teal); }
+  .phase-badge-number.num-amber { background: var(--warning); }
+  .phase-badge-number.num-emerald { background: var(--success); }
+  .phase-badge-number.num-purple { background: var(--purple); }
+  .phase-badge-number.num-indigo { background: var(--indigo); }
+  .phase-badge-number.num-rose { background: var(--danger); }
+
+  .phase-titles h3 {
+    font-size: 1.45rem;
+    font-weight: 800;
+    color: var(--slate-900);
+    line-height: 1.2;
+  }
+
+  .phase-titles p.phase-sub {
+    font-size: 0.85rem;
+    color: var(--slate-500);
+    margin-top: 0.2rem;
+  }
+
+  .phase-meta-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+  }
+
+  /* Grid de Entrada - Proceso - Salida (I-P-O Pipeline) */
+  .ipo-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.6fr 1fr;
+    gap: 1.25rem;
+    margin-bottom: 1.75rem;
+  }
+
+  .ipo-card {
+    border-radius: 10px;
+    padding: 1.25rem;
+    font-size: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .ipo-card.card-input {
+    background: var(--slate-50);
+    border: 1px solid var(--slate-200);
+    border-left: 4px solid var(--slate-400);
+  }
+
+  .ipo-card.card-process {
+    background: var(--primary-soft);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    border-left: 4px solid var(--primary-light);
+  }
+
+  .ipo-card.card-output {
+    background: var(--success-soft);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    border-left: 4px solid var(--success);
+  }
+
+  .ipo-label {
+    font-size: 0.725rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .ipo-card.card-input .ipo-label { color: var(--slate-600); }
+  .ipo-card.card-process .ipo-label { color: var(--primary); }
+  .ipo-card.card-output .ipo-label { color: var(--success); }
+
+  .ipo-card ul {
+    margin: 0;
+    padding-left: 1.2rem;
+    color: var(--slate-700);
+  }
+
+  .ipo-card li {
+    margin-bottom: 0.35rem;
+    line-height: 1.45;
+  }
+
+  /* Diagrama de Flujo Interno en CSS */
+  .phase-subflow {
+    background: var(--slate-50);
+    border: 1px dashed var(--slate-300);
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin: 1.5rem 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.85rem;
+  }
+
+  .subflow-step {
+    background: #ffffff;
+    border: 1px solid var(--slate-300);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-size: 0.825rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    flex: 1;
+    min-width: 180px;
+  }
+
+  .subflow-step strong {
+    display: block;
+    color: var(--slate-900);
+    margin-bottom: 0.25rem;
+  }
+
+  .subflow-step span {
+    font-size: 0.75rem;
+    color: var(--slate-500);
+    line-height: 1.3;
+    display: block;
+  }
+
+  /* Caso Real / Trazabilidad Concreta */
+  .case-study-box {
+    background: #ffffff;
+    border: 1px solid #e0e7ff;
+    border-radius: 10px;
+    padding: 1.25rem;
+    margin-top: 1.5rem;
+    box-shadow: 0 1px 4px rgba(99, 102, 241, 0.06);
+  }
+
+  .case-study-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--indigo);
+    margin-bottom: 0.65rem;
+  }
+
+  .case-study-content {
+    font-size: 0.85rem;
+    color: var(--slate-700);
+    line-height: 1.5;
+  }
+
+  /* Badges */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    border: 1px solid transparent;
+  }
+
+  .badge-blue { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
+  .badge-green { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+  .badge-amber { background: #fef3c7; color: #b45309; border-color: #fde68a; }
+  .badge-red { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+  .badge-purple { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+  .badge-gray { background: var(--slate-100); color: var(--slate-700); border-color: var(--slate-300); }
+
+  /* Matriz de Dependencias Cruzadas */
+  .matrix-section {
+    background: #ffffff;
+    border: 1px solid var(--slate-200);
+    border-radius: 16px;
+    padding: 2.25rem;
+    margin-top: 3rem;
+  }
+
+  .matrix-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    margin-top: 1.25rem;
+  }
+
+  .matrix-table th {
+    background: var(--slate-100);
+    color: var(--slate-700);
+    font-weight: 700;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--slate-200);
+    text-align: left;
+  }
+
+  .matrix-table td {
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--slate-100);
+    color: var(--slate-700);
+    vertical-align: middle;
+  }
+
+  .matrix-table tr:hover td {
+    background-color: var(--slate-50);
+  }
+
+  /* Footer */
+  .roadmap-footer {
+    text-align: center;
+    padding: 3rem 1.5rem 1rem;
+    color: var(--slate-500);
+    font-size: 0.825rem;
+  }
+
+  /* Botón Volver Arriba */
+  .back-top {
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+    background: var(--slate-900);
+    color: white;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    border: none;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    z-index: 1000;
+  }
+
+  .back-top.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .back-top:hover {
+    background: var(--primary);
+    transform: translateY(-2px);
+  }
+
+  /* Impresión Limpia */
+  @media print {
+    .roadmap-header, .roadmap-nav-ribbon, .back-top, .header-controls {
+      display: none !important;
+    }
+    body {
+      background: white !important;
+      color: black !important;
+      font-size: 9pt;
+      padding: 0;
+    }
+    .container {
+      max-width: 100% !important;
+      padding: 0 !important;
+    }
+    .phase-card, .macro-architecture-section, .matrix-section {
+      box-shadow: none !important;
+      border: 1px solid #cbd5e1 !important;
+      page-break-inside: avoid;
+      margin-bottom: 2cm;
+    }
+    .roadmap-hero {
+      background: #f1f5f9 !important;
+      color: black !important;
+      border: 1px solid #cbd5e1 !important;
+      page-break-after: always;
+    }
+    .roadmap-hero h2, .roadmap-hero p.lead, .hero-stat-card .stat-number, .hero-stat-card .stat-label {
+      color: black !important;
+    }
+  }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .ipo-grid {
+      grid-template-columns: 1fr;
+    }
+    .swimlane {
+      flex-direction: column;
+    }
+    .swimlane-header {
+      width: 100%;
+    }
+  }
+
+  </style>
+</head>
+<body>
+
+  <!-- ENCABEZADO SUPERIOR DEL ROADMAP -->
+  <header class="roadmap-header">
+    <div class="header-brand">
+      <div class="brand-logo">IDI</div>
+      <div class="header-titles">
+        <h1>ERP-IDI &bull; Roadmap de Procesos</h1>
+        <p>Flujo Operativo e Interconexión de Módulos &bull; UCV</p>
+      </div>
+    </div>
+
+    <div class="header-controls">
+      <label for="roleFilterSelect" style="font-size: 0.75rem; font-weight: 700; color: var(--slate-600);">Filtrar por Rol:</label>
+      <select id="roleFilterSelect" class="role-filter-select" aria-label="Filtrar flujo por rol">
+        <option value="ALL">Todos los Roles (Visión Global)</option>
+        <option value="ADMINISTRADOR">Administrador (Gobernanza)</option>
+        <option value="COMPRAS">Compras (Procura y Finanzas)</option>
+        <option value="ALMACENISTA">Almacenista (Custodia y Kardex)</option>
+        <option value="BIOANALISTA">Bioanalista (Frío y Corridas)</option>
+        <option value="SOLICITANTE">Solicitante (Pedidos Departamentales)</option>
+        <option value="INVESTIGADOR">Investigador (I+D y Subvenciones)</option>
+      </select>
+
+      <button type="button" class="btn btn-outline" onclick="window.print()">
+        <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+        Imprimir / PDF
+      </button>
+    </div>
+  </header>
+
+  <!-- BARRA HORIZONTAL DE FASES (RIBBON TRACKER) -->
+  
+  <nav class="roadmap-nav-ribbon" aria-label="Navegación del Roadmap">
+    <div class="ribbon-track">
+      <a href="#macro-mapa" class="ribbon-step active">
+        <span class="ribbon-step-num">&infin;</span>
+        <span>Mapa Macro</span>
+      </a>
+      <span class="ribbon-arrow">&rarr;</span>
+
+      <a href="#fase-1" class="ribbon-step">
+        <span class="ribbon-step-num">01</span>
+        <span>Gobernanza & Maestros</span>
+      </a>
+      <span class="ribbon-arrow">&rarr;</span>
+
+      <a href="#fase-2" class="ribbon-step">
+        <span class="ribbon-step-num">02</span>
+        <span>Procura & Órdenes</span>
+      </a>
+      <span class="ribbon-arrow">&rarr;</span>
+
+      <a href="#fase-3" class="ribbon-step">
+        <span class="ribbon-step-num">03</span>
+        <span>Recepción & Lotes</span>
+      </a>
+      <span class="ribbon-arrow">&rarr;</span>
+
+      <a href="#fase-4" class="ribbon-step">
+        <span class="ribbon-step-num">04</span>
+        <span>Ventana & Solicitudes</span>
+      </a>
+      <span class="ribbon-arrow">&rarr;</span>
+
+      <a href="#fase-5" class="ribbon-step">
+        <span class="ribbon-step-num">05</span>
+        <span>Despacho & Kardex</span>
+      </a>
+      <span class="ribbon-arrow">&rarr;</span>
+
+      <a href="#fase-6" class="ribbon-step">
+        <span class="ribbon-step-num">06</span>
+        <span>Cadena de Frío & Viales</span>
+      </a>
+      <span class="ribbon-arrow">&rarr;</span>
+
+      <a href="#fase-7" class="ribbon-step">
+        <span class="ribbon-step-num">07</span>
+        <span>Corridas 5D & Costeo</span>
+      </a>
+      <span class="ribbon-arrow">&rarr;</span>
+
+      <a href="#fase-8" class="ribbon-step">
+        <span class="ribbon-step-num">08</span>
+        <span>I+D & Auditoría</span>
+      </a>
+      <span class="ribbon-arrow">&rarr;</span>
+
+      <a href="#matriz-conexiones" class="ribbon-step">
+        <span class="ribbon-step-num">&equiv;</span>
+        <span>Matriz de Conexión</span>
+      </a>
+      <span class="ribbon-arrow">&rarr;</span>
+
+      <a href="#simulador-trazabilidad" class="ribbon-step">
+        <span class="ribbon-step-num">&starf;</span>
+        <span>Línea de Vida</span>
+      </a>
+    </div>
+  </nav>
+
+
+  <!-- CONTENEDOR PRINCIPAL DEL ROADMAP -->
+  <main class="container">
+    
+  <!-- HERO INTRODUCTORIO -->
+  <section class="roadmap-hero">
+    <span class="hero-pill">Arquitectura & Flujo Funcional de Procesos</span>
+    <h2>Roadmap y Flujo Operativo Integral ERP-IDI</h2>
+    <p class="lead">
+      Representación visual interactiva del ciclo de vida de los datos, insumos médicos y reactivos analíticos a través de todos los módulos del sistema en el <strong>Instituto de Inmunología "Dr. Nicolás E. Bianco Colmenares" (IDI - UCV)</strong>. Conozca cómo cada módulo alimenta al siguiente en una cadena ininterrumpida de trazabilidad.
+    </p>
+
+    <div class="hero-stats-row">
+      <div class="hero-stat-card">
+        <div class="stat-number">8</div>
+        <div class="stat-label">Fases de Negocio</div>
+      </div>
+      <div class="hero-stat-card">
+        <div class="stat-number">19</div>
+        <div class="stat-label">Módulos Interconectados</div>
+      </div>
+      <div class="hero-stat-card">
+        <div class="stat-number">100%</div>
+        <div class="stat-label">Trazabilidad FEFO & 5D</div>
+      </div>
+      <div class="hero-stat-card">
+        <div class="stat-number">Bimoneda</div>
+        <div class="stat-label">USD / VES Oficial BCV</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MAPA MACRO DE CARRILES FUNCIONALES (SWIMLANES) -->
+  <section class="macro-architecture-section" id="macro-mapa">
+    <div class="section-header-box">
+      <h3>
+        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
+        Mapa Visual Macro: Interconexión por Carriles Operativos
+      </h3>
+      <p>Vista panorámica de cómo interactúan los 6 ámbitos del sistema y cómo viaja la información entre ellos.</p>
+    </div>
+
+    <div class="swimlanes-container">
+      <!-- Carril 1: Gobernanza -->
+      <div class="swimlane">
+        <div class="swimlane-header lane-gov">
+          <h4>1. Gobernanza & Maestros</h4>
+          <span class="lane-role">ADMINISTRADOR</span>
+        </div>
+        <div class="swimlane-body">
+          <div class="p-node">
+            <div class="p-node-title">Usuarios & RBAC <span class="badge badge-gray">Users</span></div>
+            <span class="p-node-route">/admin/users</span>
+            <div class="p-node-status"><span class="badge badge-green">Activo</span></div>
+          </div>
+          <span class="p-connector">&rarr;</span>
+          <div class="p-node">
+            <div class="p-node-title">Ventana Semanal <span class="badge badge-amber">Política</span></div>
+            <span class="p-node-route">/admin/security</span>
+            <div class="p-node-status"><span class="badge badge-blue">Horario Wxx</span></div>
+          </div>
+          <span class="p-connector">&rarr;</span>
+          <div class="p-node">
+            <div class="p-node-title">Catálogo & Maestros <span class="badge badge-purple">Insumos</span></div>
+            <span class="p-node-route">/inventory/products</span>
+            <div class="p-node-status"><span class="badge badge-green">SKU / Factor</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Carril 2: Procura & Finanzas -->
+      <div class="swimlane">
+        <div class="swimlane-header lane-proc">
+          <h4>2. Procura & Finanzas</h4>
+          <span class="lane-role">COMPRAS / ADMIN</span>
+        </div>
+        <div class="swimlane-body">
+          <div class="p-node">
+            <div class="p-node-title">Requisición <span class="badge badge-amber">Preorden</span></div>
+            <span class="p-node-route">/purchasing/requisitions</span>
+            <div class="p-node-status"><span class="badge badge-blue">EN_COTIZACION</span></div>
+          </div>
+          <span class="p-connector">&rarr;</span>
+          <div class="p-node">
+            <div class="p-node-title">Orden de Compra <span class="badge badge-blue">Oficial</span></div>
+            <span class="p-node-route">/purchasing/orders</span>
+            <div class="p-node-status"><span class="badge badge-green">ENVIADA USD/Bs</span></div>
+          </div>
+          <span class="p-connector">&rarr;</span>
+          <div class="p-node">
+            <div class="p-node-title">Cuentas por Pagar <span class="badge badge-purple">Deudas</span></div>
+            <span class="p-node-route">/purchasing/debts</span>
+            <div class="p-node-status"><span class="badge badge-amber">Amortización</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Carril 3: Almacén Central & Kardex -->
+      <div class="swimlane">
+        <div class="swimlane-header lane-wh">
+          <h4>3. Almacén & Kardex</h4>
+          <span class="lane-role">ALMACENISTA</span>
+        </div>
+        <div class="swimlane-body">
+          <div class="p-node">
+            <div class="p-node-title">Recepción Muelle <span class="badge badge-green">Física</span></div>
+            <span class="p-node-route">/purchasing/orders/:id/receive</span>
+            <div class="p-node-status"><span class="badge badge-blue">Lote & Vencimiento</span></div>
+          </div>
+          <span class="p-connector">&rarr;</span>
+          <div class="p-node">
+            <div class="p-node-title">Lotes en Stock <span class="badge badge-blue">StockBatch</span></div>
+            <span class="p-node-route">/inventory/products/[id]</span>
+            <div class="p-node-status"><span class="badge badge-green">DISPONIBLE</span></div>
+          </div>
+          <span class="p-connector">&rarr;</span>
+          <div class="p-node">
+            <div class="p-node-title">Kardex Central <span class="badge badge-gray">Asientos</span></div>
+            <span class="p-node-route">/inventory/kardex</span>
+            <div class="p-node-status"><span class="badge badge-purple">ENTRADA_COMPRA</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Carril 4: Departamentos Solicitantes -->
+      <div class="swimlane">
+        <div class="swimlane-header lane-dept">
+          <h4>4. Solicitantes & Servicios</h4>
+          <span class="lane-role">SOLICITANTE / JEFES</span>
+        </div>
+        <div class="swimlane-body">
+          <div class="p-node">
+            <div class="p-node-title">Ventana Semanal <span class="badge badge-green">Validación</span></div>
+            <span class="p-node-route">/requests</span>
+            <div class="p-node-status"><span class="badge badge-blue">Cuota de Usuario</span></div>
+          </div>
+          <span class="p-connector">&rarr;</span>
+          <div class="p-node">
+            <div class="p-node-title">Solicitud Interna <span class="badge badge-amber">Pedido</span></div>
+            <span class="p-node-route">/requests/new</span>
+            <div class="p-node-status"><span class="badge badge-amber">PENDIENTE</span></div>
+          </div>
+          <span class="p-connector">&rarr;</span>
+          <div class="p-node">
+            <div class="p-node-title">Despacho Físico <span class="badge badge-green">Salida</span></div>
+            <span class="p-node-route">/requests/dispatch</span>
+            <div class="p-node-status"><span class="badge badge-green">DESPACHO_SOLICITUD</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Carril 5: Laboratorio Clínico & Cadena de Frío -->
+      <div class="swimlane">
+        <div class="swimlane-header lane-lab">
+          <h4>5. Laboratorio & Frío</h4>
+          <span class="lane-role">BIOANALISTA / COORD</span>
+        </div>
+        <div class="swimlane-body">
+          <div class="p-node">
+            <div class="p-node-title">Neveras Clínicas <span class="badge badge-blue">Cavas</span></div>
+            <span class="p-node-route">/lab/fridges</span>
+            <div class="p-node-status"><span class="badge badge-green">2°C a 8°C / -20°C</span></div>
+          </div>
+          <span class="p-connector">&rarr;</span>
+          <div class="p-node">
+            <div class="p-node-title">Frascos / Viales <span class="badge badge-purple">LabReagentUnit</span></div>
+            <span class="p-node-route">/lab/requests</span>
+            <div class="p-node-status"><span class="badge badge-blue">SELLADO &rarr; EN_USO</span></div>
+          </div>
+          <span class="p-connector">&rarr;</span>
+          <div class="p-node">
+            <div class="p-node-title">Corridas Semanales <span class="badge badge-green">Ensayos</span></div>
+            <span class="p-node-route">/lab/runs</span>
+            <div class="p-node-status"><span class="badge badge-green">Auditoría 5D</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Carril 6: Investigación & Docencia -->
+      <div class="swimlane">
+        <div class="swimlane-header lane-sci">
+          <h4>6. Investigación (I+D)</h4>
+          <span class="lane-role">INVESTIGADOR / DOCENTE</span>
+        </div>
+        <div class="swimlane-body">
+          <div class="p-node">
+            <div class="p-node-title">Proyectos Subvencionados <span class="badge badge-purple">Tesis</span></div>
+            <span class="p-node-route">/research/projects</span>
+            <div class="p-node-status"><span class="badge badge-blue">FONACIT / OPS</span></div>
+          </div>
+          <span class="p-connector">&rarr;</span>
+          <div class="p-node">
+            <div class="p-node-title">Donaciones Blindadas <span class="badge badge-red">Blindaje</span></div>
+            <span class="p-node-route">/research/donations</span>
+            <div class="p-node-status"><span class="badge badge-red">Anti-Uso Clínico</span></div>
+          </div>
+          <span class="p-connector">&rarr;</span>
+          <div class="p-node">
+            <div class="p-node-title">Bitácora de Ensayos <span class="badge badge-green">Hallazgos</span></div>
+            <span class="p-node-route">/research/trials</span>
+            <div class="p-node-status"><span class="badge badge-green">Reporte Científico</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+    
+  <section class="phases-stream" id="fases-roadmap">
+    <div class="section-header-box">
+      <h3>
+        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        Desglose Detallado Fase a Fase: Del Abastecimiento al Diagnóstico
+      </h3>
+      <p>Análisis exhaustivo de entradas, transformaciones, validaciones críticas y salidas interconectadas.</p>
+    </div>
+
+    <!-- FASE 1 -->
+    <article class="phase-card" id="fase-1">
+      <div class="phase-top">
+        <div class="phase-title-group">
+          <div class="phase-badge-number">01</div>
+          <div class="phase-titles">
+            <h3>Gobernanza, Seguridad y Catálogo Maestro</h3>
+            <p class="phase-sub">Configuración de la infraestructura institucional y políticas de acceso</p>
+          </div>
+        </div>
+        <div class="phase-meta-tags">
+          <span class="badge badge-blue">Módulos: Users / Security / Catalog / Masters</span>
+          <span class="badge badge-purple">Rol: ADMINISTRADOR</span>
+        </div>
+      </div>
+
+      <div class="ipo-grid">
+        <div class="ipo-card card-input">
+          <div class="ipo-label">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6z"/></svg>
+            Entradas (Inputs)
+          </div>
+          <ul>
+            <li>Estructura organizativa de secciones clínicas y de investigación del IDI.</li>
+            <li>Nómina de personal y roles de acceso (RBAC).</li>
+            <li>Fichas técnicas de insumos de fabricantes comerciales.</li>
+            <li>Directorio de depósitos y almacenes físicos.</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-process">
+          <div class="ipo-label">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+            Procesamiento & Reglas de Negocio
+          </div>
+          <ul>
+            <li>Cifrado de claves con bcrypt y generación de firmas criptográficas JWT.</li>
+            <li>Configuración de la <strong>Ventana Operativa Semanal</strong> (días de atención y cuota por usuario).</li>
+            <li>Definición del factor de conversión entre <code>purchaseUnit</code> (empaque comercial) y <code>baseUnit</code> (unidad consumible).</li>
+            <li>Activación de banderas técnicas <code>isReagent</code> y exención tributaria <code>isTaxExempt</code>.</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-output">
+          <div class="ipo-label">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></svg>
+            Salidas Hacia Otros Módulos
+          </div>
+          <ul>
+            <li>Catálogo activo disponible para cotizaciones y pedidos.</li>
+            <li>Usuarios habilitados con token seguro de sesión.</li>
+            <li>Parámetros de ventana para validar solicitudes internas.</li>
+            <li>Estructura de ubicaciones lista para recepciones.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="phase-subflow">
+        <div class="subflow-step">
+          <strong>1. Crear Usuarios</strong>
+          <span>Asignar departamento y roles funcionales</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>2. Programar Ventana</strong>
+          <span>Horario de recepción (Lunes-Miércoles)</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>3. Codificar Insumo</strong>
+          <span>Asignar SKU, Factor de conversión y Flag Reactivo</span>
+        </div>
+      </div>
+
+      <div class="case-study-box">
+        <div class="case-study-header">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          Ejemplo Práctico en el Sistema: Registro del Kit ELISA Anti-DNA
+        </div>
+        <div class="case-study-content">
+          El administrador registra el producto <em>"Kit ELISA Anti-DNA Doble Cadena 96 Determinaciones"</em> con SKU <code>REA-ELISA-0042</code>. Configura: <code>purchaseUnit = Caja</code>, <code>baseUnit = Determinación</code>, <code>conversionFactor = 96.00</code>, <code>isReagent = true</code> y <code>minStockAlert = 50</code>. Esto permitirá que cuando compras adquiera 5 cajas, el almacén reciba automáticamente 480 determinaciones para laboratorio.
+        </div>
+      </div>
+    </article>
+
+    <!-- FASE 2 -->
+    <article class="phase-card" id="fase-2">
+      <div class="phase-top">
+        <div class="phase-title-group">
+          <div class="phase-badge-number num-teal">02</div>
+          <div class="phase-titles">
+            <h3>Procura, Cotización y Órdenes Bimoneda</h3>
+            <p class="phase-sub">Emisión contractual, cálculo impositivo y control de cuentas comerciales</p>
+          </div>
+        </div>
+        <div class="phase-meta-tags">
+          <span class="badge badge-blue">Módulos: Requisitions / Orders / Debts / Suppliers</span>
+          <span class="badge badge-purple">Roles: COMPRAS, ADMINISTRADOR</span>
+        </div>
+      </div>
+
+      <div class="ipo-grid">
+        <div class="ipo-card card-input">
+          <div class="ipo-label">Entradas (Inputs)</div>
+          <ul>
+            <li>Requerimientos de reposición por stock mínimo o proyectos de investigación.</li>
+            <li>Cotizaciones emitidas por proveedores comerciales.</li>
+            <li>Tasa oficial de cambio del Banco Central de Venezuela (BCV).</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-process">
+          <div class="ipo-label">Procesamiento & Reglas de Negocio</div>
+          <ul>
+            <li>Emisión de Preorden en estado <code>BORRADOR</code> y paso a <code>EN_COTIZACION</code>.</li>
+            <li>Adjudicación formal al distribuidor y generación de la Orden oficial.</li>
+            <li>Cálculo bimoneda simultáneo: Base Imponible, Exento, IVA 16% y Total en USD y Bolívares.</li>
+            <li>Registro de cuentas por pagar en <code>SupplierDebt</code>.</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-output">
+          <div class="ipo-label">Salidas Hacia Otros Módulos</div>
+          <ul>
+            <li>Orden oficial en estado <code>ENVIADA</code> lista para muelle de descarga.</li>
+            <li>Expediente financiero con facturas fiscales cargadas.</li>
+            <li>Amortizaciones de pagos registradas en tesorería.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="phase-subflow">
+        <div class="subflow-step">
+          <strong>1. Requisición</strong>
+          <span>Consolida ítems requeridos con justificación</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>2. Cotización & Tasa BCV</strong>
+          <span>Compara ofertas y fija tipo de cambio</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>3. Orden Oficial</strong>
+          <span>Emisión contractual con desglose de IVA</span>
+        </div>
+      </div>
+
+      <div class="case-study-box">
+        <div class="case-study-header">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          Ejemplo Práctico en el Sistema: Adjudicación de 5 Kits ELISA
+        </div>
+        <div class="case-study-content">
+          El Departamento de Compras emite la Orden <code>ORD-2026-0042</code> a la distribuidora <em>Bio-Diagnóstica C.A.</em> por 5 cajas de <code>REA-ELISA-0042</code> a un precio unitario de $180.00 USD (Total $900.00 USD). Por tratarse de reactivo diagnóstico, se marca exento de IVA. La orden queda en estado <code>ENVIADA</code> esperando la llegada del camión frigorífico.
+        </div>
+      </div>
+    </article>
+
+    <!-- FASE 3 -->
+    <article class="phase-card" id="fase-3">
+      <div class="phase-top">
+        <div class="phase-title-group">
+          <div class="phase-badge-number num-emerald">03</div>
+          <div class="phase-titles">
+            <h3>Recepción Física, Lotes y Control de Calidad</h3>
+            <p class="phase-sub">Inspección de bultos, asignación de vencimiento y registro de entrada</p>
+          </div>
+        </div>
+        <div class="phase-meta-tags">
+          <span class="badge badge-blue">Módulos: Reception / Quality / Quarantine / Inventory</span>
+          <span class="badge badge-purple">Roles: ALMACENISTA, CALIDAD</span>
+        </div>
+      </div>
+
+      <div class="ipo-grid">
+        <div class="ipo-card card-input">
+          <div class="ipo-label">Entradas (Inputs)</div>
+          <ul>
+            <li>Bultos físicos en muelle y guía de despacho del transportista.</li>
+            <li>Orden de Compra previa en estado <code>ENVIADA</code> o <code>PARCIAL</code>.</li>
+            <li>Termómetro de infrarrojos / DataLogger de cadena de frío.</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-process">
+          <div class="ipo-label">Procesamiento & Reglas de Negocio</div>
+          <ul>
+            <li>Validación física de integridad de precintos y temperatura admisible (2°C a 8°C).</li>
+            <li>Captura obligatoria de <strong>Número de Lote</strong> y <strong>Fecha de Expiración</strong>.</li>
+            <li>Transacción atómica: Creación de <code>StockBatch</code> con estado <code>DISPONIBLE</code>.</li>
+            <li>Si hubo rotura térmica o daño físico, creación inmediata de <code>BatchIncident</code> y pase a <code>EN_CUARENTENA</code>.</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-output">
+          <div class="ipo-label">Salidas Hacia Otros Módulos</div>
+          <ul>
+            <li>Existencias físicas sumadas al inventario central.</li>
+            <li>Asiento Kardex inmutable <code>ENTRADA_COMPRA</code>.</li>
+            <li>Orden actualizada a <code>COMPLETADA</code> (o <code>PARCIAL</code>).</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="phase-subflow">
+        <div class="subflow-step">
+          <strong>1. Muelle de Recepción</strong>
+          <span>Inspección de bultos y temperatura</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>2. Lote & Vencimiento</strong>
+          <span>Asignación obligatoria de trazabilidad</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>3. StockBatch & Kardex</strong>
+          <span>Creación de existencias y asiento contable</span>
+        </div>
+      </div>
+
+      <div class="case-study-box">
+        <div class="case-study-header">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          Ejemplo Práctico en el Sistema: Recepción y Creación del Lote LOT-DNA-99
+        </div>
+        <div class="case-study-content">
+          El almacenista recibe las 5 cajas en muelle a 4.5°C. En <code>/purchasing/orders/ORD-2026-0042/receive</code> registra: Cantidad Recibida: 5 cajas (480 determinaciones), Lote: <code>LOT-DNA-99</code>, Vencimiento: <code>2027-11-30</code>. El sistema genera el lote físico en <code>StockBatch</code> y asienta el movimiento Kardex <code>MOV-2026-00105</code> de tipo <code>ENTRADA_COMPRA</code>.
+        </div>
+      </div>
+    </article>
+
+    <!-- FASE 4 -->
+    <article class="phase-card" id="fase-4">
+      <div class="phase-top">
+        <div class="phase-title-group">
+          <div class="phase-badge-number num-amber">04</div>
+          <div class="phase-titles">
+            <h3>Ventana Semanal y Solicitudes Internas</h3>
+            <p class="phase-sub">Demanda departamental planificada y control de cuotas institucionales</p>
+          </div>
+        </div>
+        <div class="phase-meta-tags">
+          <span class="badge badge-blue">Módulos: Requests / RequestWindow / Department</span>
+          <span class="badge badge-purple">Roles: SOLICITANTE, ALMACENISTA</span>
+        </div>
+      </div>
+
+      <div class="ipo-grid">
+        <div class="ipo-card card-input">
+          <div class="ipo-label">Entradas (Inputs)</div>
+          <ul>
+            <li>Catálogo de productos con existencias disponibles en almacén.</li>
+            <li>Horario programado de la ventana semanal del servidor (ej. ciclo <code>2026-W46</code>).</li>
+            <li>Necesidades de abastecimiento de las secciones técnicas del IDI.</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-process">
+          <div class="ipo-label">Procesamiento & Reglas de Negocio</div>
+          <ul>
+            <li>Verificación de reloj del servidor: Bloqueo si la ventana está cerrada o suspendida.</li>
+            <li>Validación de cuota máxima semanal por usuario (ej. máx 2 solicitudes/semana).</li>
+            <li>Revisión por Almacén Central: Dictamen de aprobación o ajuste de cantidades.</li>
+            <li>Rechazo motivado obligatorio si no procede el pedido.</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-output">
+          <div class="ipo-label">Salidas Hacia Otros Módulos</div>
+          <ul>
+            <li>Solicitud en estado <code>APROBADA</code> transferida al panel de despacho.</li>
+            <li>Notificación en tiempo real al solicitante con las cantidades confirmadas.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="phase-subflow">
+        <div class="subflow-step">
+          <strong>1. Validar Ventana</strong>
+          <span>Verifica si el ciclo semanal está abierto</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>2. Radicar Solicitud</strong>
+          <span>Selecciona insumos e indica justificación</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>3. Aprobación Almacén</strong>
+          <span>Ajusta cantidades y autoriza entrega</span>
+        </div>
+      </div>
+
+      <div class="case-study-box">
+        <div class="case-study-header">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          Ejemplo Práctico en el Sistema: Pedido de Inmunopatología
+        </div>
+        <div class="case-study-content">
+          El martes a las 09:30 AM (ventana activa), la jefa de Inmunopatología radicar la solicitud <code>REQ-2026-0089</code> pidiendo 2 cajas de reactivo <code>REA-ELISA-0042</code> y 100 tubos de ensayo. El almacenista aprueba la solicitud completa y la envía al panel de despacho físico.
+        </div>
+      </div>
+    </article>
+
+    <!-- FASE 5 -->
+    <article class="phase-card" id="fase-5">
+      <div class="phase-top">
+        <div class="phase-title-group">
+          <div class="phase-badge-number num-purple">05</div>
+          <div class="phase-titles">
+            <h3>Despacho Físico de Materiales y Salida Kardex</h3>
+            <p class="phase-sub">Deducción de existencias, aplicación estricta de FEFO y asiento contable</p>
+          </div>
+        </div>
+        <div class="phase-meta-tags">
+          <span class="badge badge-blue">Módulos: RequestsDispatch / Kardex / Movements</span>
+          <span class="badge badge-purple">Roles: ALMACENISTA, ADMINISTRADOR</span>
+        </div>
+      </div>
+
+      <div class="ipo-grid">
+        <div class="ipo-card card-input">
+          <div class="ipo-label">Entradas (Inputs)</div>
+          <ul>
+            <li>Solicitud en estado <code>APROBADA</code>.</li>
+            <li>Inventario de lotes físicos disponibles en estantes y cavas del almacén.</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-process">
+          <div class="ipo-label">Procesamiento & Reglas de Negocio</div>
+          <ul>
+            <li>Algoritmo FEFO: Sugerencia del lote más antiguo próximo a caducar.</li>
+            <li>Selección física de unidades y confirmación de entrega en mostrador.</li>
+            <li>Deducción atómica de <code>currentQuantity</code> en <code>StockBatch</code>.</li>
+            <li>Inserción inmutable del movimiento de Kardex <code>DESPACHO_SOLICITUD</code>.</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-output">
+          <div class="ipo-label">Salidas Hacia Otros Módulos</div>
+          <ul>
+            <li>Solicitud actualizada a estado <code>COMPLETADA</code>.</li>
+            <li>Comprobante oficial de entrega con firma de recepción.</li>
+            <li>Libro de Kardex actualizado con valorización contable de salida.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="phase-subflow">
+        <div class="subflow-step">
+          <strong>1. Seleccionar FEFO</strong>
+          <span>Elige el lote con vencimiento más próximo</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>2. Descontar Stock</strong>
+          <span>Rebaja atómica de existencias físicas</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>3. Comprobante Kardex</strong>
+          <span>Genera asiento DESPACHO_SOLICITUD</span>
+        </div>
+      </div>
+
+      <div class="case-study-box">
+        <div class="case-study-header">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          Ejemplo Práctico en el Sistema: Despacho del Lote LOT-DNA-99
+        </div>
+        <div class="case-study-content">
+          El almacenista despacha las 2 cajas asignadas del lote <code>LOT-DNA-99</code>. El sistema descuenta 192 determinaciones del almacén central, genera el comprobante Kardex <code>MOV-2026-00140</code> y emite la nota de entrega física que se entrega al asistente de laboratorio.
+        </div>
+      </div>
+    </article>
+
+    <!-- FASE 6 -->
+    <article class="phase-card" id="fase-6">
+      <div class="phase-top">
+        <div class="phase-title-group">
+          <div class="phase-badge-number num-indigo">06</div>
+          <div class="phase-titles">
+            <h3>Cadena de Frío y Fraccionamiento de Reactivos</h3>
+            <p class="phase-sub">Custodia térmica en neveras, fraccionamiento en viales y estabilidad</p>
+          </div>
+        </div>
+        <div class="phase-meta-tags">
+          <span class="badge badge-blue">Módulos: LabFridges / LabReagentUnits / ColdChain</span>
+          <span class="badge badge-purple">Roles: BIOANALISTA, COORDINADOR_LABORATORIO</span>
+        </div>
+      </div>
+
+      <div class="ipo-grid">
+        <div class="ipo-card card-input">
+          <div class="ipo-label">Entradas (Inputs)</div>
+          <ul>
+            <li>Cajas de reactivos recibidas del almacén central.</li>
+            <li>Neveras clínicas operativas con temperatura monitoreada (2°C a 8°C).</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-process">
+          <div class="ipo-label">Procesamiento & Reglas de Negocio</div>
+          <ul>
+            <li>Fraccionamiento de la caja en frascos individuales <code>LabReagentUnit</code> con código único.</li>
+            <li>Asignación física a la nevera clínica del área analítica.</li>
+            <li>Apertura en mesón: Transición de estado <code>SELLADO</code> &rarr; <code>EN_USO</code>.</li>
+            <li>Control de estabilidad post-apertura (cuenta regresiva de vida útil efectiva).</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-output">
+          <div class="ipo-label">Salidas Hacia Otros Módulos</div>
+          <ul>
+            <li>Frascos en mesón analítico listos para corridas de pacientes.</li>
+            <li>Inventario en frío actualizado por equipo de refrigeración.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="phase-subflow">
+        <div class="subflow-step">
+          <strong>1. Asignar a Frío</strong>
+          <span>Ubicar cajas en nevera a 4°C</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>2. Fraccionar Viales</strong>
+          <span>Genera código único de frasco (SELLADO)</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>3. Abrir en Mesón</strong>
+          <span>Pasa a EN_USO y activa estabilidad</span>
+        </div>
+      </div>
+
+      <div class="case-study-box">
+        <div class="case-study-header">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          Ejemplo Práctico en el Sistema: Vial LOT-DNA-99-F01 en Nevera 02
+        </div>
+        <div class="case-study-content">
+          El bioanalista ubica la caja en la Nevera <code>FRIDGE-INM-02</code> (4°C). El sistema genera el frasco <code>LOT-DNA-99-F01</code> con 96 determinaciones teóricas en estado <code>SELLADO</code>. Al iniciar la semana, pulsa "Abrir Frasco", el estado cambia a <code>EN_USO</code> y se registra la fecha/hora de inicio de estabilidad.
+        </div>
+      </div>
+    </article>
+
+    <!-- FASE 7 -->
+    <article class="phase-card" id="fase-7">
+      <div class="phase-top">
+        <div class="phase-title-group">
+          <div class="phase-badge-number num-rose">07</div>
+          <div class="phase-titles">
+            <h3>Corridas Analíticas y Auditoría de Consumo 5D</h3>
+            <p class="phase-sub">Procesamiento en bloque, conciliación de rendimiento y costo real</p>
+          </div>
+        </div>
+        <div class="phase-meta-tags">
+          <span class="badge badge-blue">Módulos: LabRuns / 5DAudit / Costing / Clinical</span>
+          <span class="badge badge-purple">Roles: BIOANALISTA, COORDINADOR</span>
+        </div>
+      </div>
+
+      <div class="ipo-grid">
+        <div class="ipo-card card-input">
+          <div class="ipo-label">Entradas (Inputs)</div>
+          <ul>
+            <li>Muestras biológicas de sueros/plasmas acumuladas durante la semana.</li>
+            <li>Frasco de reactivo <code>EN_USO</code> asignado al examen analítico.</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-process">
+          <div class="ipo-label">Procesamiento & Reglas de Negocio</div>
+          <ul>
+            <li>Apertura de la corrida analítica para el examen correspondiente.</li>
+            <li>Cierre de corrida con <strong>Desglose en 5 Dimensiones</strong>: Pacientes, Calibradores, Controles (+/-), Repeticiones justificadas y Purga.</li>
+            <li>Deducción de determinaciones restantes y cálculo de variación de rendimiento (Over/Sub-yield).</li>
+            <li>Cálculo matemático del <strong>Costo Efectivo Real por Paciente Diagnóstico</strong>.</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-output">
+          <div class="ipo-label">Salidas Hacia Otros Módulos</div>
+          <ul>
+            <li>Pacientes con informe diagnóstico validado biológicamente.</li>
+            <li>Saldo del vial actualizado en frío (o marcado <code>AGOTADO</code>).</li>
+            <li>Reportes de costo analítico real para la Dirección y Finanzas.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="phase-subflow">
+        <div class="subflow-step">
+          <strong>1. Corrida Semanal</strong>
+          <span>Acumula sueros para el examen</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>2. Desglose 5D</strong>
+          <span>Pacientes + Calibración + Controles + Purga</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>3. Costo por Paciente</strong>
+          <span>Absorbe mermas y controles en el costo</span>
+        </div>
+      </div>
+
+      <div class="case-study-box">
+        <div class="case-study-header">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          Ejemplo Práctico en el Sistema: Cierre de la Corrida RUN-2026-0042
+        </div>
+        <div class="case-study-content">
+          El bioanalista procesa la corrida <code>RUN-2026-0042</code> de Anti-DNA: diagnostica 38 pacientes, gasta 4 pozos en calibradores, 2 en controles, 2 en repeticiones y 2 en purga (Total: 48 pozos gastados). Del frasco <code>LOT-DNA-99-F01</code> quedan 48 determinaciones. El sistema calcula que el costo real por paciente fue de $2.27 USD, absorbiendo con exactitud matemática el gasto de controles y calibradores.
+        </div>
+      </div>
+    </article>
+
+    <!-- FASE 8 -->
+    <article class="phase-card" id="fase-8">
+      <div class="phase-top">
+        <div class="phase-title-group">
+          <div class="phase-badge-number">08</div>
+          <div class="phase-titles">
+            <h3>I+D Blindado, Arqueos Físicos y Cierre Contable</h3>
+            <p class="phase-sub">Segregación de proyectos, arqueo periódico de neveras y auditoría UCV</p>
+          </div>
+        </div>
+        <div class="phase-meta-tags">
+          <span class="badge badge-blue">Módulos: Research / FridgeAudit / Traceability / Reports</span>
+          <span class="badge badge-purple">Roles: INVESTIGADOR, COORDINADOR, AUDITOR</span>
+        </div>
+      </div>
+
+      <div class="ipo-grid">
+        <div class="ipo-card card-input">
+          <div class="ipo-label">Entradas (Inputs)</div>
+          <ul>
+            <li>Convenios científicos de investigación (OPS, FONACIT, Tesis de Posgrado).</li>
+            <li>Neveras clínicas activas con saldos teóricos en el software.</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-process">
+          <div class="ipo-label">Procesamiento & Reglas de Negocio</div>
+          <ul>
+            <li><strong>Blindaje Anti-Consumo Clínico:</strong> Bloqueo estricto de reactivos con <code>ownershipType: RESEARCH_PROJECT</code> en la rutina de pacientes.</li>
+            <li>Arqueo físico de neveras (Fridge Audit) para conciliar saldos reales vs. software.</li>
+            <li>Generación de informes de trazabilidad punta a punta para la Contraloría UCV.</li>
+          </ul>
+        </div>
+
+        <div class="ipo-card card-output">
+          <div class="ipo-label">Salidas Hacia Otros Módulos</div>
+          <ul>
+            <li>Bitácora de ensayos y hallazgos científicos formalmente respaldada.</li>
+            <li>Libros de inventario conciliados sin discrepancias físicas.</li>
+            <li>Archivos CSV exportados para auditoría externa e informes de gestión.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="phase-subflow">
+        <div class="subflow-step">
+          <strong>1. Donación Blindada</strong>
+          <span>Bloqueo para uso clínico asistencial</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>2. Fridge Audit</strong>
+          <span>Arqueo físico visual frasco por frasco</span>
+        </div>
+        <span class="p-connector">&rarr;</span>
+        <div class="subflow-step">
+          <strong>3. Trazabilidad Total</strong>
+          <span>De la Orden de Compra al Paciente</span>
+        </div>
+      </div>
+
+      <div class="case-study-box">
+        <div class="case-study-header">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          Ejemplo Práctico en el Sistema: Trazabilidad Completa del Lote LOT-DNA-99
+        </div>
+        <div class="case-study-content">
+          La Contraloría solicita la auditoría de un resultado. El auditor introduce <code>LOT-DNA-99</code> en <code>/admin/reports/traceability</code>: el sistema reconstruye instantáneamente la Orden <code>ORD-2026-0042</code>, la factura comercial, la recepción en muelle, el asiento Kardex <code>MOV-2026-00105</code>, el despacho a frío, la apertura del frasco en la Nevera 02, la corrida <code>RUN-2026-0042</code> y el paciente diagnosticado en menos de 2 segundos.
+        </div>
+      </div>
+    </article>
+  </section>
+
+    
+  <!-- MATRIZ DE INTERCONEXIÓN Y DEPENDENCIAS CRUZADAS -->
+  <section class="matrix-section" id="matriz-conexiones">
+    <div class="section-header-box">
+      <h3>
+        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+        Matriz de Conexión entre Módulos: Eventos y Transferencia de Datos
+      </h3>
+      <p>Cómo se comunican los módulos del backend y qué contratos de datos viajan entre ellos.</p>
+    </div>
+
+    <div class="table-container" style="overflow-x: auto;">
+      <table class="matrix-table">
+        <thead>
+          <tr>
+            <th>Módulo Emisor</th>
+            <th>Acción / Evento Disparador</th>
+            <th>Datos Transferidos (Payload)</th>
+            <th>Módulo Receptor</th>
+            <th>Efecto Inmediato en el Sistema</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Preórdenes (Requisiciones)</strong></td>
+            <td><code>POST .../convert-to-order</code></td>
+            <td><code>supplierId, exchangeRate, items[]</code></td>
+            <td><strong>Órdenes de Compra</strong></td>
+            <td>Crea Orden oficial en estado <code>BORRADOR</code> / <code>ENVIADA</code> y transfiere las líneas de cotización.</td>
+          </tr>
+          <tr>
+            <td><strong>Órdenes de Compra</strong></td>
+            <td><code>POST .../receive</code></td>
+            <td><code>lotNumber, expirationDate, qtyReceived</code></td>
+            <td><strong>Almacén & Kardex</strong></td>
+            <td>Crea o incrementa <code>StockBatch</code> y registra el movimiento de Kardex <code>ENTRADA_COMPRA</code>.</td>
+          </tr>
+          <tr>
+            <td><strong>Recepción en Muelle</strong></td>
+            <td>Detección de rotura o fallo térmico</td>
+            <td><code>batchId, incidentType, evidenceUrl</code></td>
+            <td><strong>Calidad & Cuarentena</strong></td>
+            <td>Pasa el lote a <span class="badge badge-amber">EN_CUARENTENA</span> y bloquea su uso en despachos y corridas.</td>
+          </tr>
+          <tr>
+            <td><strong>Facturación de Orden</strong></td>
+            <td><code>POST .../invoices</code></td>
+            <td><code>invoiceNumber, controlNumber, totalAmount</code></td>
+            <td><strong>Finanzas & Deudas</strong></td>
+            <td>Registra la deuda en <code>SupplierDebt</code> y habilita la amortización bimoneda.</td>
+          </tr>
+          <tr>
+            <td><strong>Ventana Operativa</strong></td>
+            <td>Validación horaria en servidor</td>
+            <td><code>weeklyTokenCycle (ej. 2026-W46)</code></td>
+            <td><strong>Solicitudes Internas</strong></td>
+            <td>Permite o rechaza la creación de solicitudes según el horario y cuota del usuario.</td>
+          </tr>
+          <tr>
+            <td><strong>Solicitudes Internas</strong></td>
+            <td><code>POST .../dispatch</code></td>
+            <td><code>requestId, items[{ batchId, qty }]</code></td>
+            <td><strong>Kardex & Almacén</strong></td>
+            <td>Descuenta <code>currentQuantity</code> del lote y asienta el movimiento <code>DESPACHO_SOLICITUD</code>.</td>
+          </tr>
+          <tr>
+            <td><strong>Despacho a Frío</strong></td>
+            <td><code>POST .../assign-batch</code></td>
+            <td><code>batchId, fridgeId, totalUses</code></td>
+            <td><strong>Laboratorio & Neveras</strong></td>
+            <td>Fracciona las cajas en frascos individuales <code>LabReagentUnit</code> en estado <span class="badge badge-blue">SELLADO</span>.</td>
+          </tr>
+          <tr>
+            <td><strong>Apertura de Vial</strong></td>
+            <td><code>PATCH .../units/:id/open</code></td>
+            <td><code>openedById, openedAt, expirationDate</code></td>
+            <td><strong>Control de Estabilidad</strong></td>
+            <td>Cambia el estado a <span class="badge badge-green">EN_USO</span> y activa la cuenta regresiva de vida útil post-apertura.</td>
+          </tr>
+          <tr>
+            <td><strong>Cierre de Corrida</strong></td>
+            <td><code>POST .../runs/:id/close</code></td>
+            <td><code>consumptions[patient, cal, ctrl, rep, waste]</code></td>
+            <td><strong>Costeo Real & Finanzas</strong></td>
+            <td>Deduce saldo del vial, concilia variación de rendimiento y calcula costo efectivo por paciente.</td>
+          </tr>
+          <tr>
+            <td><strong>Donaciones (I+D)</strong></td>
+            <td><code>POST .../donations</code></td>
+            <td><code>ownershipType: RESEARCH_PROJECT</code></td>
+            <td><strong>Blindaje de Base de Datos</strong></td>
+            <td>Bloquea a nivel de servicio cualquier intento de consumir el vial en la rutina asistencial de pacientes.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- RECORRIDO INTERACTIVO PASO A PASO (WALKTHROUGH) -->
+  <section class="matrix-section" id="simulador-trazabilidad" style="margin-top: 2.5rem;">
+    <div class="section-header-box">
+      <h3>
+        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Línea de Vida de un Insumo: El Viaje Completo de Principio a Fin
+      </h3>
+      <p>Visualice cronológicamente cómo se transforma una necesidad clínica en un diagnóstico efectivo de paciente.</p>
+    </div>
+
+    <div class="phases-stream" style="gap: 1.5rem; margin-top: 1rem;">
+      <div class="p-node" style="padding: 1.25rem; border-left: 5px solid var(--primary);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <strong style="color: var(--primary); font-size: 0.95rem;">Hito 1: Detección de Necesidad & Requisición</strong>
+          <span class="badge badge-amber">Preorden</span>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--slate-600); margin: 0;">
+          El stock del reactivo de autoinmunidad cae bajo el punto de reorden (50 pruebas). Compras emite la preorden <code>REQ-2026-0012</code> y solicita cotizaciones a 3 distribuidores calificados.
+        </p>
+      </div>
+
+      <div class="p-node" style="padding: 1.25rem; border-left: 5px solid var(--teal);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <strong style="color: var(--teal); font-size: 0.95rem;">Hito 2: Adjudicación de Orden Bimoneda</strong>
+          <span class="badge badge-blue">Orden Oficial</span>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--slate-600); margin: 0;">
+          Se adjudica a <em>Bio-Diagnóstica C.A.</em> por $900.00 USD (5 cajas de 96 determinaciones) a la tasa BCV oficial del día. Se emite la Orden <code>ORD-2026-0042</code>.
+        </p>
+      </div>
+
+      <div class="p-node" style="padding: 1.25rem; border-left: 5px solid var(--success);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <strong style="color: var(--success); font-size: 0.95rem;">Hito 3: Recepción Física, Lote y Entrada a Kardex</strong>
+          <span class="badge badge-green">StockBatch</span>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--slate-600); margin: 0;">
+          Llega el camión frigorífico a 4°C. El almacenista inspecciona los viales, asigna el lote <code>LOT-DNA-99</code> con vencimiento <code>2027-11-30</code> y el sistema genera el asiento Kardex <code>ENTRADA_COMPRA</code> sumando 480 pruebas al almacén.
+        </p>
+      </div>
+
+      <div class="p-node" style="padding: 1.25rem; border-left: 5px solid var(--warning);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <strong style="color: var(--warning); font-size: 0.95rem;">Hito 4: Pedido Departamental en Ventana Semanal</strong>
+          <span class="badge badge-amber">Ventana Activa</span>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--slate-600); margin: 0;">
+          Durante la ventana de atención semanal, Inmunopatología solicita 2 cajas. El almacén aprueba y despacha por criterio FEFO, generando el comprobante Kardex <code>DESPACHO_SOLICITUD</code>.
+        </p>
+      </div>
+
+      <div class="p-node" style="padding: 1.25rem; border-left: 5px solid var(--purple);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <strong style="color: var(--purple); font-size: 0.95rem;">Hito 5: Fraccionamiento en Nevera & Apertura en Mesón</strong>
+          <span class="badge badge-purple">LabReagentUnit</span>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--slate-600); margin: 0;">
+          Las 2 cajas se ingresan a la Nevera <code>FRIDGE-INM-02</code> fraccionándose en viales individuales. El bioanalista ejecuta "Abrir Frasco" para el vial <code>LOT-DNA-99-F01</code>, pasando de <code>SELLADO</code> a <code>EN_USO</code>.
+        </p>
+      </div>
+
+      <div class="p-node" style="padding: 1.25rem; border-left: 5px solid var(--danger);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <strong style="color: var(--danger); font-size: 0.95rem;">Hito 6: Corrida Semanal, Diagnóstico y Costo Efectivo</strong>
+          <span class="badge badge-red">Corrida 5D</span>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--slate-600); margin: 0;">
+          Se procesan 38 pacientes, 4 calibradores, 2 controles, 2 repeticiones y 2 purgas (48 pozos). Se descuentan del vial, se emiten los diagnósticos clínicos y se calcula el costo real exacto por paciente ($2.27 USD).
+        </p>
+      </div>
+    </div>
+  </section>
+
+  </main>
+
+  <!-- PIE DE PÁGINA -->
+  <footer class="roadmap-footer">
+    <p>
+      <strong>ERP-IDI v2.5 Enterprise</strong> &mdash; Mapa de Procesos y Arquitectura de Datos.<br>
+      Instituto de Inmunología "Dr. Nicolás E. Bianco Colmenares" &bull; Facultad de Medicina &bull; Universidad Central de Venezuela.<br>
+      Documento autónomo accesible en HTML con CSS puro integrado.
+    </p>
+  </footer>
+
+  <!-- BOTÓN VOLVER ARRIBA -->
+  <button type="button" id="backTopBtn" class="back-top" title="Volver arriba" aria-label="Volver arriba">
+    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>
+  </button>
+
+  <script>
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // 1. Botón Volver Arriba
+    const backTopBtn = document.getElementById('backTopBtn');
+    window.addEventListener('scroll', () => {
+      if (window.scrollY > 400) {
+        backTopBtn.classList.add('visible');
+      } else {
+        backTopBtn.classList.remove('visible');
+      }
+    });
+
+    backTopBtn.addEventListener('click', () => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    // 2. Navegación por Ribbon con Scroll Activo
+    const ribbonSteps = document.querySelectorAll('.ribbon-step');
+    const phaseCards = document.querySelectorAll('.phase-card');
+
+    const observerOptions = {
+      root: null,
+      rootMargin: '-100px 0px -60% 0px',
+      threshold: 0
+    };
+
+    const phaseObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const id = entry.target.getAttribute('id');
+          ribbonSteps.forEach(step => {
+            if (step.getAttribute('href') === '#' + id) {
+              step.classList.add('active');
+            } else {
+              step.classList.remove('active');
+            }
+          });
+        }
+      });
+    }, observerOptions);
+
+    phaseCards.forEach(card => phaseObserver.observe(card));
+
+    // 3. Filtro Interactivo por Rol de Usuario
+    const roleSelect = document.getElementById('roleFilterSelect');
+    if (roleSelect) {
+      roleSelect.addEventListener('change', (e) => {
+        const selectedRole = e.target.value;
+
+        phaseCards.forEach(card => {
+          const metaText = card.querySelector('.phase-meta-tags')?.textContent || '';
+          if (selectedRole === 'ALL' || metaText.includes(selectedRole)) {
+            card.style.opacity = '1';
+            card.style.transform = 'scale(1)';
+            card.style.display = 'block';
+          } else {
+            card.style.opacity = '0.35';
+            card.style.transform = 'scale(0.98)';
+          }
+        });
+
+        // Filtrar también carriles swimlane
+        const swimlanes = document.querySelectorAll('.swimlane');
+        swimlanes.forEach(lane => {
+          const laneRole = lane.querySelector('.lane-role')?.textContent || '';
+          if (selectedRole === 'ALL' || laneRole.includes(selectedRole)) {
+            lane.style.opacity = '1';
+          } else {
+            lane.style.opacity = '0.35';
+          }
+        });
+      });
+    }
+  });
+
+  </script>
+</body>
+</html>

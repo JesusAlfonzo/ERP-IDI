@@ -1,47 +1,40 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AuthService } from "@/services/auth.service";
 import type { AuthUser } from "@/types/auth";
 import { RequestWindowAdminCard } from "@/components/requests/RequestWindowAdminCard";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  ShieldCheck,
-  Lock,
-  Users,
+  SlidersHorizontal,
+  ClipboardList,
   AlertTriangle,
-  Building,
-  KeyRound,
 } from "lucide-react";
-import Link from "next/link";
 
-export default function AdminSecurityPage() {
+export default function AdminRequestsSettingsPage() {
   const [currentUser] = useState<AuthUser | null>(() =>
-    AuthService.getCurrentUser()
+    AuthService.getCurrentUser(),
   );
   const isAdmin = currentUser?.roles.includes("ADMINISTRADOR") ?? false;
 
   if (!isAdmin) {
     return (
-      <div className="p-8 text-center space-y-4 max-w-md mx-auto">
-        <Card className="border-destructive/20 shadow-xs">
-          <CardContent className="pt-6 space-y-4">
-            <div className="w-12 h-12 rounded-full bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
+      <div className="p-8 text-center max-w-md mx-auto mt-12">
+        <Card className="border-border/80 shadow-2xs">
+          <CardContent className="p-6 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
               <AlertTriangle className="w-6 h-6" />
             </div>
-            <h2 className="text-lg font-bold text-slate-800">Acceso Restringido</h2>
+            <h2 className="text-base font-bold text-foreground">
+              Acceso Restringido
+            </h2>
             <p className="text-xs text-muted-foreground">
-              Esta sección está reservada exclusivamente para el personal con rol de
-              Administrador del sistema.
+              Solo los administradores pueden cambiar estas opciones.
             </p>
-            <Button asChild variant="default" size="sm">
-              <Link href="/dashboard">Volver al Inicio</Link>
+            <Button asChild variant="default" size="sm" className="h-8 text-xs">
+              <Link href="/dashboard">Ir al Panel</Link>
             </Button>
           </CardContent>
         </Card>
@@ -50,84 +43,39 @@ export default function AdminSecurityPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Encabezado */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2.5">
-            <ShieldCheck className="w-7 h-7 text-primary" />
-            Seguridad & Políticas Institucionales
-          </h1>
-          <p className="text-xs text-muted-foreground mt-1">
-            Administración centralizada de ventanas operativas, control de
-            acceso y directrices del IDI
-          </p>
+    <div className="space-y-6 w-full pb-12">
+      {/* ========================================================
+          ENCABEZADO ESTANDARIZADO
+         ======================================================== */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
+        <div className="flex items-start sm:items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0 shadow-2xs">
+            <SlidersHorizontal className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+              Horario de Solicitudes
+            </h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Días, horas y límite de pedidos a almacén
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button asChild variant="outline" size="sm" className="shadow-xs">
-            <Link href="/admin/users">
-              <Users className="w-4 h-4 mr-1.5 text-muted-foreground" />
-              Gestión de Usuarios & Roles
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Button asChild variant="outline" size="sm" className="h-8 text-xs gap-1.5">
+            <Link href="/requests">
+              <ClipboardList className="w-3.5 h-3.5 text-primary" />
+              Ver Solicitudes
             </Link>
           </Button>
         </div>
       </div>
 
-      {/* Tarjeta de Ventana Operativa de Requisiciones */}
+      {/* ========================================================
+          TARJETAS DE CONFIGURACIÓN DE SOLICITUDES
+         ======================================================== */}
       <RequestWindowAdminCard />
-
-      {/* Información de Directrices de Seguridad y Control */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="shadow-xs">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-bold text-slate-800 flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-primary" />
-              Control de Acceso RBAC
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Las políticas de seguridad restringen las acciones de aprobación y
-              despacho exclusivamente a usuarios con roles{" "}
-              <strong className="text-foreground">ADMINISTRADOR</strong> o{" "}
-              <strong className="text-foreground">ALMACENISTA</strong>.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-xs">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-bold text-slate-800 flex items-center gap-2">
-              <Lock className="w-4 h-4 text-emerald-600" />
-              Auditoría de Kardex Físico
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Todo despacho genera correlativos inmutables y trazabilidad
-              completa vinculando el usuario que autorizó y el número de lote
-              afectado.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-xs">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-bold text-slate-800 flex items-center gap-2">
-              <Building className="w-4 h-4 text-purple-600" />
-              Regla de Ventana Semanal
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              La ventana operativa previene la saturación del almacén central,
-              concentrando las solicitudes regulares en los primeros días hábiles
-              de cada semana.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 }

@@ -5,13 +5,12 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { AuthService } from "@/services/auth.service";
 import type { AuthUser } from "@/types/auth";
 import {
   LayoutDashboard,
   Package,
   FileText,
-  FlaskConical,
-  Snowflake,
   ShoppingCart,
   ShieldAlert,
   Settings,
@@ -19,7 +18,6 @@ import {
   SlidersHorizontal,
   Building2,
   ClipboardList,
-  Shield,
   ChevronDown,
   Wallet,
   BarChart3,
@@ -28,8 +26,10 @@ import {
   Users,
   History,
   FileSpreadsheet,
-  Microscope,
   PackageCheck,
+  Clock,
+  Database,
+  LogOut,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -69,101 +69,25 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     icon: LayoutDashboard,
   },
   {
-    groupLabel: "LABORATORIO CLÍNICO",
-    label: "Laboratorio Clínico",
-    icon: FlaskConical,
-    roles: [
-      "ADMINISTRADOR",
-      "LABORATORIO",
-      "COORDINADOR_LABORATORIO",
-      "COORDINADOR",
-      "BIOANALISTA",
-    ],
-    children: [
-      {
-        label: "Tablero General",
-        href: "/lab",
-        icon: LayoutDashboard,
-        roles: ["ADMINISTRADOR", "LABORATORIO", "COORDINADOR_LABORATORIO", "COORDINADOR", "BIOANALISTA"],
-      },
-      {
-        label: "Corridas & Consumo",
-        href: "/lab/runs",
-        icon: FlaskConical,
-        roles: ["ADMINISTRADOR", "LABORATORIO", "COORDINADOR_LABORATORIO", "COORDINADOR", "BIOANALISTA"],
-      },
-      {
-        label: "Solicitudes FEFO",
-        href: "/lab/requests",
-        icon: ClipboardList,
-        roles: ["ADMINISTRADOR", "LABORATORIO", "COORDINADOR_LABORATORIO", "COORDINADOR", "BIOANALISTA"],
-      },
-      {
-        label: "Neveras & Cadena de Frío",
-        href: "/lab/fridges",
-        icon: Snowflake,
-        roles: ["ADMINISTRADOR", "LABORATORIO", "COORDINADOR_LABORATORIO", "COORDINADOR", "BIOANALISTA"],
-      },
-      {
-        label: "Calidad & Cuarentena",
-        href: "/lab/quality",
-        icon: ShieldAlert,
-        roles: ["ADMINISTRADOR", "LABORATORIO", "COORDINADOR_LABORATORIO", "COORDINADOR", "BIOANALISTA"],
-      },
-      {
-        label: "Reportes & Auditoría",
-        href: "/lab/reports",
-        icon: BarChart3,
-        roles: ["ADMINISTRADOR", "LABORATORIO", "COORDINADOR_LABORATORIO", "COORDINADOR", "BIOANALISTA"],
-      },
-    ],
-  },
-  {
-    groupLabel: "INVESTIGACIÓN & DOCENCIA",
-    label: "Investigación",
-    icon: Microscope,
-    roles: ["ADMINISTRADOR", "INVESTIGACION", "DOCENCIA", "COORDINADOR_LABORATORIO"],
-    children: [
-      {
-        label: "Proyectos & Presupuesto",
-        href: "/research/projects",
-        icon: Microscope,
-        roles: ["ADMINISTRADOR", "INVESTIGACION", "DOCENCIA", "COORDINADOR_LABORATORIO"],
-      },
-      {
-        label: "Donaciones & Stock Blindado",
-        href: "/research/donations",
-        icon: Package,
-        roles: ["ADMINISTRADOR", "INVESTIGACION", "DOCENCIA", "COORDINADOR_LABORATORIO"],
-      },
-      {
-        label: "Bitácora Ensayos & Hallazgos",
-        href: "/research/trials",
-        icon: FileText,
-        roles: ["ADMINISTRADOR", "INVESTIGACION", "DOCENCIA", "COORDINADOR_LABORATORIO", "BIOANALISTA"],
-      },
-    ],
-  },
-  {
-    groupLabel: "OPERACIONES & ALMACÉN",
-    label: "Inventario & Stock",
+    groupLabel: "ALMACÉN",
+    label: "Inventario",
     icon: Package,
     roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS"],
     children: [
       {
-        label: "Catálogo & Lotes",
+        label: "Insumos y Lotes",
         href: "/inventory/products",
         icon: Package,
         roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS"],
       },
       {
-        label: "Ajustes & Mermas",
+        label: "Ajustes y Mermas",
         href: "/inventory/adjustments",
         icon: SlidersHorizontal,
         roles: ["ADMINISTRADOR", "ALMACENISTA"],
       },
       {
-        label: "Incidencias & Cuarentena",
+        label: "Cuarentena",
         href: "/quality/quarantine",
         icon: ShieldAlert,
         roles: ["ADMINISTRADOR", "ALMACENISTA", "LABORATORIO"],
@@ -171,7 +95,7 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Solicitudes Internas",
+    label: "Solicitudes",
     icon: ClipboardList,
     roles: [
       "ADMINISTRADOR",
@@ -188,7 +112,7 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     ],
     children: [
       {
-        label: "Pedidos a Almacén General",
+        label: "Pedidos",
         href: "/requests",
         icon: ClipboardList,
         roles: [
@@ -206,7 +130,7 @@ const NAVIGATION_GROUPS: NavGroup[] = [
         ],
       },
       {
-        label: "Despacho de Materiales",
+        label: "Despachos",
         href: "/requests/dispatch",
         icon: PackageCheck,
         roles: ["ADMINISTRADOR", "ALMACENISTA"],
@@ -214,25 +138,25 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     ],
   },
   {
-    groupLabel: "GESTIÓN & FINANZAS",
+    groupLabel: "COMPRAS Y PAGOS",
     label: "Compras",
     icon: ShoppingCart,
     roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
     children: [
       {
-        label: "Preórdenes de Compra",
+        label: "Preórdenes",
         href: "/purchasing/requisitions",
         icon: FileText,
         roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
       },
       {
-        label: "Órdenes de Compra",
+        label: "Órdenes",
         href: "/purchasing/orders",
         icon: ShoppingCart,
         roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
       },
       {
-        label: "Directorio de Proveedores",
+        label: "Proveedores",
         href: "/purchasing/suppliers",
         icon: Building2,
         roles: ["ADMINISTRADOR", "COMPRAS"],
@@ -240,18 +164,18 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Finanzas & Tesorería",
+    label: "Pagos",
     icon: Wallet,
     roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
     children: [
       {
-        label: "Cuentas por Pagar & Deudas",
+        label: "Cuentas por Pagar",
         href: "/purchasing/debts",
         icon: FileSpreadsheet,
         roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
       },
       {
-        label: "Egresos & Pagos Directos",
+        label: "Pagos Directos",
         href: "/admin/financial/payments",
         icon: Wallet,
         roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
@@ -259,51 +183,61 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     ],
   },
   {
-    groupLabel: "ADMINISTRACIÓN & AUDITORÍA",
-    label: "Reportes & Auditoría",
+    groupLabel: "ADMINISTRACIÓN",
+    label: "Auditoría",
     icon: BarChart3,
-    roles: ["ADMINISTRADOR", "ADMINISTRACION", "COORDINADOR_LABORATORIO", "LABORATORIO"],
+    roles: ["ADMINISTRADOR", "ADMINISTRACION", "COORDINADOR"],
     children: [
       {
-        label: "Kardex de Movimientos",
+        label: "Movimientos",
         href: "/inventory/kardex",
         icon: History,
-        roles: ["ADMINISTRADOR", "COORDINADOR_LABORATORIO", "LABORATORIO"],
+        roles: ["ADMINISTRADOR"],
       },
       {
-        label: "Generador de Reportes",
+        label: "Reportes",
         href: "/inventory/reports",
         icon: BarChart3,
-        roles: ["ADMINISTRADOR", "COORDINADOR_LABORATORIO", "LABORATORIO"],
+        roles: ["ADMINISTRADOR", "COORDINADOR"],
       },
     ],
   },
   {
-    label: "Configuración del Sistema",
+    label: "Ajustes",
     icon: Settings,
     roles: ["ADMINISTRADOR"],
     children: [
       {
-        label: "Usuarios y Accesos",
+        label: "Usuarios",
         href: "/admin/users",
         icon: Users,
         roles: ["ADMINISTRADOR"],
       },
       {
-        label: "Seguridad y Auditoría Técnica",
+        label: "Horario de Solicitudes",
         href: "/admin/security",
-        icon: Shield,
+        icon: Clock,
         roles: ["ADMINISTRADOR"],
       },
       {
-        label: "Maestros del Sistema",
+        label: "Maestros",
         href: "/inventory/settings",
-        icon: SlidersHorizontal,
+        icon: Database,
         roles: ["ADMINISTRADOR"],
       },
     ],
   },
 ];
+
+// Evita que "/requests" se marque activo cuando estamos en "/requests/dispatch"
+function isHrefActive(pathname: string, href: string) {
+  if (pathname === href) return true;
+  if (href === "/dashboard") return false;
+  if (href === "/requests" && pathname.startsWith("/requests/dispatch")) {
+    return false;
+  }
+  return pathname.startsWith(`${href}/`);
+}
 
 interface SidebarProps {
   user: AuthUser | null;
@@ -326,9 +260,7 @@ function CollapsedGroupItem({
 }: CollapsedGroupItemProps) {
   const [open, setOpen] = useState(false);
   const Icon = item.icon || Package;
-  const groupActive = allowedChildren.some(
-    (c) => pathname === c.href || pathname.startsWith(`${c.href}/`),
-  );
+  const groupActive = allowedChildren.some((c) => isHrefActive(pathname, c.href));
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -338,15 +270,15 @@ function CollapsedGroupItem({
             <button
               type="button"
               className={cn(
-                "w-10 h-10 rounded-lg flex items-center justify-center transition-colors cursor-pointer relative",
+                "w-10 h-10 mx-auto rounded-xl flex items-center justify-center transition-all duration-200 cursor-pointer relative group",
                 groupActive
-                  ? "bg-blue-600 text-white shadow-xs font-semibold"
-                  : "text-slate-400 hover:bg-slate-900 hover:text-slate-200",
+                  ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30 font-semibold"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-slate-100 hover:scale-105",
               )}
             >
-              <Icon className="w-4 h-4 shrink-0" />
+              <Icon className="w-4 h-4 shrink-0 transition-transform duration-200 group-hover:scale-105" />
               {groupActive && (
-                <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white" />
+                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-white" />
               )}
             </button>
           </DropdownMenuTrigger>
@@ -362,30 +294,27 @@ function CollapsedGroupItem({
         side="right"
         align="start"
         sideOffset={8}
-        className="w-56 bg-slate-950 border-slate-800 text-slate-200 p-1.5 shadow-xl z-50"
+        className="w-52 bg-slate-950 border-slate-800 text-slate-200 p-1.5 shadow-xl z-50"
       >
-        <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-2 py-1">
+        <DropdownMenuLabel className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
           {item.label}
         </DropdownMenuLabel>
         <div className="space-y-0.5">
           {allowedChildren.map((subItem) => {
             const SubIcon = subItem.icon;
-            const subActive =
-              subItem.href === "/lab"
-                ? pathname === "/lab"
-                : pathname === subItem.href || pathname.startsWith(`${subItem.href}/`);
+            const subActive = isHrefActive(pathname, subItem.href);
             return (
               <DropdownMenuItem key={subItem.href} asChild>
                 <Link
                   href={subItem.href}
                   className={cn(
-                    "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors",
+                    "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all duration-150",
                     subActive
                       ? "bg-blue-600 text-white font-semibold shadow-xs"
-                      : "text-slate-300 hover:bg-slate-900 hover:text-white",
+                      : "text-slate-300 hover:bg-slate-900 hover:text-white hover:translate-x-0.5",
                   )}
                 >
-                  <SubIcon className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                  <SubIcon className="w-3.5 h-3.5 shrink-0 opacity-85" />
                   <span>{subItem.label}</span>
                 </Link>
               </DropdownMenuItem>
@@ -404,9 +333,7 @@ interface CollapsedDirectItemProps {
 
 function CollapsedDirectItem({ item, pathname }: CollapsedDirectItemProps) {
   const Icon = item.icon || Package;
-  const isActive =
-    pathname === item.href ||
-    (item.href !== "/dashboard" && pathname.startsWith(`${item.href ?? ""}/`));
+  const isActive = isHrefActive(pathname, item.href ?? "");
 
   return (
     <Tooltip>
@@ -414,13 +341,13 @@ function CollapsedDirectItem({ item, pathname }: CollapsedDirectItemProps) {
         <Link
           href={item.href ?? "#"}
           className={cn(
-            "w-10 h-10 rounded-lg flex items-center justify-center transition-colors cursor-pointer relative",
+            "w-10 h-10 mx-auto rounded-xl flex items-center justify-center transition-all duration-200 cursor-pointer relative group",
             isActive
-              ? "bg-blue-600 text-white shadow-xs font-semibold"
-              : "text-slate-400 hover:bg-slate-900 hover:text-slate-200",
+              ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30 font-semibold"
+              : "text-slate-400 hover:bg-slate-900 hover:text-slate-100 hover:scale-105",
           )}
         >
-          <Icon className="w-4 h-4 shrink-0" />
+          <Icon className="w-4 h-4 shrink-0 transition-transform duration-200 group-hover:scale-105" />
         </Link>
       </TooltipTrigger>
       <TooltipContent
@@ -442,8 +369,6 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
 
-  // Aislamiento por rol: si el usuario es Bioanalista estricto (no Administrador ni Coordinador),
-  // se ocultan los módulos financieros y de investigación general
   const isBioanalystOnly =
     Boolean(user?.roles?.includes("BIOANALISTA")) &&
     !user?.roles?.includes("ADMINISTRADOR") &&
@@ -459,10 +384,9 @@ export function Sidebar({
   const isGroupAllowedForUser = (group: NavGroup) => {
     if (isBioanalystOnly) {
       if (
-        group.groupLabel === "GESTIÓN & FINANZAS" ||
-        group.groupLabel === "ADMINISTRACIÓN & AUDITORÍA" ||
-        group.groupLabel === "INVESTIGACIÓN & DOCENCIA" ||
-        group.label === "Configuración del Sistema"
+        group.groupLabel === "COMPRAS Y PAGOS" ||
+        group.groupLabel === "ADMINISTRACIÓN" ||
+        group.label === "Ajustes"
       ) {
         return false;
       }
@@ -472,9 +396,7 @@ export function Sidebar({
 
   const isChildActive = (children?: SubItem[]) => {
     if (!children) return false;
-    return children.some(
-      (c) => pathname === c.href || pathname.startsWith(`${c.href}/`),
-    );
+    return children.some((c) => isHrefActive(pathname, c.href));
   };
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
@@ -491,29 +413,42 @@ export function Sidebar({
     setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
   };
 
+  const primaryRoleLabel = () => {
+    if (isBioanalystOnly) return "Bioanalista";
+    if (!user?.roles || user.roles.length === 0) return "Usuario";
+    if (user.roles.includes("ADMINISTRADOR")) return "Administrador";
+    if (user.roles.includes("COORDINADOR")) return "Coordinador";
+    if (user.roles.includes("ALMACENISTA")) return "Almacén";
+    if (user.roles.includes("COMPRAS")) return "Compras";
+    if (user.roles.includes("ADMINISTRACION")) return "Pagos";
+    return user.department || "Solicitante";
+  };
+
   return (
     <TooltipProvider delayDuration={150}>
       {isOpen && (
         <div
           onClick={onClose}
-          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs lg:hidden no-print print:hidden"
+          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs lg:hidden no-print print:hidden animate-in fade-in duration-200"
         />
       )}
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 h-full shrink-0 bg-slate-950 text-slate-300 flex flex-col border-r border-slate-800/80 transition-all duration-300 ease-in-out lg:static lg:translate-x-0 overflow-x-hidden no-print print:hidden",
+          "fixed inset-y-0 left-0 z-50 h-full shrink-0 bg-slate-950 text-slate-300 flex flex-col border-r border-slate-800/80 transition-all duration-300 ease-in-out lg:static lg:translate-x-0 overflow-x-hidden no-print print:hidden select-none",
           isOpen ? "translate-x-0" : "-translate-x-full",
           isCollapsed
             ? "w-[72px] min-w-[72px] max-w-[72px]"
-            : "w-[270px] min-w-[270px] max-w-[270px]",
+            : "w-[256px] min-w-[256px] max-w-[256px]",
         )}
       >
-        {/* Encabezado */}
+        {/* ========================================================
+            ENCABEZADO
+           ======================================================== */}
         <div
           className={cn(
-            "h-16 shrink-0 flex items-center border-b border-slate-800/80 bg-slate-950 transition-all",
-            isCollapsed ? "justify-center px-2" : "justify-between px-5",
+            "h-15 shrink-0 flex items-center border-b border-slate-800/80 bg-slate-950 transition-all",
+            isCollapsed ? "justify-center px-2" : "justify-between px-4",
           )}
         >
           {isCollapsed ? (
@@ -522,7 +457,7 @@ export function Sidebar({
                 <button
                   type="button"
                   onClick={onToggleCollapse}
-                  className="w-10 h-10 rounded-lg bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white transition-all cursor-pointer group"
+                  className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white transition-all duration-200 cursor-pointer group"
                 >
                   <div className="relative flex items-center justify-center w-full h-full">
                     <div className="w-6 h-6 rounded-md bg-white p-0.5 flex items-center justify-center shadow-xs group-hover:hidden">
@@ -534,7 +469,7 @@ export function Sidebar({
                         className="w-full h-full object-contain"
                       />
                     </div>
-                    <PanelLeftOpen className="w-4 h-4 text-blue-400 hidden group-hover:block" />
+                    <PanelLeftOpen className="w-4 h-4 text-blue-400 hidden group-hover:block animate-in zoom-in-75 duration-150" />
                   </div>
                 </button>
               </TooltipTrigger>
@@ -542,13 +477,16 @@ export function Sidebar({
                 side="right"
                 className="bg-slate-900 border-slate-800 text-slate-100 text-xs font-medium z-50"
               >
-                Expandir barra lateral
+                Expandir menú (Ctrl+B)
               </TooltipContent>
             </Tooltip>
           ) : (
             <>
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-white p-1 flex items-center justify-center shadow-md shadow-blue-500/10 shrink-0">
+              <Link
+                href="/dashboard"
+                className="flex items-center gap-2.5 min-w-0 group"
+              >
+                <div className="w-8 h-8 rounded-lg bg-white p-1 flex items-center justify-center shadow-md shadow-blue-500/10 shrink-0 transition-transform duration-200 group-hover:scale-105">
                   <Image
                     src="/logo-icon.svg"
                     alt="Logo IDI"
@@ -558,20 +496,21 @@ export function Sidebar({
                   />
                 </div>
                 <div className="flex flex-col min-w-0">
-                  <span className="text-sm font-bold tracking-wide text-white leading-tight truncate">
+                  <span className="text-sm font-bold tracking-tight text-white leading-tight truncate">
                     ERP-IDI
                   </span>
-                  <span className="text-[10px] text-slate-400 font-mono leading-none">
-                    v2.5 &bull; Laboratorio & I+D
+                  <span className="text-[11px] text-slate-400 leading-none mt-0.5 truncate">
+                    Sistema de Gestión
                   </span>
                 </div>
-              </div>
+              </Link>
+
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={onToggleCollapse}
-                  title="Guardar barra lateral (Contraer)"
-                  className="hidden lg:flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                  title="Contraer menú (Ctrl+B)"
+                  className="hidden lg:flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer"
                 >
                   <PanelLeftClose className="w-4 h-4" />
                 </button>
@@ -579,7 +518,7 @@ export function Sidebar({
                   type="button"
                   onClick={onClose}
                   title="Cerrar menú"
-                  className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                  className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -588,7 +527,9 @@ export function Sidebar({
           )}
         </div>
 
-        {/* Menú de Navegación */}
+        {/* ========================================================
+            MENÚ DE NAVEGACIÓN CON ACORDEONES ANIMADOS
+           ======================================================== */}
         <nav
           className={cn(
             "flex-1 py-3 space-y-1 overflow-y-auto overflow-x-hidden custom-scrollbar",
@@ -599,7 +540,7 @@ export function Sidebar({
             (item, index) => {
               const Icon = item.icon || Package;
 
-              // Renderizado para Sidebar Colapsado / Compacto (Guardado)
+              // Sidebar Contraído
               if (isCollapsed) {
                 if (item.children) {
                   const allowedChildren = item.children.filter((child) =>
@@ -631,7 +572,7 @@ export function Sidebar({
                 );
               }
 
-              // Renderizado para Sidebar Expandido
+              // Sidebar Expandido con Acordeón Animado
               if (item.children) {
                 const allowedChildren = item.children.filter((child) =>
                   isAllowed(child.roles),
@@ -644,7 +585,7 @@ export function Sidebar({
                 return (
                   <div key={item.label} className="space-y-0.5">
                     {item.groupLabel && (
-                      <div className="px-3 pt-3 pb-1 text-[10px] font-bold text-slate-400 tracking-wider uppercase font-mono">
+                      <div className="px-3 pt-3.5 pb-1 text-[10px] font-bold text-slate-400 tracking-wider uppercase font-mono">
                         {item.groupLabel}
                       </div>
                     )}
@@ -652,75 +593,105 @@ export function Sidebar({
                       type="button"
                       onClick={() => toggleGroup(item.label)}
                       className={cn(
-                        "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer select-none",
+                        "w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 cursor-pointer select-none group",
                         groupActive
-                          ? "text-blue-400 bg-blue-950/20 font-semibold"
-                          : "text-slate-300 hover:bg-slate-900 hover:text-white",
+                          ? "text-blue-400 bg-blue-950/30 font-semibold"
+                          : "text-slate-300 hover:bg-slate-900/90 hover:text-white",
                       )}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <Icon className="w-4 h-4 shrink-0 text-slate-400" />
+                        <Icon
+                          className={cn(
+                            "w-4 h-4 shrink-0 transition-transform duration-200 group-hover:scale-105",
+                            groupActive
+                              ? "text-blue-400"
+                              : "text-slate-400 group-hover:text-slate-200",
+                          )}
+                        />
                         <span className="truncate">{item.label}</span>
                       </div>
                       <ChevronDown
                         className={cn(
-                          "w-3.5 h-3.5 shrink-0 transition-transform duration-200 text-slate-400",
+                          "w-3.5 h-3.5 shrink-0 transition-transform duration-250 ease-out text-slate-400",
                           isOpenGroup && "rotate-180 text-white",
                         )}
                       />
                     </button>
-                    {isOpenGroup && (
-                      <div className="pl-6 pr-1 py-0.5 space-y-0.5 border-l border-slate-800/80 ml-5 my-0.5">
-                        {allowedChildren.map((subItem) => {
-                          const SubIcon = subItem.icon;
-                          const subActive =
-                            subItem.href === "/lab"
-                              ? pathname === "/lab"
-                              : pathname === subItem.href || pathname.startsWith(`${subItem.href}/`);
-                          return (
-                            <Link
-                              key={subItem.href}
-                              href={subItem.href}
-                              className={cn(
-                                "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer",
-                                subActive
-                                  ? "bg-blue-600 text-white font-semibold shadow-xs"
-                                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900",
-                              )}
-                            >
-                              <SubIcon className="w-3.5 h-3.5 shrink-0 opacity-80" />
-                              <span className="truncate">{subItem.label}</span>
-                            </Link>
-                          );
-                        })}
+
+                    {/* Acordeón con animación suave de despliegue */}
+                    <div
+                      className={cn(
+                        "grid transition-all duration-250 ease-out",
+                        isOpenGroup
+                          ? "grid-rows-[1fr] opacity-100"
+                          : "grid-rows-[0fr] opacity-0 pointer-events-none",
+                      )}
+                    >
+                      <div className="overflow-hidden">
+                        <div className="pl-5 pr-1 py-1 space-y-0.5 border-l border-slate-800/80 ml-5 my-0.5">
+                          {allowedChildren.map((subItem) => {
+                            const SubIcon = subItem.icon;
+                            const subActive = isHrefActive(
+                              pathname,
+                              subItem.href,
+                            );
+                            return (
+                              <Link
+                                key={subItem.href}
+                                href={subItem.href}
+                                onClick={() => {
+                                  if (isOpen) onClose();
+                                }}
+                                className={cn(
+                                  "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer group/sub",
+                                  subActive
+                                    ? "bg-blue-600 text-white font-semibold shadow-xs"
+                                    : "text-slate-400 hover:text-slate-100 hover:bg-slate-900/90 hover:translate-x-0.5",
+                                )}
+                              >
+                                <SubIcon
+                                  className={cn(
+                                    "w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-hover/sub:scale-105",
+                                    subActive
+                                      ? "text-white"
+                                      : "opacity-80 group-hover/sub:opacity-100",
+                                  )}
+                                />
+                                <span className="truncate">
+                                  {subItem.label}
+                                </span>
+                              </Link>
+                            );
+                          })}
+                        </div>
                       </div>
-                    )}
+                    </div>
                   </div>
                 );
               }
 
-              const isActive =
-                pathname === item.href ||
-                (item.href !== "/dashboard" &&
-                  pathname.startsWith(`${item.href ?? ""}/`));
+              const isActive = isHrefActive(pathname, item.href ?? "");
 
               return (
                 <div key={item.label} className="space-y-0.5">
                   {item.groupLabel && (
-                    <div className="px-3 pt-3 pb-1 text-[10px] font-bold text-slate-400 tracking-wider uppercase font-mono">
+                    <div className="px-3 pt-3.5 pb-1 text-[10px] font-bold text-slate-400 tracking-wider uppercase font-mono">
                       {item.groupLabel}
                     </div>
                   )}
                   <Link
                     href={item.href ?? "#"}
+                    onClick={() => {
+                      if (isOpen) onClose();
+                    }}
                     className={cn(
-                      "flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer",
+                      "flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 cursor-pointer group",
                       isActive
                         ? "bg-blue-600 text-white font-semibold shadow-xs"
-                        : "text-slate-300 hover:bg-slate-900 hover:text-white",
+                        : "text-slate-300 hover:bg-slate-900/90 hover:text-white",
                     )}
                   >
-                    <Icon className="w-4 h-4 shrink-0" />
+                    <Icon className="w-4 h-4 shrink-0 transition-transform duration-200 group-hover:scale-105" />
                     <span className="truncate">{item.label}</span>
                   </Link>
                 </div>
@@ -729,47 +700,72 @@ export function Sidebar({
           )}
         </nav>
 
-        {/* Pie de Página de Usuario */}
+        {/* ========================================================
+            PIE DE USUARIO + CIERRE DE SESIÓN
+           ======================================================== */}
         <div
           className={cn(
-            "p-3 border-t border-slate-800/80 bg-slate-950/80 shrink-0",
+            "p-3 border-t border-slate-800/80 bg-slate-950/90 shrink-0",
             isCollapsed && "flex justify-center p-2",
           )}
         >
           {isCollapsed ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Avatar className="w-9 h-9 border border-slate-700 cursor-pointer">
-                  <AvatarFallback className="bg-slate-800 text-slate-200 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => AuthService.logout()}
+                  className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 hover:border-rose-500/40 hover:bg-rose-950/30 text-slate-300 hover:text-rose-300 flex items-center justify-center transition-all duration-200 cursor-pointer group"
+                >
+                  <span className="text-xs font-bold group-hover:hidden">
                     {user?.fullName?.charAt(0) || "U"}
-                  </AvatarFallback>
-                </Avatar>
+                  </span>
+                  <LogOut className="w-4 h-4 hidden group-hover:block animate-in zoom-in-75 duration-150" />
+                </button>
               </TooltipTrigger>
               <TooltipContent
                 side="right"
                 className="bg-slate-900 border-slate-800 text-slate-100 text-xs z-50"
               >
                 <div className="font-semibold">{user?.fullName}</div>
-                <div className="text-[10px] text-slate-400">
-                  {user?.roles?.join(", ")}
-                </div>
+                <div className="text-[11px] text-rose-400">Cerrar sesión</div>
               </TooltipContent>
             </Tooltip>
           ) : (
-            <div className="flex items-center gap-2.5">
-              <Avatar className="w-8 h-8 border border-slate-700 shrink-0">
-                <AvatarFallback className="bg-blue-600 text-white text-xs font-semibold">
-                  {user?.fullName?.charAt(0) || "U"}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs font-medium text-slate-200 truncate">
-                  {user?.fullName || "Usuario"}
-                </span>
-                <span className="text-[10px] text-slate-400 truncate">
-                  {isBioanalystOnly ? "Bioanalista Clínico" : user?.roles?.join(", ") || "Operador"}
-                </span>
+            <div className="flex items-center justify-between gap-2 px-1">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Avatar className="w-8 h-8 border border-slate-700 shrink-0">
+                  <AvatarFallback className="bg-blue-600 text-white text-xs font-bold">
+                    {user?.fullName?.charAt(0) || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-semibold text-slate-100 truncate">
+                    {user?.fullName || "Usuario"}
+                  </span>
+                  <span className="text-[11px] text-slate-400 truncate">
+                    {primaryRoleLabel()}
+                  </span>
+                </div>
               </div>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => AuthService.logout()}
+                    className="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition-colors cursor-pointer shrink-0"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="top"
+                  className="bg-slate-900 border-slate-800 text-slate-100 text-xs z-50"
+                >
+                  Cerrar sesión
+                </TooltipContent>
+              </Tooltip>
             </div>
           )}
         </div>

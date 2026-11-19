@@ -1,35 +1,26 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useTransition, useCallback } from "react";
 import { RequestClientService } from "@/services/request.service";
 import { AuthService } from "@/services/auth.service";
 import type { RequestWindowConfigData } from "@/types/requests";
 import type { AuthUser } from "@/types/auth";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { Card, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { toast } from "@/utils/toast";
 import {
   Clock,
   ShieldAlert,
-  CheckCircle2,
-  AlertCircle,
   Loader2,
   Save,
-  Sliders,
   Calendar,
-  Lock,
   Unlock,
+  Hash,
 } from "lucide-react";
 
 const DAYS_OF_WEEK = [
@@ -52,18 +43,14 @@ export function RequestWindowAdminCard({
   className = "",
 }: RequestWindowAdminCardProps) {
   const [currentUser] = useState<AuthUser | null>(() =>
-    AuthService.getCurrentUser()
+    AuthService.getCurrentUser(),
   );
   const isAdmin = currentUser?.roles.includes("ADMINISTRADOR") ?? false;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState<{
-    status: "success" | "error";
-    message: string;
-  } | null>(null);
 
-  // Form State
+  // Estado de configuración
   const [startDay, setStartDay] = useState(1); // Lunes
   const [startTime, setStartTime] = useState("05:00");
   const [endDay, setEndDay] = useState(3); // Miércoles
@@ -74,55 +61,45 @@ export function RequestWindowAdminCard({
 
   const [, startTransition] = useTransition();
 
+  const loadConfig = useCallback(async () => {
+    try {
+      const config = await RequestClientService.getWindowConfig();
+      if (config) {
+        const pad = (n: number) => String(n).padStart(2, "0");
+        setStartDay(config.startDay);
+        setStartTime(`${pad(config.startHour)}:${pad(config.startMinute)}`);
+        setEndDay(config.endDay);
+        setEndTime(`${pad(config.endHour)}:${pad(config.endMinute)}`);
+        setIsSuspended(Boolean(config.isSuspended));
+        setMaxWeeklyRequests(config.maxWeeklyRequestsPerUser ?? 1);
+
+        // Detectar Modo Libre (Domingo 00:00 a Sábado 23:59)
+        const isFullWeek =
+          config.startDay === 0 &&
+          config.startHour === 0 &&
+          config.startMinute === 0 &&
+          config.endDay === 6 &&
+          config.endHour === 23 &&
+          config.endMinute === 59;
+        setIsFreeMode(isFullWeek);
+      }
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Error al cargar la configuración",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!isAdmin) return;
-
-    let isMounted = true;
     startTransition(() => {
-      void (async () => {
-        try {
-          const config = await RequestClientService.getWindowConfig();
-          if (isMounted && config) {
-            const pad = (n: number) => String(n).padStart(2, "0");
-            setStartDay(config.startDay);
-            setStartTime(
-              `${pad(config.startHour)}:${pad(config.startMinute)}`
-            );
-            setEndDay(config.endDay);
-            setEndTime(`${pad(config.endHour)}:${pad(config.endMinute)}`);
-            setIsSuspended(Boolean(config.isSuspended));
-            setMaxWeeklyRequests(config.maxWeeklyRequestsPerUser ?? 1);
-
-            // Detectar Modo Libre (00:00 a 23:59 domingo a sábado)
-            const isFullWeek =
-              config.startDay === 0 &&
-              config.startHour === 0 &&
-              config.startMinute === 0 &&
-              config.endDay === 6 &&
-              config.endHour === 23 &&
-              config.endMinute === 59;
-            setIsFreeMode(isFullWeek);
-            setLoading(false);
-          }
-        } catch (err: unknown) {
-          if (isMounted) {
-            setFeedback({
-              status: "error",
-              message:
-                err instanceof Error
-                  ? err.message
-                  : "Error al cargar la configuración de la ventana",
-            });
-            setLoading(false);
-          }
-        }
-      })();
+      void loadConfig();
     });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [isAdmin]);
+  }, [isAdmin, loadConfig]);
 
   if (!isAdmin) {
     return null;
@@ -131,13 +108,11 @@ export function RequestWindowAdminCard({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setFeedback(null);
 
     try {
       let payload: Partial<RequestWindowConfigData>;
 
       if (isFreeMode) {
-        // Modo Libre: Apertura completa Domingo 00:00 a Sábado 23:59
         payload = {
           startDay: 0,
           startHour: 0,
@@ -165,290 +140,298 @@ export function RequestWindowAdminCard({
       }
 
       await RequestClientService.updateWindowConfig(payload);
-
-      setFeedback({
-        status: "success",
-        message: "Configuración de ventana operativa guardada con éxito.",
-      });
+      toast.success("Configuración guardada");
 
       if (onConfigUpdated) {
         onConfigUpdated();
       }
     } catch (err: unknown) {
-      setFeedback({
-        status: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "Error al actualizar la configuración.",
-      });
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Error al guardar la configuración",
+      );
     } finally {
       setSaving(false);
     }
   };
 
+  const startDayLabel =
+    DAYS_OF_WEEK.find((d) => d.value === startDay)?.label || "Lunes";
+  const endDayLabel =
+    DAYS_OF_WEEK.find((d) => d.value === endDay)?.label || "Miércoles";
+
+  if (loading) {
+    return (
+      <div className="h-64 flex flex-col items-center justify-center gap-2 bg-card border border-border/80 rounded-2xl shadow-2xs">
+        <Loader2 className="w-7 h-7 animate-spin text-primary" />
+        <span className="text-xs text-muted-foreground">
+          Cargando opciones...
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <Card className={`overflow-hidden shadow-xs ${className}`}>
-      {/* Header */}
-      <CardHeader className="bg-muted/30 border-b border-border pb-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-primary text-primary-foreground shadow-xs">
-              <Sliders className="w-5 h-5" />
-            </div>
-            <div>
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                Gestión de Ventana Operativa de Requisiciones
-                <Badge variant="secondary" className="text-[10px] uppercase font-bold tracking-wider">
-                  Solo Administrador
-                </Badge>
-              </CardTitle>
-              <CardDescription className="text-xs mt-0.5">
-                Control institucional de días, horario y cupos para la recepción
-                de solicitudes
-              </CardDescription>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {isSuspended ? (
-              <Badge variant="destructive" className="gap-1.5 py-1 text-xs">
-                <ShieldAlert className="w-3.5 h-3.5" /> Suspendida
-              </Badge>
-            ) : isFreeMode ? (
-              <Badge variant="outline" className="gap-1.5 py-1 text-xs bg-purple-50 text-purple-700 border-purple-200">
-                <Unlock className="w-3.5 h-3.5" /> Modo Libre (24/7)
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="gap-1.5 py-1 text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
-                <Lock className="w-3.5 h-3.5" /> Ventana Activa
-              </Badge>
-            )}
-          </div>
-        </div>
-      </CardHeader>
-
-      {loading ? (
-        <CardContent className="p-8 flex flex-col items-center justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-primary mb-2" />
-          <span className="text-xs text-muted-foreground font-medium">
-            Cargando configuración institucional...
-          </span>
-        </CardContent>
-      ) : (
-        <form onSubmit={handleSave}>
-          <CardContent className="p-5 space-y-5">
-            {feedback && (
-              <Alert variant={feedback.status === "success" ? "default" : "destructive"}>
-                {feedback.status === "success" ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                ) : (
-                  <AlertCircle className="h-4 w-4" />
-                )}
-                <AlertDescription className="text-xs font-medium">
-                  {feedback.message}
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {/* Opciones de Modo: Modo Libre vs Suspensión */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div
-                className={`p-4 rounded-xl border transition-all ${
-                  isFreeMode
-                    ? "bg-purple-50/60 border-purple-200"
-                    : "bg-muted/40 border-border"
-                }`}
-              >
-                <div className="flex items-start gap-3 cursor-pointer" onClick={() => setIsFreeMode(!isFreeMode)}>
-                  <Checkbox
-                    id="freeMode"
-                    checked={isFreeMode}
-                    onCheckedChange={(checked) => setIsFreeMode(Boolean(checked))}
-                    className="mt-1 data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
-                  />
-                  <div>
-                    <Label htmlFor="freeMode" className="text-xs font-bold text-foreground cursor-pointer block">
-                      Desactivar restricción de horario (Modo Libre 24/7)
-                    </Label>
-                    <span className="text-[11px] text-muted-foreground block mt-0.5">
-                      Permite que los usuarios solicitantes creen requisiciones en
-                      cualquier momento sin restricción de horario.
-                    </span>
-                  </div>
+    <form onSubmit={handleSave} className={cn("space-y-6", className)}>
+      {/* ========================================================
+          TARJETAS ESPECÍFICAS POR CADA OPCIÓN DE CONFIGURACIÓN
+         ======================================================== */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Card 1: Horario Libre */}
+        <Card
+          onClick={() => setIsFreeMode(!isFreeMode)}
+          className={cn(
+            "border-border/80 shadow-2xs transition-all cursor-pointer overflow-hidden",
+            isFreeMode
+              ? "border-purple-400 dark:border-purple-600 bg-purple-500/5"
+              : "hover:border-border",
+          )}
+        >
+          <CardContent className="p-5 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                  <Unlock className="w-4 h-4" />
                 </div>
-              </div>
-
-              <div
-                className={`p-4 rounded-xl border transition-all ${
-                  isSuspended
-                    ? "bg-destructive/10 border-destructive/30"
-                    : "bg-muted/40 border-border"
-                }`}
-              >
-                <div className="flex items-start gap-3 cursor-pointer" onClick={() => setIsSuspended(!isSuspended)}>
-                  <Checkbox
-                    id="suspended"
-                    checked={isSuspended}
-                    onCheckedChange={(checked) => setIsSuspended(Boolean(checked))}
-                    className="mt-1 data-[state=checked]:bg-destructive data-[state=checked]:border-destructive"
-                  />
-                  <div>
-                    <Label htmlFor="suspended" className="text-xs font-bold text-foreground cursor-pointer block">
-                      Suspender recepción de solicitudes (Pausa administrativa)
-                    </Label>
-                    <span className="text-[11px] text-muted-foreground block mt-0.5">
-                      Bloquea temporalmente el registro de requisiciones para todos
-                      los solicitantes por inventario o mantenimiento.
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Configuración de Días y Horas (Solo activa si NO es Modo Libre) */}
-            <div
-              className={`space-y-4 transition-opacity ${
-                isFreeMode ? "opacity-40 pointer-events-none" : "opacity-100"
-              }`}
-            >
-              <div className="flex items-center gap-2 text-xs font-bold text-foreground uppercase tracking-wider">
-                <Clock className="w-4 h-4 text-primary" />
-                Horario Institucional de Apertura y Cierre
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Apertura */}
-                <div className="p-4 bg-muted/30 rounded-xl border border-border space-y-3">
-                  <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
-                    <Calendar className="w-4 h-4 text-emerald-600" />
-                    Momento de Apertura Semanal
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <Label className="block text-[11px] text-muted-foreground font-semibold mb-1">
-                        Día de Apertura
-                      </Label>
-                      <select
-                        value={startDay}
-                        disabled={isFreeMode}
-                        onChange={(e) => setStartDay(Number(e.target.value))}
-                        className="w-full bg-background border border-input rounded-md px-2.5 py-1.5 text-xs text-foreground focus:ring-2 focus:ring-ring"
-                      >
-                        {DAYS_OF_WEEK.map((d) => (
-                          <option key={d.value} value={d.value}>
-                            {d.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <Label className="block text-[11px] text-muted-foreground font-semibold mb-1">
-                        Hora de Apertura
-                      </Label>
-                      <Input
-                        type="time"
-                        value={startTime}
-                        disabled={isFreeMode}
-                        onChange={(e) => setStartTime(e.target.value)}
-                        className="h-8 text-xs font-mono"
-                      />
-                    </div>
-                  </div>
+                <div>
+                  <CardTitle className="text-sm font-bold text-foreground">
+                    Horario Libre
+                  </CardTitle>
                   <p className="text-[11px] text-muted-foreground">
-                    Por defecto institucional: <strong>Lunes a las 05:00 AM</strong>
-                  </p>
-                </div>
-
-                {/* Cierre */}
-                <div className="p-4 bg-muted/30 rounded-xl border border-border space-y-3">
-                  <div className="flex items-center gap-2 text-xs font-bold text-amber-800">
-                    <Calendar className="w-4 h-4 text-amber-600" />
-                    Momento de Cierre Semanal
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <Label className="block text-[11px] text-muted-foreground font-semibold mb-1">
-                        Día de Cierre
-                      </Label>
-                      <select
-                        value={endDay}
-                        disabled={isFreeMode}
-                        onChange={(e) => setEndDay(Number(e.target.value))}
-                        className="w-full bg-background border border-input rounded-md px-2.5 py-1.5 text-xs text-foreground focus:ring-2 focus:ring-ring"
-                      >
-                        {DAYS_OF_WEEK.map((d) => (
-                          <option key={d.value} value={d.value}>
-                            {d.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <Label className="block text-[11px] text-muted-foreground font-semibold mb-1">
-                        Hora de Cierre
-                      </Label>
-                      <Input
-                        type="time"
-                        value={endTime}
-                        disabled={isFreeMode}
-                        onChange={(e) => setEndTime(e.target.value)}
-                        className="h-8 text-xs font-mono"
-                      />
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Por defecto institucional:{" "}
-                    <strong>Miércoles a las 16:00 (04:00 PM)</strong>
+                    Recepción abierta las 24 horas
                   </p>
                 </div>
               </div>
+              <Checkbox
+                id="freeMode"
+                checked={isFreeMode}
+                onCheckedChange={(checked) => setIsFreeMode(Boolean(checked))}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-1"
+              />
             </div>
 
-            {/* Límite de solicitudes por usuario por ciclo */}
-            <div className="p-4 bg-muted/30 rounded-xl border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground leading-relaxed pt-2 border-t border-border/50">
+              Permite que los usuarios envíen solicitudes cualquier día de la
+              semana sin límite de hora.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Card 2: Pausar Solicitudes */}
+        <Card
+          onClick={() => setIsSuspended(!isSuspended)}
+          className={cn(
+            "border-border/80 shadow-2xs transition-all cursor-pointer overflow-hidden",
+            isSuspended
+              ? "border-rose-400 dark:border-rose-600 bg-rose-500/5"
+              : "hover:border-border",
+          )}
+        >
+          <CardContent className="p-5 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+                <div>
+                  <CardTitle className="text-sm font-bold text-foreground">
+                    Pausar Solicitudes
+                  </CardTitle>
+                  <p className="text-[11px] text-muted-foreground">
+                    Bloqueo temporal de pedidos
+                  </p>
+                </div>
+              </div>
+              <Checkbox
+                id="suspended"
+                checked={isSuspended}
+                onCheckedChange={(checked) => setIsSuspended(Boolean(checked))}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-1"
+              />
+            </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed pt-2 border-t border-border/50">
+              Detiene el envío de nuevas solicitudes mientras se realiza conteo o
+              cierre de almacén.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Card 3: Apertura Semanal */}
+        <Card
+          className={cn(
+            "border-border/80 shadow-2xs transition-opacity overflow-hidden",
+            isFreeMode && "opacity-45 pointer-events-none",
+          )}
+        >
+          <CardContent className="p-5 space-y-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <CardTitle className="text-sm font-bold text-foreground">
+                    Apertura Semanal
+                  </CardTitle>
+                  <p className="text-[11px] text-muted-foreground">
+                    Inicio de recepción de pedidos
+                  </p>
+                </div>
+              </div>
+              <Badge variant="success" className="text-[10px] font-mono">
+                {startDayLabel} {startTime}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/50">
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-bold text-foreground">
+                  Día
+                </Label>
+                <select
+                  value={startDay}
+                  disabled={isFreeMode}
+                  onChange={(e) => setStartDay(Number(e.target.value))}
+                  className="w-full h-9 bg-card border border-border/80 rounded-xl px-3 text-xs font-semibold text-foreground focus:ring-2 focus:ring-ring outline-none cursor-pointer"
+                >
+                  {DAYS_OF_WEEK.map((d) => (
+                    <option key={d.value} value={d.value}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-bold text-foreground">
+                  Hora
+                </Label>
+                <Input
+                  type="time"
+                  value={startTime}
+                  disabled={isFreeMode}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="h-9 text-xs font-mono bg-card border-border/80 rounded-xl"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Card 4: Cierre Semanal */}
+        <Card
+          className={cn(
+            "border-border/80 shadow-2xs transition-opacity overflow-hidden",
+            isFreeMode && "opacity-45 pointer-events-none",
+          )}
+        >
+          <CardContent className="p-5 space-y-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <div>
+                  <CardTitle className="text-sm font-bold text-foreground">
+                    Cierre Semanal
+                  </CardTitle>
+                  <p className="text-[11px] text-muted-foreground">
+                    Fin de recepción de pedidos
+                  </p>
+                </div>
+              </div>
+              <Badge variant="warning" className="text-[10px] font-mono">
+                {endDayLabel} {endTime}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/50">
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-bold text-foreground">
+                  Día
+                </Label>
+                <select
+                  value={endDay}
+                  disabled={isFreeMode}
+                  onChange={(e) => setEndDay(Number(e.target.value))}
+                  className="w-full h-9 bg-card border border-border/80 rounded-xl px-3 text-xs font-semibold text-foreground focus:ring-2 focus:ring-ring outline-none cursor-pointer"
+                >
+                  {DAYS_OF_WEEK.map((d) => (
+                    <option key={d.value} value={d.value}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-bold text-foreground">
+                  Hora
+                </Label>
+                <Input
+                  type="time"
+                  value={endTime}
+                  disabled={isFreeMode}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  className="h-9 text-xs font-mono bg-card border-border/80 rounded-xl"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Card 5: Cupo por Usuario (2 columnas en desktop) */}
+        <Card className="md:col-span-2 border-border/80 shadow-2xs overflow-hidden">
+          <CardContent className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <Hash className="w-4 h-4" />
+              </div>
               <div>
-                <span className="text-xs font-bold text-foreground block">
-                  Límite de solicitudes por usuario por ciclo
-                </span>
-                <span className="text-[11px] text-muted-foreground block mt-0.5">
-                  Número máximo de requisiciones que un solicitante puede ingresar
-                  por cada semana operativa (por defecto: 1).
-                </span>
+                <CardTitle className="text-sm font-bold text-foreground">
+                  Cupo Semanal por Usuario
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Cantidad máxima de solicitudes que cada usuario puede crear por
+                  semana
+                </p>
               </div>
-              <div className="w-32">
+            </div>
+
+            <div className="flex items-center gap-3 self-end sm:self-auto">
+              <div className="w-24">
                 <Input
                   type="number"
                   min="1"
                   max="20"
                   value={maxWeeklyRequests}
                   onChange={(e) =>
-                    setMaxWeeklyRequests(Math.max(1, Number(e.target.value) || 1))
+                    setMaxWeeklyRequests(
+                      Math.max(1, Number(e.target.value) || 1),
+                    )
                   }
-                  className="h-8 text-xs font-mono font-bold text-center"
+                  className="h-9 text-xs font-mono font-bold text-center bg-card border-border/80 rounded-xl"
                 />
               </div>
+              <Button
+                type="submit"
+                disabled={saving}
+                size="sm"
+                className="h-9 text-xs gap-1.5 px-4 cursor-pointer"
+              >
+                {saving ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Save className="w-3.5 h-3.5" />
+                )}
+                Guardar
+              </Button>
             </div>
           </CardContent>
-
-          {/* Botón de Guardar */}
-          <CardFooter className="flex justify-end pt-3 pb-4 px-5 border-t border-border">
-            <Button
-              type="submit"
-              disabled={saving}
-              size="sm"
-              className="gap-2 shadow-xs cursor-pointer"
-            >
-              {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              {saving ? "Guardando..." : "Guardar Configuración"}
-            </Button>
-          </CardFooter>
-        </form>
-      )}
-    </Card>
+        </Card>
+      </div>
+    </form>
   );
 }

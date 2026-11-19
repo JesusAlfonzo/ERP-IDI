@@ -119,7 +119,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             onToggleSidebarCollapse={handleToggleSidebarCollapse}
           />
         </div>
-        <main className="flex-1 p-4 lg:p-8 overflow-y-auto print:p-0 print:m-0 print:overflow-visible">
+        <main className="flex-1 p-4 lg:p-6 overflow-y-auto print:p-0 print:m-0 print:overflow-visible">
           <RoleGuard user={user}>{children}</RoleGuard>
         </main>
       </div>

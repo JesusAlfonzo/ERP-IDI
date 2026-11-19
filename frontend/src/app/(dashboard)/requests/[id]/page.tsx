@@ -42,7 +42,7 @@ const STATUS_CONFIG: Record<
     className: "bg-amber-50 text-amber-700 border-amber-200",
   },
   APROBADA: {
-    label: "Aprobada (En espera / Standby)",
+    label: "Aprobada",
     className: "bg-blue-50 text-blue-700 border-blue-200",
   },
   DESPACHADA_PARCIAL: {

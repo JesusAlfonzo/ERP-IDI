@@ -87,7 +87,7 @@ const STATUS_CONFIG: Record<
     variant: "warning",
   },
   APROBADA: {
-    label: "Aprobada (Standby)",
+    label: "Aprobada",
     variant: "info",
   },
   DESPACHADA_PARCIAL: {

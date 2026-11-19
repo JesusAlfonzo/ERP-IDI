@@ -34,6 +34,20 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/inventory/reports", request.url));
   }
 
+  // Redireccionar módulos temporalmente deshabilitados (Laboratorio e Investigación) hacia el dashboard
+  if (
+    pathname === "/lab" ||
+    pathname.startsWith("/lab/") ||
+    pathname === "/laboratory" ||
+    pathname.startsWith("/laboratory/") ||
+    pathname === "/research" ||
+    pathname.startsWith("/research/") ||
+    pathname === "/coordinator" ||
+    pathname.startsWith("/coordinator/")
+  ) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
   if (pathname === "/login") {
     const token = request.cookies.get("erp_token")?.value;
     if (token) {
@@ -58,5 +72,17 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/login", "/admin/reports/:path*", "/admin/reports"],
+  matcher: [
+    "/login",
+    "/admin/reports/:path*",
+    "/admin/reports",
+    "/lab",
+    "/lab/:path*",
+    "/laboratory",
+    "/laboratory/:path*",
+    "/research",
+    "/research/:path*",
+    "/coordinator",
+    "/coordinator/:path*",
+  ],
 };

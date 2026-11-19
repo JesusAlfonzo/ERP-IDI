@@ -7,6 +7,10 @@ import {
   BankAccountService,
   type BankAccountItem,
 } from "@/services/bank-account.service";
+import {
+  InventoryMasterService,
+  type PaymentMethodItem,
+} from "@/services/inventory-master.service";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { CurrencyService } from "@/services/currency.service";
 import type { Supplier } from "@/types/purchasing";
@@ -42,6 +46,7 @@ export default function NewDirectPaymentPage() {
   // Maestros
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccountItem[]>([]);
+  const [paymentMethodsList, setPaymentMethodsList] = useState<PaymentMethodItem[]>([]);
   const [bcvRates, setBcvRates] = useState<{
     USD: number;
     EUR: number;
@@ -56,9 +61,7 @@ export default function NewDirectPaymentPage() {
   // Formulario
   const [concept, setConcept] = useState("");
   const [beneficiary, setBeneficiary] = useState("");
-  const [method, setMethod] = useState<
-    "TRANSFERENCIA" | "PAGO_MOVIL" | "EFECTIVO" | "ZELLE"
-  >("TRANSFERENCIA");
+  const [method, setMethod] = useState<string>("TRANSFERENCIA");
   const [sourceAccountId, setSourceAccountId] = useState("");
   const [destinationAccount, setDestinationAccount] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
@@ -84,15 +87,20 @@ export default function NewDirectPaymentPage() {
     let ignore = false;
     void (async () => {
       try {
-        const [accountsData, ratesData, suppliersData] = await Promise.all([
+        const [accountsData, ratesData, suppliersData, pmData] = await Promise.all([
           BankAccountService.getBankAccounts(true).catch(() => []),
           CurrencyService.getCurrentRates().catch(() => null),
           PurchasingClientService.getSuppliers().catch(() => []),
+          InventoryMasterService.getPaymentMethods(true).catch(() => []),
         ]);
 
         if (!ignore) {
           setBankAccounts(accountsData);
           setSuppliers(suppliersData);
+          setPaymentMethodsList(pmData);
+          if (pmData.length > 0 && pmData[0]?.code) {
+            setMethod(pmData[0].code);
+          }
 
           if (ratesData) {
             const usdR = Number(ratesData.USD || ratesData.rates?.USD || 75.0);
@@ -219,10 +227,7 @@ export default function NewDirectPaymentPage() {
         concept: concept.trim(),
         beneficiary: beneficiary.trim(),
         method,
-        sourceAccountId:
-          method === "TRANSFERENCIA" || method === "PAGO_MOVIL"
-            ? Number(sourceAccountId)
-            : undefined,
+        sourceAccountId: sourceAccountId ? Number(sourceAccountId) : undefined,
         destinationAccount: destinationAccount.trim() || undefined,
         referenceNumber: referenceNumber.trim(),
         paymentDate: new Date(paymentDate).toISOString(),
@@ -508,46 +513,45 @@ export default function NewDirectPaymentPage() {
               </Label>
               <select
                 value={method}
-                onChange={(e) =>
-                  setMethod(
-                    e.target.value as
-                      | "TRANSFERENCIA"
-                      | "PAGO_MOVIL"
-                      | "EFECTIVO"
-                      | "ZELLE"
-                  )
-                }
+                onChange={(e) => setMethod(e.target.value)}
                 className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
               >
-                <option value="TRANSFERENCIA">Transferencia Bancaria</option>
-                <option value="PAGO_MOVIL">Pago Móvil Interbancario</option>
-                <option value="EFECTIVO">Efectivo (USD / Bolívares)</option>
-                <option value="ZELLE">Zelle (USD)</option>
+                {paymentMethodsList.length > 0 ? (
+                  paymentMethodsList.map((pm) => (
+                    <option key={pm.code} value={pm.code}>
+                      {pm.name}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="TRANSFERENCIA">Transferencia Bancaria</option>
+                    <option value="PAGO_MOVIL">Pago Móvil Interbancario</option>
+                    <option value="EFECTIVO">Efectivo (USD / Bolívares)</option>
+                    <option value="ZELLE">Zelle (USD)</option>
+                  </>
+                )}
               </select>
             </div>
 
-            {(method === "TRANSFERENCIA" || method === "PAGO_MOVIL") && (
-              <div className="space-y-1.5">
-                <Label className="text-xs uppercase font-semibold">
-                  Cuenta Bancaria Origen *
-                </Label>
-                <select
-                  required
-                  value={sourceAccountId}
-                  onChange={(e) => setSourceAccountId(e.target.value)}
-                  className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer font-mono"
-                >
-                  <option value="">-- Seleccione cuenta institucional --</option>
-                  {bankAccounts
-                    .filter((acc) => acc.currency === transactionCurrency || transactionCurrency === "VED")
-                    .map((acc) => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.bankName} - {acc.accountNumber?.slice(-4) || acc.id} ({acc.currency})
-                      </option>
-                    ))}
-                </select>
-              </div>
-            )}
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase font-semibold">
+                Cuenta Bancaria Origen
+              </Label>
+              <select
+                value={sourceAccountId}
+                onChange={(e) => setSourceAccountId(e.target.value)}
+                className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer font-mono"
+              >
+                <option value="">-- Seleccione cuenta institucional --</option>
+                {bankAccounts
+                  .filter((acc) => acc.currency === transactionCurrency || transactionCurrency === "VED")
+                  .map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.bankName} - {acc.accountNumber?.slice(-4) || acc.id} ({acc.currency})
+                    </option>
+                  ))}
+              </select>
+            </div>
 
             <div className="space-y-1.5">
               <Label className="text-xs uppercase font-semibold">

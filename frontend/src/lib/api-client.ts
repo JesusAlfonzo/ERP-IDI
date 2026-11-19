@@ -24,7 +24,26 @@ apiClient.interceptors.request.use(
 );
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (typeof window !== "undefined") {
+      const method = (response.config?.method || "").toLowerCase();
+      const url = response.config?.url || "";
+      if (
+        ["post", "put", "patch", "delete"].includes(method) &&
+        !url.includes("/auth/login")
+      ) {
+        window.dispatchEvent(new CustomEvent("idi:notifications-refresh"));
+        try {
+          const bc = new BroadcastChannel("idi_realtime_notifications");
+          bc.postMessage({ type: "REFRESH_NOTIFICATIONS", ts: Date.now() });
+          bc.close();
+        } catch {
+          // Ignorar si BroadcastChannel no está disponible
+        }
+      }
+    }
+    return response;
+  },
   (
     error: AxiosError<{
       message?: string;

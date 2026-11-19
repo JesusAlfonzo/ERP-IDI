@@ -1,41 +1,32 @@
 "use client";
 
-import React, { useState, useEffect, useTransition, useMemo } from "react";
+import React, { useState, useEffect, useTransition, useMemo, useCallback } from "react";
 import { UserService, UserItem, UserRole } from "@/services/user.service";
 import { AuthService } from "@/services/auth.service";
 import { useDebounce } from "@/hooks/use-debounce";
 import type { AuthUser } from "@/types/auth";
+import { cn } from "@/lib/utils";
 import {
   Users,
   UserPlus,
   Key,
   ShieldCheck,
-  Check,
   Loader2,
   Lock,
   UserCheck,
   UserX,
   Search,
   X,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  Filter,
   AlertTriangle,
+  RefreshCw,
+  Mail,
+  Building2,
+  Calendar,
 } from "lucide-react";
 
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Badge, BadgeProps } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -50,24 +41,52 @@ import {
 import { toast } from "@/utils/toast";
 import { TablePagination } from "@/components/common/TablePagination";
 
+const getRoleBadgeVariant = (role: string): BadgeProps["variant"] => {
+  switch (role) {
+    case "ADMINISTRADOR":
+      return "rose";
+    case "COORDINADOR":
+    case "ADMINISTRACION":
+    case "DIRECTOR":
+      return "indigo";
+    case "COMPRAS":
+      return "info";
+    case "ALMACENISTA":
+    case "ALMACEN":
+      return "warning";
+    case "SOLICITANTE":
+      return "purple";
+    default:
+      return "outline";
+  }
+};
+
+const getInitials = (fullName: string) => {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "U";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
 export default function AdminUsersPage() {
   const [currentUser] = useState<AuthUser | null>(() =>
-    AuthService.getCurrentUser()
+    AuthService.getCurrentUser(),
   );
   const [users, setUsers] = useState<UserItem[]>([]);
   const [roles, setRoles] = useState<UserRole[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [, startTransition] = useTransition();
 
   // Filtros y búsqueda
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 350);
+  const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [roleFilter, setRoleFilter] = useState<string>("all");
 
-  // Paginación
+  // Paginación (12 tarjetas por página = 4 filas de 3 tarjetas)
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(12);
 
   // Modales
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -88,11 +107,24 @@ export default function AdminUsersPage() {
     email: "",
     password: "",
     fullName: "",
-    department: "Laboratorio de Inmunología",
+    department: "Almacén General",
     roleIds: [] as number[],
   });
 
-  const loadData = async () => {
+  // Ocultar roles de módulos deshabilitados (Laboratorio / Investigación) al asignar nuevos roles
+  const visibleAvailableRoles = useMemo(() => {
+    const disabledRoleNames = new Set([
+      "LABORATORIO",
+      "COORDINADOR_LABORATORIO",
+      "BIOANALISTA",
+      "INVESTIGACION",
+      "DOCENCIA",
+    ]);
+    return roles.filter((r) => !disabledRoleNames.has(r.name));
+  }, [roles]);
+
+  const loadData = useCallback(async (isManualRefresh = false) => {
+    if (isManualRefresh) setRefreshing(true);
     try {
       const [uData, rData] = await Promise.all([
         UserService.getUsers(),
@@ -102,17 +134,28 @@ export default function AdminUsersPage() {
       setRoles(rData);
     } catch (err) {
       console.error("Error al cargar datos de usuarios", err);
-      toast.error("Error al cargar el listado de usuarios");
+      toast.error("Error al cargar usuarios");
     } finally {
       setLoading(false);
+      if (isManualRefresh) {
+        setTimeout(() => setRefreshing(false), 300);
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
     startTransition(() => {
-      void loadData();
+      void loadData(false);
     });
-  }, []);
+  }, [loadData]);
+
+  // Estadísticas rápidas
+  const totalUsersCount = users.length;
+  const activeUsersCount = useMemo(
+    () => users.filter((u) => u.isActive).length,
+    [users],
+  );
+  const inactiveUsersCount = totalUsersCount - activeUsersCount;
 
   // Filtrado reactivo de usuarios
   const filteredUsers = useMemo(() => {
@@ -141,11 +184,9 @@ export default function AdminUsersPage() {
   // Cálculos de paginación
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
-  const startRecord = filteredUsers.length === 0 ? 0 : (safeCurrentPage - 1) * pageSize + 1;
-  const endRecord = Math.min(safeCurrentPage * pageSize, filteredUsers.length);
   const paginatedUsers = filteredUsers.slice(
     (safeCurrentPage - 1) * pageSize,
-    safeCurrentPage * pageSize
+    safeCurrentPage * pageSize,
   );
 
   // Abrir modal para editar roles
@@ -172,12 +213,12 @@ export default function AdminUsersPage() {
     setSubmitting(true);
     try {
       await UserService.syncUserRoles(selectedUser.id, selectedRoleIds);
-      await loadData();
-      toast.success(`Roles de "${selectedUser.username}" actualizados exitosamente`);
+      await loadData(false);
+      toast.success(`Roles de "${selectedUser.username}" actualizados`);
       setShowRoleModal(false);
     } catch (err) {
       console.error("Error sincronizando roles", err);
-      toast.error("Error al actualizar los roles del usuario");
+      toast.error("Error al actualizar los roles");
     } finally {
       setSubmitting(false);
     }
@@ -196,7 +237,7 @@ export default function AdminUsersPage() {
         ),
       );
       toast.success(
-        `Usuario "${userToToggle.username}" ${nextState ? "reactivado" : "desactivado"} exitosamente`
+        `Usuario "${userToToggle.username}" ${nextState ? "activado" : "desactivado"}`,
       );
       setUserToToggle(null);
     } catch (err: unknown) {
@@ -204,7 +245,7 @@ export default function AdminUsersPage() {
       const errMsg =
         err && typeof err === "object" && "message" in err
           ? String((err as { message: string }).message)
-          : "No se pudo cambiar el estado del usuario";
+          : "No se pudo cambiar el estado";
       toast.error(errMsg);
     } finally {
       setTogglingActive(false);
@@ -215,18 +256,18 @@ export default function AdminUsersPage() {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser || newPassword.length < 8) {
-      toast.error("La contraseña debe tener mínimo 8 caracteres");
+      toast.error("La clave debe tener mínimo 8 caracteres");
       return;
     }
     setSubmitting(true);
     try {
       await UserService.resetPassword(selectedUser.id, newPassword);
-      toast.success(`Contraseña de "${selectedUser.username}" restablecida exitosamente`);
+      toast.success(`Clave de "${selectedUser.username}" actualizada`);
       setShowPasswordModal(false);
       setNewPassword("");
     } catch (err) {
       console.error("Error restableciendo contraseña", err);
-      toast.error("Error al restablecer la contraseña del usuario");
+      toast.error("Error al cambiar la clave");
     } finally {
       setSubmitting(false);
     }
@@ -236,86 +277,92 @@ export default function AdminUsersPage() {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (createForm.roleIds.length === 0) {
-      toast.error("Debe seleccionar al menos un rol para el usuario");
+      toast.error("Selecciona al menos un rol");
       return;
     }
     setSubmitting(true);
     try {
       await UserService.createUser(createForm);
-      await loadData();
-      toast.success(`Usuario "${createForm.username}" registrado exitosamente`);
+      await loadData(false);
+      toast.success(`Usuario "${createForm.username}" creado`);
       setShowCreateModal(false);
       setCreateForm({
         username: "",
         email: "",
         password: "",
         fullName: "",
-        department: "Laboratorio de Inmunología",
+        department: "Almacén General",
         roleIds: [],
       });
     } catch (err: unknown) {
       console.error("Error creando usuario", err);
-      toast.error("Error al registrar usuario. Verifique si el usuario o email ya existe.");
+      toast.error("Error al crear usuario. Verifica si el usuario o correo ya existe.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const getRoleBadgeStyle = (role: string) => {
-    switch (role) {
-      case "ADMINISTRADOR":
-        return "bg-rose-50 text-rose-700 border-rose-200";
-      case "ADMINISTRACION":
-      case "DIRECTOR":
-        return "bg-purple-50 text-purple-700 border-purple-200";
-      case "COMPRAS":
-        return "bg-blue-50 text-blue-700 border-blue-200";
-      case "ALMACEN":
-        return "bg-amber-50 text-amber-700 border-amber-200";
-      case "LABORATORIO":
-        return "bg-emerald-50 text-emerald-700 border-emerald-200";
-      case "FARMACIA":
-        return "bg-teal-50 text-teal-700 border-teal-200";
-      default:
-        return "bg-slate-100 text-slate-700 border-slate-200";
-    }
-  };
-
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Encabezado */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
-            <Users className="w-6 h-6 text-blue-600" />
-            Usuarios y Control de Acceso (RBAC)
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Administración centralizada de cuentas institucionales, asignación de roles, permisos y políticas de acceso.
-          </p>
+    <div className="space-y-6 w-full pb-12">
+      {/* ========================================================
+          ENCABEZADO ESTANDARIZADO
+         ======================================================== */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
+        <div className="flex items-start sm:items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0 shadow-2xs">
+            <Users className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+              Usuarios
+            </h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Cuentas y permisos del sistema
+            </p>
+          </div>
         </div>
-        <Button
-          onClick={() => setShowCreateModal(true)}
-          className="gap-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm px-4 py-2.5 cursor-pointer"
-        >
-          <UserPlus className="w-4 h-4" />
-          Nuevo Usuario
-        </Button>
+
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void loadData(true)}
+            disabled={refreshing}
+            className="h-8 text-xs gap-1.5 cursor-pointer"
+          >
+            <RefreshCw
+              className={cn("w-3.5 h-3.5", refreshing && "animate-spin text-primary")}
+            />
+            Actualizar
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => setShowCreateModal(true)}
+            className="h-8 text-xs gap-1.5 cursor-pointer"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            Nuevo Usuario
+          </Button>
+        </div>
       </div>
 
-      {/* Barra de Búsqueda y Filtros */}
+      {/* ========================================================
+          BARRA DE BÚSQUEDA Y FILTROS
+         ======================================================== */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             type="text"
-            placeholder="Buscar por usuario, nombre, correo, área o rol..."
+            placeholder="Buscar usuario, nombre, correo o departamento..."
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
               setCurrentPage(1);
             }}
-            className="pl-10 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800 placeholder:text-slate-400 text-sm shadow-xs"
+            className="pl-9 pr-8 h-9 text-xs bg-card border-border/80 rounded-xl shadow-2xs"
           />
           {search && (
             <button
@@ -324,30 +371,31 @@ export default function AdminUsersPage() {
                 setSearch("");
                 setCurrentPage(1);
               }}
-              className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
-              title="Limpiar búsqueda"
+              className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground cursor-pointer"
+              title="Limpiar"
             >
               <X className="w-4 h-4" />
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Filtro por estado */}
-          <div className="inline-flex rounded-xl p-1 bg-slate-100 border border-slate-200 text-xs font-semibold">
+          <div className="inline-flex rounded-xl p-1 bg-muted/70 border border-border/60 text-xs font-semibold">
             <button
               type="button"
               onClick={() => {
                 setStatusFilter("all");
                 setCurrentPage(1);
               }}
-              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+              className={cn(
+                "px-3 py-1 rounded-lg transition-all cursor-pointer",
                 statusFilter === "all"
-                  ? "bg-white text-slate-900 shadow-xs"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
+                  ? "bg-background text-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
             >
-              Todos ({users.length})
+              Todos ({totalUsersCount})
             </button>
             <button
               type="button"
@@ -355,13 +403,14 @@ export default function AdminUsersPage() {
                 setStatusFilter("active");
                 setCurrentPage(1);
               }}
-              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+              className={cn(
+                "px-3 py-1 rounded-lg transition-all cursor-pointer",
                 statusFilter === "active"
-                  ? "bg-white text-emerald-700 shadow-xs"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
+                  ? "bg-background text-emerald-600 dark:text-emerald-400 shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
             >
-              Activos ({users.filter((u) => u.isActive).length})
+              Activos ({activeUsersCount})
             </button>
             <button
               type="button"
@@ -369,13 +418,14 @@ export default function AdminUsersPage() {
                 setStatusFilter("inactive");
                 setCurrentPage(1);
               }}
-              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+              className={cn(
+                "px-3 py-1 rounded-lg transition-all cursor-pointer",
                 statusFilter === "inactive"
-                  ? "bg-white text-rose-700 shadow-xs"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
+                  ? "bg-background text-rose-600 dark:text-rose-400 shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
             >
-              Inactivos ({users.filter((u) => !u.isActive).length})
+              Inactivos ({inactiveUsersCount})
             </button>
           </div>
 
@@ -386,10 +436,10 @@ export default function AdminUsersPage() {
               setRoleFilter(e.target.value);
               setCurrentPage(1);
             }}
-            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-semibold focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none cursor-pointer"
+            className="h-9 bg-card border border-border/80 rounded-xl px-3 text-xs text-foreground font-semibold focus:ring-2 focus:ring-ring outline-none cursor-pointer shadow-2xs"
           >
-            <option value="all">Todos los Roles ({roles.length})</option>
-            {roles.map((r) => (
+            <option value="all">Todos los roles</option>
+            {visibleAvailableRoles.map((r) => (
               <option key={r.id} value={r.name}>
                 {r.name}
               </option>
@@ -407,235 +457,264 @@ export default function AdminUsersPage() {
                 setRoleFilter("all");
                 setCurrentPage(1);
               }}
-              className="text-xs text-slate-500 hover:text-slate-800 gap-1.5 h-9 cursor-pointer"
-              title="Limpiar filtros"
+              className="h-8 text-xs text-muted-foreground hover:text-foreground gap-1 cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
-              <span>Limpiar filtros</span>
+              Limpiar
             </Button>
           )}
         </div>
       </div>
 
-      {/* Contenedor de la Tabla */}
+      {/* ========================================================
+          TARJETAS POR USUARIO (GRID)
+         ======================================================== */}
       {loading ? (
-        <div className="flex flex-col justify-center items-center p-16 space-y-3 bg-white border border-slate-200 rounded-2xl">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <p className="text-xs text-slate-500">Cargando directorio de usuarios...</p>
+        <div className="h-64 flex flex-col justify-center items-center gap-2 bg-card border border-border/80 rounded-2xl shadow-2xs">
+          <Loader2 className="w-7 h-7 animate-spin text-primary" />
+          <p className="text-xs text-muted-foreground">Cargando usuarios...</p>
         </div>
+      ) : paginatedUsers.length === 0 ? (
+        <Card className="p-12 text-center border-border/80 shadow-2xs">
+          <div className="flex flex-col items-center justify-center text-muted-foreground space-y-2">
+            <Users className="w-8 h-8 text-muted-foreground/50" />
+            <p className="text-xs font-semibold text-foreground">
+              Sin usuarios encontrados
+            </p>
+            <p className="text-[11px] text-muted-foreground max-w-xs">
+              {search || statusFilter !== "all" || roleFilter !== "all"
+                ? "No hay resultados con los filtros actuales."
+                : "No hay usuarios registrados."}
+            </p>
+            {(search || statusFilter !== "all" || roleFilter !== "all") && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearch("");
+                  setStatusFilter("all");
+                  setRoleFilter("all");
+                  setCurrentPage(1);
+                }}
+                className="mt-1 h-8 text-xs cursor-pointer"
+              >
+                Ver todos
+              </Button>
+            )}
+          </div>
+        </Card>
       ) : (
-        <Card className="overflow-hidden border border-slate-200 rounded-2xl shadow-xs">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-slate-50/80 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="py-3.5 px-6 w-64 text-left">Usuario & Credenciales</TableHead>
-                  <TableHead className="py-3.5 px-6 w-60 text-left">Nombre Completo</TableHead>
-                  <TableHead className="py-3.5 px-6 w-52 text-left">Departamento / Área</TableHead>
-                  <TableHead className="py-3.5 px-6 text-left">Roles Asignados</TableHead>
-                  <TableHead className="py-3.5 px-6 text-center w-32">Estado</TableHead>
-                  <TableHead className="py-3.5 px-6 text-center w-48">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody className="divide-y divide-slate-100 text-slate-800 text-sm">
-                {paginatedUsers.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="py-14 text-center">
-                      <div className="flex flex-col items-center justify-center text-slate-400 space-y-2">
-                        <Search className="w-8 h-8 stroke-1 text-slate-300" />
-                        <p className="text-sm font-semibold text-slate-700">No se encontraron usuarios</p>
-                        <p className="text-xs text-slate-400 max-w-sm">
-                          {search || statusFilter !== "all" || roleFilter !== "all"
-                            ? "No hay usuarios que coincidan con los filtros aplicados. Prueba limpiando los criterios de búsqueda."
-                            : "Aún no hay usuarios registrados en el sistema."}
-                        </p>
-                        {(search || statusFilter !== "all" || roleFilter !== "all") && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSearch("");
-                              setStatusFilter("all");
-                              setRoleFilter("all");
-                              setCurrentPage(1);
-                            }}
-                            className="mt-2 text-xs font-semibold text-blue-600 hover:underline cursor-pointer"
-                          >
-                            Limpiar todos los filtros
-                          </button>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {paginatedUsers.map((u) => {
+              const isSelf = u.id === currentUser?.id;
+
+              return (
+                <Card
+                  key={u.id}
+                  className={cn(
+                    "border-border/80 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between overflow-hidden",
+                    !u.isActive && "opacity-75 bg-muted/20",
+                  )}
+                >
+                  <CardContent className="p-4 space-y-3.5">
+                    {/* Cabecera de la tarjeta: Avatar + Nombre + Estado */}
+                    <div className="flex items-start justify-between gap-2.5">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={cn(
+                            "w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 border",
+                            u.isActive
+                              ? "bg-primary/10 border-primary/20 text-primary"
+                              : "bg-muted border-border text-muted-foreground",
+                          )}
+                        >
+                          {getInitials(u.fullName)}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h3 className="text-sm font-bold text-foreground truncate">
+                              {u.fullName}
+                            </h3>
+                            {isSelf && (
+                              <Badge
+                                variant="info"
+                                className="text-[10px] px-1.5 py-0"
+                              >
+                                Tú
+                              </Badge>
+                            )}
+                          </div>
+                          <span className="text-xs font-mono text-muted-foreground block truncate">
+                            @{u.username}
+                          </span>
+                        </div>
+                      </div>
+
+                      <Badge
+                        variant={u.isActive ? "success" : "destructive"}
+                        className="text-[10px] shrink-0"
+                      >
+                        {u.isActive ? "Activo" : "Inactivo"}
+                      </Badge>
+                    </div>
+
+                    {/* Datos de contacto y departamento */}
+                    <div className="space-y-1.5 pt-2 border-t border-border/50 text-xs">
+                      <div className="flex items-center gap-2 text-muted-foreground min-w-0">
+                        <Mail className="w-3.5 h-3.5 shrink-0 text-muted-foreground/80" />
+                        <span className="truncate">{u.email}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-muted-foreground min-w-0">
+                        <Building2 className="w-3.5 h-3.5 shrink-0 text-muted-foreground/80" />
+                        <span className="truncate font-medium text-foreground/90">
+                          {u.department || "Sin departamento"}
+                        </span>
+                      </div>
+                      {u.createdAt && (
+                        <div className="flex items-center gap-2 text-muted-foreground text-[11px]">
+                          <Calendar className="w-3.5 h-3.5 shrink-0 text-muted-foreground/80" />
+                          <span className="font-mono">
+                            Desde{" "}
+                            {new Date(u.createdAt).toLocaleDateString("es-VE")}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Roles asignados */}
+                    <div className="space-y-1.5 pt-2 border-t border-border/50">
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                        Roles
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {u.roles.length === 0 ? (
+                          <span className="text-[11px] text-muted-foreground italic">
+                            Sin roles
+                          </span>
+                        ) : (
+                          u.roles.map((r) => (
+                            <Badge
+                              key={r}
+                              variant={getRoleBadgeVariant(r)}
+                              className="text-[10px] font-mono"
+                            >
+                              {r}
+                            </Badge>
+                          ))
                         )}
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  paginatedUsers.map((u) => {
-                    const isSelf = u.id === currentUser?.id;
-                    return (
-                      <TableRow
-                        key={u.id}
-                        className={`transition-colors ${!u.isActive ? "bg-slate-50/60" : "hover:bg-slate-50/70"}`}
+                    </div>
+                  </CardContent>
+
+                  {/* Pie de tarjeta: Acciones directas */}
+                  <div className="px-4 py-2.5 bg-muted/25 border-t border-border/60 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenRoleModal(u)}
+                        className="h-7 text-[11px] px-2.5 gap-1 cursor-pointer"
                       >
-                        <TableCell className="py-3.5 px-6">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-mono font-semibold text-slate-900 text-xs">
-                              {u.username}
-                            </span>
-                            {isSelf && (
-                              <span className="inline-block text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded-md">
-                                Tú
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-slate-500 font-sans mt-0.5">
-                            {u.email}
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-3.5 px-6 font-semibold text-slate-900">
-                          {u.fullName}
-                        </TableCell>
-                        <TableCell className="py-3.5 px-6 text-xs text-slate-600 font-medium">
-                          {u.department ?? <span className="italic text-slate-400">Sin asignar</span>}
-                        </TableCell>
-                        <TableCell className="py-3.5 px-6">
-                          <div className="flex flex-wrap gap-1.5">
-                            {u.roles.map((r) => (
-                              <span
-                                key={r}
-                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${getRoleBadgeStyle(
-                                  r
-                                )}`}
-                              >
-                                {r}
-                              </span>
-                            ))}
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-3.5 px-6 text-center">
-                          <button
-                            type="button"
-                            disabled={isSelf}
-                            onClick={() => setUserToToggle(u)}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-colors ${
-                              isSelf
-                                ? "cursor-default opacity-85"
-                                : "cursor-pointer"
-                            } ${
-                              u.isActive
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                                : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
-                            }`}
-                            title={
-                              isSelf
-                                ? "No puedes desactivar tu propia cuenta"
-                                : u.isActive
-                                ? "Clic para desactivar acceso del usuario"
-                                : "Clic para reactivar acceso del usuario"
-                            }
-                          >
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                u.isActive ? "bg-emerald-600" : "bg-rose-600"
-                              }`}
-                            />
-                            {u.isActive ? "Activo" : "Inactivo"}
-                          </button>
-                        </TableCell>
-                        <TableCell className="py-3.5 px-6 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenRoleModal(u)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-colors cursor-pointer"
-                              title="Reasignar roles"
-                            >
-                              <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                              Roles
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedUser(u);
-                                setShowPasswordModal(true);
-                              }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition-colors cursor-pointer"
-                              title="Restablecer contraseña"
-                            >
-                              <Key className="w-3.5 h-3.5 text-amber-600" />
-                              Clave
-                            </button>
-                            {/* Botón explícito de desactivar / activar */}
-                            {u.isActive ? (
-                              <button
-                                type="button"
-                                disabled={isSelf}
-                                onClick={() => setUserToToggle(u)}
-                                className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border transition-colors ${
-                                  isSelf
-                                    ? "opacity-30 border-slate-200 text-slate-400 cursor-not-allowed"
-                                    : "border-slate-200 bg-white text-slate-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 cursor-pointer"
-                                }`}
-                                title={
-                                  isSelf
-                                    ? "No puedes desactivar tu propia cuenta"
-                                    : "Desactivar acceso de este usuario"
-                                }
-                              >
-                                <UserX className="w-3.5 h-3.5 text-rose-600" />
-                                Desactivar
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setUserToToggle(u)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 transition-colors cursor-pointer"
-                                title="Reactivar acceso de este usuario"
-                              >
-                                <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                                Activar
-                              </button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
+                        <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+                        Roles
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedUser(u);
+                          setShowPasswordModal(true);
+                        }}
+                        className="h-7 text-[11px] px-2.5 gap-1 cursor-pointer"
+                      >
+                        <Key className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        Clave
+                      </Button>
+                    </div>
+
+                    {u.isActive ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={isSelf}
+                        onClick={() => setUserToToggle(u)}
+                        className={cn(
+                          "h-7 text-[11px] px-2.5 gap-1 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 hover:text-rose-700",
+                          isSelf
+                            ? "opacity-30 cursor-not-allowed"
+                            : "cursor-pointer",
+                        )}
+                        title={
+                          isSelf
+                            ? "No puedes desactivar tu cuenta"
+                            : "Desactivar usuario"
+                        }
+                      >
+                        <UserX className="w-3.5 h-3.5" />
+                        Desactivar
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setUserToToggle(u)}
+                        className="h-7 text-[11px] px-2.5 gap-1 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-700 cursor-pointer"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        Activar
+                      </Button>
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
           </div>
 
-          {/* Barra de Paginación */}
-          <TablePagination
-            currentPage={safeCurrentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            totalItems={filteredUsers.length}
-            onPageChange={setCurrentPage}
-            onPageSizeChange={(newSize) => {
-              setPageSize(newSize);
-              setCurrentPage(1);
-            }}
-            pageSizeOptions={[5, 10, 20, 50]}
-            entityName="usuarios"
-          />
-        </Card>
+          {/* Barra de Paginación Estandarizada */}
+          <Card className="overflow-hidden border-border/80 shadow-2xs">
+            <TablePagination
+              currentPage={safeCurrentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              totalItems={filteredUsers.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setCurrentPage(1);
+              }}
+              pageSizeOptions={[6, 12, 24, 48]}
+              entityName="usuarios"
+              className="border-t-0"
+            />
+          </Card>
+        </div>
       )}
 
-      {/* Modal de Confirmación para Desactivar / Reactivar Usuario */}
+      {/* ========================================================
+          MODAL: ACTIVAR / DESACTIVAR USUARIO
+         ======================================================== */}
       <Dialog
         open={Boolean(userToToggle)}
         onOpenChange={(open) => {
           if (!open && !togglingActive) setUserToToggle(null);
         }}
       >
-        <DialogContent className="sm:max-w-md max-w-md p-6 sm:p-7 rounded-2xl shadow-2xl border border-slate-100 space-y-4">
+        <DialogContent className="sm:max-w-md max-w-md p-6 rounded-2xl border-border/80 space-y-4">
           <DialogHeader>
             <div className="flex items-center gap-3">
               <div
-                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                className={cn(
+                  "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border",
                   userToToggle?.isActive
-                    ? "bg-rose-100 text-rose-600"
-                    : "bg-emerald-100 text-emerald-600"
-                }`}
+                    ? "bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400"
+                    : "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400",
+                )}
               >
                 {userToToggle?.isActive ? (
                   <AlertTriangle className="w-5 h-5" />
@@ -644,182 +723,192 @@ export default function AdminUsersPage() {
                 )}
               </div>
               <div>
-                <DialogTitle className="text-lg font-bold text-slate-900">
+                <DialogTitle className="text-base font-bold text-foreground">
                   {userToToggle?.isActive
-                    ? "Desactivar Acceso de Usuario"
-                    : "Reactivar Acceso de Usuario"}
+                    ? "Desactivar Usuario"
+                    : "Activar Usuario"}
                 </DialogTitle>
-                <DialogDescription className="text-xs text-slate-500 mt-0.5">
-                  Confirmación de política de acceso al sistema ERP-IDI
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  @{userToToggle?.username}
                 </DialogDescription>
               </div>
             </div>
           </DialogHeader>
 
-          <div className="space-y-3 pt-2 text-sm text-slate-600">
+          <div className="text-xs text-muted-foreground space-y-2">
             {userToToggle?.isActive ? (
-              <>
-                <p>
-                  ¿Está seguro de que desea suspender la cuenta de{" "}
-                  <strong className="text-slate-900">{userToToggle.fullName}</strong> (
-                  <span className="font-mono text-xs text-slate-700">@{userToToggle.username}</span>)?
-                </p>
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 space-y-1">
-                  <p className="font-semibold">Efectos inmediatos:</p>
-                  <ul className="list-disc list-inside space-y-0.5">
-                    <li>El usuario no podrá iniciar sesión en ERP-IDI.</li>
-                    <li>Sus credenciales quedarán temporalmente bloqueadas.</li>
-                    <li>No se eliminan sus registros históricos ni transacciones previas.</li>
-                  </ul>
-                </div>
-              </>
+              <p>
+                ¿Desactivar la cuenta de{" "}
+                <strong className="text-foreground">
+                  {userToToggle.fullName}
+                </strong>
+                ? El usuario no podrá iniciar sesión hasta que se reactive.
+              </p>
             ) : (
-              <>
-                <p>
-                  ¿Desea restaurar el acceso al sistema para{" "}
-                  <strong className="text-slate-900">{userToToggle?.fullName}</strong> (
-                  <span className="font-mono text-xs text-slate-700">@{userToToggle?.username}</span>)?
-                </p>
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 space-y-1">
-                  <p className="font-semibold">Efectos de reactivación:</p>
-                  <p>
-                    El usuario podrá iniciar sesión normalmente con sus credenciales y roles asignados.
-                  </p>
-                </div>
-              </>
+              <p>
+                ¿Activar la cuenta de{" "}
+                <strong className="text-foreground">
+                  {userToToggle?.fullName}
+                </strong>
+                ? El usuario podrá volver a iniciar sesión en el sistema.
+              </p>
             )}
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-slate-100">
+          <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border/60">
             <Button
               type="button"
               variant="outline"
+              size="sm"
               disabled={togglingActive}
               onClick={() => setUserToToggle(null)}
-              className="rounded-xl text-slate-600 cursor-pointer"
+              className="h-8 text-xs cursor-pointer"
             >
               Cancelar
             </Button>
             <Button
               type="button"
+              size="sm"
               disabled={togglingActive}
               onClick={() => void handleConfirmToggleActive()}
-              className={`gap-1.5 rounded-xl text-white cursor-pointer ${
+              className={cn(
+                "h-8 text-xs gap-1.5 text-white cursor-pointer",
                 userToToggle?.isActive
                   ? "bg-rose-600 hover:bg-rose-700"
-                  : "bg-emerald-600 hover:bg-emerald-700"
-              }`}
+                  : "bg-emerald-600 hover:bg-emerald-700",
+              )}
             >
-              {togglingActive && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              {userToToggle?.isActive ? "Sí, Desactivar Usuario" : "Sí, Reactivar Usuario"}
+              {togglingActive && (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              )}
+              {userToToggle?.isActive ? "Desactivar" : "Activar"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Modal Reasignar Roles (Amplio sm:max-w-xl) */}
+      {/* ========================================================
+          MODAL: ROLES DEL USUARIO
+         ======================================================== */}
       <Dialog
         open={Boolean(showRoleModal && selectedUser)}
         onOpenChange={(open) => {
           if (!open) setShowRoleModal(false);
         }}
       >
-        <DialogContent className="sm:max-w-xl max-w-xl p-6 sm:p-7 rounded-2xl shadow-2xl border border-slate-100 space-y-4">
+        <DialogContent className="sm:max-w-lg max-w-lg p-6 rounded-2xl border-border/80 space-y-4">
           <DialogHeader>
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-blue-600" />
-              <DialogTitle className="text-lg font-bold text-slate-900">
-                Reasignar Roles a {selectedUser?.username}
-              </DialogTitle>
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-foreground">
+                  Roles de {selectedUser?.fullName}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  Selecciona los permisos para @{selectedUser?.username}
+                </DialogDescription>
+              </div>
             </div>
-            <DialogDescription className="text-xs text-slate-500">
-              Seleccione los permisos y roles operativos que este usuario tendrá vigentes en el sistema.
-            </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSaveRoles} className="space-y-4 pt-2">
+          <form onSubmit={handleSaveRoles} className="space-y-4 pt-1">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1">
-              {roles.map((r) => {
+              {visibleAvailableRoles.map((r) => {
                 const checked = selectedRoleIds.includes(r.id);
                 return (
                   <div
                     key={r.id}
                     onClick={() => handleToggleRoleSelection(r.id)}
-                    className={`p-3 rounded-xl border cursor-pointer flex flex-col justify-between gap-2 transition-all ${
+                    className={cn(
+                      "p-3 rounded-xl border cursor-pointer flex flex-col justify-between gap-1.5 transition-all",
                       checked
-                        ? "border-blue-500 bg-blue-50/60 shadow-xs"
-                        : "border-slate-200 hover:bg-slate-50/80 text-slate-600"
-                    }`}
+                        ? "border-primary bg-primary/5 shadow-2xs"
+                        : "border-border/80 hover:bg-muted/40 text-muted-foreground",
+                    )}
                   >
                     <div className="flex items-center justify-between">
-                      <span className={`text-xs font-bold ${checked ? "text-blue-900" : "text-slate-800"}`}>
+                      <span
+                        className={cn(
+                          "text-xs font-bold font-mono",
+                          checked ? "text-primary" : "text-foreground",
+                        )}
+                      >
                         {r.name}
                       </span>
                       <Checkbox
                         checked={checked}
                         onCheckedChange={() => handleToggleRoleSelection(r.id)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                       />
                     </div>
-                    <p className="text-[11px] text-slate-500 leading-snug">
-                      {r.description || "Permisos generales del rol"}
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      {r.description || "Acceso al módulo"}
                     </p>
                   </div>
                 );
               })}
             </div>
 
-            <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-slate-100">
+            <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border/60">
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 onClick={() => setShowRoleModal(false)}
-                className="rounded-xl text-slate-600 cursor-pointer"
+                className="h-8 text-xs cursor-pointer"
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
+                size="sm"
                 disabled={submitting}
-                className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl cursor-pointer"
+                className="h-8 text-xs gap-1.5 cursor-pointer"
               >
                 {submitting && (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 )}
-                Guardar Cambios
+                Guardar
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Modal Restablecer Clave */}
+      {/* ========================================================
+          MODAL: CAMBIAR CLAVE
+         ======================================================== */}
       <Dialog
         open={Boolean(showPasswordModal && selectedUser)}
         onOpenChange={(open) => {
           if (!open) setShowPasswordModal(false);
         }}
       >
-        <DialogContent className="sm:max-w-md max-w-md p-6 sm:p-7 rounded-2xl shadow-2xl border border-slate-100 space-y-4">
+        <DialogContent className="sm:max-w-md max-w-md p-6 rounded-2xl border-border/80 space-y-4">
           <DialogHeader>
-            <div className="flex items-center gap-2">
-              <Key className="w-5 h-5 text-amber-600" />
-              <DialogTitle className="text-lg font-bold text-slate-900">
-                Restablecer Contraseña
-              </DialogTitle>
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <Key className="w-4 h-4" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-foreground">
+                  Cambiar Clave
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  Nueva clave para @{selectedUser?.username}
+                </DialogDescription>
+              </div>
             </div>
-            <DialogDescription className="text-xs text-slate-500">
-              Defina una nueva clave de acceso para el usuario <strong className="text-slate-800">{selectedUser?.username}</strong>.
-            </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleResetPassword} className="space-y-4">
             <div className="space-y-1.5">
-              <Label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                Nueva Contraseña * (mínimo 8 caracteres)
+              <Label className="block text-xs font-bold text-foreground">
+                Nueva Clave
               </Label>
               <div className="relative">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
                   <Lock className="w-4 h-4" />
                 </span>
                 <Input
@@ -828,77 +917,80 @@ export default function AdminUsersPage() {
                   minLength={8}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="pl-9 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
+                  placeholder="Mínimo 8 caracteres"
+                  className="pl-9 h-9 text-xs bg-card border-border/80 rounded-xl"
                 />
               </div>
             </div>
 
-            <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-slate-100">
+            <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border/60">
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 onClick={() => setShowPasswordModal(false)}
-                className="rounded-xl text-slate-600 cursor-pointer"
+                className="h-8 text-xs cursor-pointer"
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
+                size="sm"
                 disabled={submitting}
-                className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl cursor-pointer"
+                className="h-8 text-xs gap-1.5 cursor-pointer"
               >
                 {submitting && (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 )}
-                Actualizar Clave
+                Guardar
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Modal Nuevo Usuario (Amplio sm:max-w-2xl en 2 Columnas) */}
-      <Dialog
-        open={showCreateModal}
-        onOpenChange={setShowCreateModal}
-      >
-        <DialogContent className="sm:max-w-2xl max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-7 rounded-2xl shadow-2xl border border-slate-100 space-y-5">
+      {/* ========================================================
+          MODAL: NUEVO USUARIO
+         ======================================================== */}
+      <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+        <DialogContent className="sm:max-w-xl max-w-xl max-h-[90vh] overflow-y-auto p-6 rounded-2xl border-border/80 space-y-4">
           <DialogHeader>
             <div className="flex items-center gap-2.5">
-              <UserPlus className="w-6 h-6 text-blue-600" />
+              <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                <UserPlus className="w-4 h-4" />
+              </div>
               <div>
-                <DialogTitle className="text-lg font-bold text-slate-900">
-                  Registrar Nuevo Usuario Institucional
+                <DialogTitle className="text-base font-bold text-foreground">
+                  Nuevo Usuario
                 </DialogTitle>
-                <DialogDescription className="text-xs text-slate-500 mt-0.5">
-                  Complete los datos de la cuenta y seleccione los roles con los que operará en el ERP.
+                <DialogDescription className="text-xs text-muted-foreground">
+                  Datos de la cuenta y roles asignados
                 </DialogDescription>
               </div>
             </div>
           </DialogHeader>
 
           <form onSubmit={handleCreateUser} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5">
-                  Nombre de Usuario *
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-bold text-foreground">
+                  Usuario *
                 </Label>
                 <Input
                   type="text"
                   required
-                  placeholder="ej. jsanchez, amendoza"
+                  placeholder="ej. jsanchez"
                   value={createForm.username}
                   onChange={(e) =>
                     setCreateForm({ ...createForm, username: e.target.value })
                   }
-                  className="bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
+                  className="h-9 text-xs bg-card border-border/80 rounded-xl"
                 />
               </div>
 
-              <div>
-                <Label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5">
-                  Correo Electrónico Institucional *
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-bold text-foreground">
+                  Correo *
                 </Label>
                 <Input
                   type="email"
@@ -908,29 +1000,29 @@ export default function AdminUsersPage() {
                   onChange={(e) =>
                     setCreateForm({ ...createForm, email: e.target.value })
                   }
-                  className="bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
+                  className="h-9 text-xs bg-card border-border/80 rounded-xl"
                 />
               </div>
 
-              <div className="sm:col-span-2">
-                <Label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5">
-                  Nombre Completo del Titular *
+              <div className="sm:col-span-2 space-y-1.5">
+                <Label className="block text-xs font-bold text-foreground">
+                  Nombre Completo *
                 </Label>
                 <Input
                   type="text"
                   required
-                  placeholder="ej. Dra. Juana Sánchez, Lic. Alejandro Mendoza"
+                  placeholder="ej. Dra. Juana Sánchez"
                   value={createForm.fullName}
                   onChange={(e) =>
                     setCreateForm({ ...createForm, fullName: e.target.value })
                   }
-                  className="bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
+                  className="h-9 text-xs bg-card border-border/80 rounded-xl"
                 />
               </div>
 
-              <div>
-                <Label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5">
-                  Contraseña Inicial *
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-bold text-foreground">
+                  Clave *
                 </Label>
                 <Input
                   type="password"
@@ -941,18 +1033,18 @@ export default function AdminUsersPage() {
                   onChange={(e) =>
                     setCreateForm({ ...createForm, password: e.target.value })
                   }
-                  className="bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
+                  className="h-9 text-xs bg-card border-border/80 rounded-xl"
                 />
               </div>
 
-              <div>
-                <Label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5">
-                  Departamento / Área *
+              <div className="space-y-1.5">
+                <Label className="block text-xs font-bold text-foreground">
+                  Departamento *
                 </Label>
                 <Input
                   type="text"
                   required
-                  placeholder="ej. Laboratorio de Inmunología"
+                  placeholder="ej. Almacén General"
                   value={createForm.department}
                   onChange={(e) =>
                     setCreateForm({
@@ -960,25 +1052,26 @@ export default function AdminUsersPage() {
                       department: e.target.value,
                     })
                   }
-                  className="bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
+                  className="h-9 text-xs bg-card border-border/80 rounded-xl"
                 />
               </div>
 
               <div className="sm:col-span-2 space-y-1.5 pt-1">
-                <Label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                  Roles Asignados * (seleccione al menos uno)
+                <Label className="block text-xs font-bold text-foreground">
+                  Roles *
                 </Label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-52 overflow-y-auto border border-slate-200 p-2.5 rounded-xl bg-slate-50/50">
-                  {roles.map((r) => {
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto border border-border/80 p-2.5 rounded-xl bg-muted/20">
+                  {visibleAvailableRoles.map((r) => {
                     const checked = createForm.roleIds.includes(r.id);
                     return (
                       <label
                         key={r.id}
-                        className={`flex items-start gap-2.5 p-2 rounded-lg cursor-pointer transition-colors border ${
+                        className={cn(
+                          "flex items-start gap-2.5 p-2 rounded-lg cursor-pointer transition-colors border",
                           checked
-                            ? "bg-blue-50/70 border-blue-400 text-slate-900"
-                            : "bg-white border-slate-200 hover:bg-slate-50 text-slate-600"
-                        }`}
+                            ? "bg-primary/5 border-primary text-foreground"
+                            : "bg-card border-border/60 hover:bg-muted/40 text-muted-foreground",
+                        )}
                       >
                         <Checkbox
                           checked={checked}
@@ -990,14 +1083,14 @@ export default function AdminUsersPage() {
                                 : [...prev.roleIds, r.id],
                             }));
                           }}
-                          className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          className="mt-0.5"
                         />
                         <div className="flex-1 min-w-0">
-                          <div className="font-bold text-xs text-slate-800">
+                          <div className="font-bold font-mono text-xs text-foreground">
                             {r.name}
                           </div>
-                          <div className="text-[10px] text-slate-500 leading-snug line-clamp-2">
-                            {r.description || "Permisos del rol"}
+                          <div className="text-[10px] text-muted-foreground leading-snug line-clamp-2">
+                            {r.description || "Acceso al módulo"}
                           </div>
                         </div>
                       </label>
@@ -1007,24 +1100,26 @@ export default function AdminUsersPage() {
               </div>
             </div>
 
-            <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-slate-100">
+            <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border/60">
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 onClick={() => setShowCreateModal(false)}
-                className="rounded-xl text-slate-600 cursor-pointer"
+                className="h-8 text-xs cursor-pointer"
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
+                size="sm"
                 disabled={submitting}
-                className="gap-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-5 cursor-pointer"
+                className="h-8 text-xs gap-1.5 cursor-pointer"
               >
                 {submitting && (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 )}
-                Crear Usuario
+                Crear
               </Button>
             </DialogFooter>
           </form>

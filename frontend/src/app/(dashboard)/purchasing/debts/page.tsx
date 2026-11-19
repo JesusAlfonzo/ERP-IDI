@@ -12,6 +12,10 @@ import {
   BankAccountService,
   type BankAccountItem,
 } from "@/services/bank-account.service";
+import {
+  InventoryMasterService,
+  type PaymentMethodItem,
+} from "@/services/inventory-master.service";
 import { CurrencyService } from "@/services/currency.service";
 import type { SupplierDebt, SupplierStatement } from "@/types/purchasing";
 import {
@@ -79,6 +83,7 @@ export default function SupplierDebtsPage() {
   // Estados principales
   const [debts, setDebts] = useState<SupplierDebt[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccountItem[]>([]);
+  const [paymentMethodsList, setPaymentMethodsList] = useState<PaymentMethodItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Búsqueda inteligente y filtros rápidos
@@ -123,14 +128,16 @@ export default function SupplierDebtsPage() {
     setLoading(true);
     setFeedback(null);
     try {
-      const [debtsData, accountsData, ratesData] = await Promise.all([
+      const [debtsData, accountsData, ratesData, pmData] = await Promise.all([
         PurchasingClientService.getSupplierDebts(),
         BankAccountService.getBankAccounts(true),
         CurrencyService.getCurrentRates().catch(() => null),
+        InventoryMasterService.getPaymentMethods(true).catch(() => []),
       ]);
 
       setDebts(debtsData);
       setBankAccounts(accountsData);
+      setPaymentMethodsList(pmData);
 
       if (ratesData) {
         setBcvRates({
@@ -921,11 +928,17 @@ export default function SupplierDebtsPage() {
                     onChange={(e) => setPaymentMethod(e.target.value)}
                     className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
                   >
-                    {PAYMENT_METHODS.map(([val, label]) => (
-                      <option key={val} value={val}>
-                        {label}
-                      </option>
-                    ))}
+                    {paymentMethodsList.length > 0
+                      ? paymentMethodsList.map((pm) => (
+                          <option key={pm.code} value={pm.code}>
+                            {pm.name}
+                          </option>
+                        ))
+                      : PAYMENT_METHODS.map(([val, label]) => (
+                          <option key={val} value={val}>
+                            {label}
+                          </option>
+                        ))}
                   </select>
                 </div>
 

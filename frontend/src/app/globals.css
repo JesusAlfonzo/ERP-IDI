@@ -98,6 +98,10 @@
   --font-mono: var(--font-geist-mono);
 }
 
+html {
+  font-size: 17px;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -106,6 +110,9 @@ body {
 }
 
 @media print {
+  html {
+    font-size: 16px;
+  }
   @page {
     size: letter portrait;
     margin: 12mm 15mm;

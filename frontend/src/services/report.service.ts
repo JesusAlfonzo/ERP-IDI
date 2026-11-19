@@ -2,21 +2,30 @@ import { apiClient } from "@/lib/api-client";
 import type { ApiResponse } from "@/types/api";
 import type { DashboardOverviewData } from "@/types/dashboard";
 
+export type CustomReportType =
+  | "USER_ACTIVITY"
+  | "KARDEX"
+  | "DEPARTMENT_CONSUMPTION"
+  | "SUPPLIER_PAYMENTS"
+  | "PREORDERS"
+  | "BATCH_EXPIRATION";
+
 export interface CustomReportFilterParams {
-  reportType?: 'KARDEX' | 'SUPPLIER_PAYMENTS' | 'DEPARTMENT_CONSUMPTION' | 'BATCH_EXPIRATION';
+  reportType?: CustomReportType;
   startDate?: string;
   endDate?: string;
   productId?: number;
   categoryId?: number;
   supplierId?: number;
   departmentId?: number;
+  userId?: number;
   movementType?: string;
   status?: string;
   search?: string;
 }
 
 export interface CustomReportData {
-  reportType: 'KARDEX' | 'SUPPLIER_PAYMENTS' | 'DEPARTMENT_CONSUMPTION' | 'BATCH_EXPIRATION';
+  reportType: CustomReportType;
   generatedAt: string;
   totalRecords: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,6 +38,8 @@ export interface CustomReportData {
   directPayments?: Record<string, any>[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supplierSummaries?: Record<string, any>[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  userActionLogs?: Record<string, any>[];
 }
 
 export const ReportClientService = {

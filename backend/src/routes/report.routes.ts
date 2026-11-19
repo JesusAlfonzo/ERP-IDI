@@ -21,7 +21,7 @@ router.get(
 
 router.get(
   '/custom',
-  requireRoles(['ADMINISTRADOR', 'ALMACENISTA', 'COMPRAS', 'ADMINISTRACION', 'SOLICITANTE']),
+  requireRoles(['ADMINISTRADOR', 'COORDINADOR', 'ALMACENISTA', 'COMPRAS', 'ADMINISTRACION', 'SOLICITANTE']),
   getCustomReport
 );
 

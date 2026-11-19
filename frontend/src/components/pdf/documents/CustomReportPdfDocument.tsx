@@ -8,6 +8,8 @@ import {
   PdfHeader,
   PdfInfoBar,
   PdfSignatures,
+  PdfNotice,
+  type SignatureItem,
 } from "../BasePdfLayout";
 import {
   PdfTable,
@@ -21,11 +23,14 @@ import { PDF_COLORS, PDF_FONTS } from "../theme";
 const styles = StyleSheet.create({
   summaryCardsRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-between",
     marginBottom: 8,
+    gap: 4,
   },
   summaryCard: {
-    width: "24%",
+    flexGrow: 1,
+    minWidth: "22%",
     borderWidth: 0.8,
     borderColor: PDF_COLORS.borderLight,
     borderStyle: "solid",
@@ -41,7 +46,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   summaryVal: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontFamily: PDF_FONTS.bold,
     color: PDF_COLORS.navyDark,
     marginTop: 1,
@@ -65,24 +70,34 @@ export interface CustomReportPdfDocumentProps {
   title: string;
   subtitle?: string;
   documentNumber?: string;
+  badge?: string;
   dateRange?: string;
+  filterSummary?: string;
+  footerNotes?: string;
   columns: CustomReportColumn[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   rows: Record<string, any>[];
   summaryItems?: CustomReportSummaryItem[];
+  includeSummaryMetrics?: boolean;
   includeSignatures?: boolean;
+  customSignatures?: SignatureItem[];
   orientation?: "portrait" | "landscape";
 }
 
 export function CustomReportPdfDocument({
   title,
-  subtitle = "REPORTE DE AUDITORÍA Y TRAZABILIDAD",
-  documentNumber = "REP-AUDIT",
+  subtitle = "REPORTE OFICIAL · ERP-IDI",
+  documentNumber = "REP-IDI",
+  badge = "REPORTE OFICIAL",
   dateRange,
+  filterSummary,
+  footerNotes,
   columns,
   rows,
   summaryItems,
+  includeSummaryMetrics = true,
   includeSignatures = true,
+  customSignatures,
   orientation = "landscape",
 }: CustomReportPdfDocumentProps) {
   const formattedDate = new Date().toLocaleDateString("es-VE", {
@@ -93,10 +108,31 @@ export function CustomReportPdfDocument({
     minute: "2-digit",
   });
 
+  const activeSignatures: SignatureItem[] =
+    customSignatures && customSignatures.length > 0
+      ? customSignatures
+      : [
+          {
+            role: "Elaborado por",
+            department: "Control y Auditoría",
+            stampText: "Firma / Sello",
+          },
+          {
+            role: "Revisado por",
+            department: "Coordinación / Administración",
+            stampText: "Firma / Sello",
+          },
+          {
+            role: "Aprobado por",
+            department: "Dirección Ejecutiva",
+            stampText: "Firma / Sello",
+          },
+        ];
+
   return (
     <BasePdfDocument
       title={title}
-      subject="Reporte Oficial de Auditoría y Trazabilidad - ERP-IDI"
+      subject="Reporte Oficial - ERP-IDI"
     >
       <PdfPage orientation={orientation}>
         {/* Cabecera */}
@@ -105,23 +141,23 @@ export function CustomReportPdfDocument({
           subtitle={subtitle}
           documentNumber={documentNumber}
           date={formattedDate}
-          badge="AUDITORÍA OFICIAL"
+          badge={badge}
         />
 
         {/* Metadatos */}
         <PdfInfoBar
           items={[
-            { label: "Período / Rango", value: dateRange || "Todo el histórico" },
-            { label: "Renglones Evaluados", value: rows.length },
-            { label: "Fecha de Extracción", value: formattedDate },
-            { label: "Sistema", value: "ERP-IDI v2.0" },
+            { label: "Período", value: dateRange || "Histórico Completo" },
+            { label: "Filtro", value: filterSummary || "Todos los registros" },
+            { label: "Registros", value: rows.length },
+            { label: "Emisión", value: formattedDate },
           ]}
         />
 
-        {/* Tarjetas de Resumen Numérico si existen */}
-        {summaryItems && summaryItems.length > 0 && (
+        {/* Tarjetas de Resumen Numérico */}
+        {includeSummaryMetrics && summaryItems && summaryItems.length > 0 && (
           <View style={styles.summaryCardsRow} wrap={false}>
-            {summaryItems.slice(0, 4).map((it, idx) => (
+            {summaryItems.slice(0, 6).map((it, idx) => (
               <View key={idx} style={styles.summaryCard}>
                 <Text style={styles.summaryLabel}>{it.label}</Text>
                 <Text style={styles.summaryVal}>{it.value}</Text>
@@ -146,8 +182,12 @@ export function CustomReportPdfDocument({
 
           {rows.length === 0 ? (
             <PdfTableRow isAlt={false}>
-              <PdfTableCell width="100%" align="center" style={{ paddingVertical: 12 }}>
-                No se encontraron registros para los filtros seleccionados.
+              <PdfTableCell
+                width="100%"
+                align="center"
+                style={{ paddingVertical: 12 }}
+              >
+                Sin registros para los filtros seleccionados.
               </PdfTableCell>
             </PdfTableRow>
           ) : (
@@ -168,28 +208,13 @@ export function CustomReportPdfDocument({
           )}
         </PdfTable>
 
-        {/* Firmas Institucionales */}
-        {includeSignatures && (
-          <PdfSignatures
-            signatures={[
-              {
-                role: "Generado por (Auditor)",
-                department: "Unidad de Control y Trazabilidad",
-                stampText: "Firma / Sello Auditor",
-              },
-              {
-                role: "Revisado por (Administración)",
-                department: "Administración y Control Presupuestario",
-                stampText: "Firma / Sello Administración",
-              },
-              {
-                role: "Visto Bueno (Dirección)",
-                department: "Instituto de Inmunología Clínica",
-                stampText: "Firma / Sello Dirección",
-              },
-            ]}
-          />
+        {/* Nota u Observación al Pie del Reporte */}
+        {footerNotes && footerNotes.trim().length > 0 && (
+          <PdfNotice title="Observaciones del Reporte" text={footerNotes} />
         )}
+
+        {/* Firmas Institucionales */}
+        {includeSignatures && <PdfSignatures signatures={activeSignatures} />}
       </PdfPage>
     </BasePdfDocument>
   );

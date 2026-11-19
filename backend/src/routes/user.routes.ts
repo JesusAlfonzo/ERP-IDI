@@ -17,7 +17,11 @@ router.use(authenticateJWT);
 
 // Rutas exclusivas para administradores
 router.get('/roles', requireRoles(['ADMINISTRADOR']), listRoles);
-router.get('/', requireRoles(['ADMINISTRADOR']), listUsers);
+router.get(
+  '/',
+  requireRoles(['ADMINISTRADOR', 'COORDINADOR', 'ADMINISTRACION', 'COMPRAS', 'ALMACENISTA']),
+  listUsers
+);
 router.get('/:id', requireRoles(['ADMINISTRADOR']), getUserById);
 router.post('/', requireRoles(['ADMINISTRADOR']), createUser);
 router.patch('/:id', requireRoles(['ADMINISTRADOR']), updateUser);

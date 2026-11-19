@@ -33,6 +33,7 @@ export const getCustomReport = async (
       categoryId: req.query.categoryId ? Number(req.query.categoryId) : undefined,
       supplierId: req.query.supplierId ? Number(req.query.supplierId) : undefined,
       departmentId: req.query.departmentId ? Number(req.query.departmentId) : undefined,
+      userId: req.query.userId ? Number(req.query.userId) : undefined,
       movementType: req.query.movementType as string | undefined,
       status: req.query.status as string | undefined,
       search: req.query.search as string | undefined,

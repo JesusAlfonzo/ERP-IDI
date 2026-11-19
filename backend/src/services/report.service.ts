@@ -15,13 +15,20 @@ import {
 } from '@prisma/client';
 
 export interface CustomReportFilter {
-  reportType?: 'KARDEX' | 'SUPPLIER_PAYMENTS' | 'DEPARTMENT_CONSUMPTION' | 'BATCH_EXPIRATION';
+  reportType?:
+    | 'KARDEX'
+    | 'SUPPLIER_PAYMENTS'
+    | 'DEPARTMENT_CONSUMPTION'
+    | 'BATCH_EXPIRATION'
+    | 'USER_ACTIVITY'
+    | 'PREORDERS';
   startDate?: string;
   endDate?: string;
   productId?: number;
   categoryId?: number;
   supplierId?: number;
   departmentId?: number;
+  userId?: number;
   movementType?: string;
   status?: string;
   search?: string;
@@ -372,6 +379,9 @@ export class ReportService {
       if (filters.movementType && Object.values(StockMovementType).includes(filters.movementType as any)) {
         where.type = filters.movementType as StockMovementType;
       }
+      if (filters.userId) {
+        where.createdById = filters.userId;
+      }
       if (filters.productId) {
         where.items = { some: { batch: { productId: BigInt(filters.productId) } } };
       } else if (filters.categoryId) {
@@ -425,6 +435,17 @@ export class ReportService {
       let totalEntries = 0;
       let totalExits = 0;
       let totalValueUsd = 0;
+      let purchasesCount = 0;
+      let dispatchesCount = 0;
+      let adjustmentsCount = 0;
+      let wastesCount = 0;
+
+      movements.forEach((m) => {
+        if (m.type === StockMovementType.ENTRADA_COMPRA) purchasesCount += 1;
+        else if (m.type === StockMovementType.DESPACHO_SOLICITUD) dispatchesCount += 1;
+        else if (m.type === StockMovementType.AJUSTE_INVENTARIO) adjustmentsCount += 1;
+        else if (m.type === StockMovementType.DESCARTE_MERMA) wastesCount += 1;
+      });
 
       const rows = movements.flatMap((m) => {
         if (!m.items || m.items.length === 0) {
@@ -509,6 +530,10 @@ export class ReportService {
           totalEntries: Number(totalEntries.toFixed(2)),
           totalExits: Number(totalExits.toFixed(2)),
           totalValueUsd: Number(totalValueUsd.toFixed(2)),
+          purchasesCount,
+          dispatchesCount,
+          adjustmentsCount,
+          wastesCount,
         },
         rows,
       };
@@ -519,6 +544,9 @@ export class ReportService {
       const orderWhere: any = {};
       if (filters.supplierId) {
         orderWhere.supplierId = filters.supplierId;
+      }
+      if (filters.userId) {
+        orderWhere.createdById = filters.userId;
       }
       if (filters.status && Object.values(OrderStatus).includes(filters.status as any)) {
         orderWhere.status = filters.status as OrderStatus;
@@ -571,6 +599,9 @@ export class ReportService {
 
       // También consultar pagos directos si no hay filtro de proveedor específico o coincide
       const directPaymentsWhere: any = {};
+      if (filters.userId) {
+        directPaymentsWhere.registeredById = filters.userId;
+      }
       if (filters.startDate || filters.endDate) {
         directPaymentsWhere.paymentDate = {};
         if (filters.startDate) directPaymentsWhere.paymentDate.gte = new Date(filters.startDate);
@@ -685,6 +716,7 @@ export class ReportService {
           createdAt: ord.createdAt,
           supplierName: ord.supplier?.name || 'Proveedor General',
           supplierRif: ord.supplier?.rifOrId || 'N/A',
+          createdBy: ord.createdBy ? ord.createdBy.fullName || ord.createdBy.username : 'Sistema',
           status: ord.status,
           paymentStatus: ord.paymentStatus,
           receptionStatus: ord.receptionStatus,
@@ -764,6 +796,9 @@ export class ReportService {
         totalRecords: orderRows.length + directPaymentRows.length,
         summary: {
           totalOrdersCount: orderRows.length,
+          completedOrdersCount: orderRows.filter((o) => o.status === OrderStatus.COMPLETADA).length,
+          activeOrdersCount: orderRows.filter((o) => o.status === OrderStatus.ENVIADA || o.status === OrderStatus.PARCIAL).length,
+          cancelledOrdersCount: orderRows.filter((o) => o.status === OrderStatus.CANCELADA).length,
           totalDirectPaymentsCount: directPaymentRows.length,
           totalInvoicedUsd: Number(totalInvoicedUsd.toFixed(2)),
           totalPaidUsd: Number(totalPaidUsd.toFixed(2)),
@@ -781,6 +816,9 @@ export class ReportService {
       const reqWhere: any = {};
       if (filters.departmentId) {
         reqWhere.departmentId = filters.departmentId;
+      }
+      if (filters.userId) {
+        reqWhere.userId = filters.userId;
       }
       if (filters.status && Object.values(RequestStatus).includes(filters.status as any)) {
         reqWhere.status = filters.status as RequestStatus;
@@ -831,10 +869,23 @@ export class ReportService {
         take: 500,
       });
 
+      let totalItemsRequested = 0;
+      let totalItemsApproved = 0;
       let totalItemsDispatched = 0;
+      let pendingCount = 0;
+      let approvedCount = 0;
+      let partialCount = 0;
+      let completedCount = 0;
+      let rejectedCount = 0;
       const deptMap = new Map<string, { totalRequests: number; totalDispatched: number }>();
 
       const rows = requests.map((req) => {
+        if (req.status === RequestStatus.PENDIENTE) pendingCount += 1;
+        else if (req.status === RequestStatus.APROBADA) approvedCount += 1;
+        else if (req.status === RequestStatus.DESPACHADA_PARCIAL) partialCount += 1;
+        else if (req.status === RequestStatus.COMPLETADA) completedCount += 1;
+        else if (req.status === RequestStatus.RECHAZADA) rejectedCount += 1;
+
         const deptName = req.department.name;
         if (!deptMap.has(deptName)) {
           deptMap.set(deptName, { totalRequests: 0, totalDispatched: 0 });
@@ -846,6 +897,8 @@ export class ReportService {
           const qtyReq = Number(it.quantityRequested);
           const qtyApp = Number(it.quantityApproved || 0);
           const qtyDisp = Number(it.quantityDispatched || 0);
+          totalItemsRequested += qtyReq;
+          totalItemsApproved += qtyApp;
           totalItemsDispatched += qtyDisp;
           dEntry.totalDispatched += qtyDisp;
 
@@ -883,12 +936,545 @@ export class ReportService {
         totalRecords: rows.length,
         summary: {
           totalRequests: requests.length,
+          pendingCount,
+          approvedCount,
+          partialCount,
+          completedCount,
+          rejectedCount,
+          totalItemsRequested: Number(totalItemsRequested.toFixed(2)),
+          totalItemsApproved: Number(totalItemsApproved.toFixed(2)),
           totalItemsDispatched: Number(totalItemsDispatched.toFixed(2)),
           departmentBreakdown: Array.from(deptMap.entries()).map(([dept, data]) => ({
             department: dept,
             totalRequests: data.totalRequests,
             totalDispatched: Number(data.totalDispatched.toFixed(2)),
           })),
+        },
+        rows,
+      };
+    }
+
+    // 4. REPORTE DE ACTIVIDAD DE USUARIOS (AUDITORÍA INTEGRAL POR USUARIO)
+    if (reportType === 'USER_ACTIVITY') {
+      const dateRange: any = {};
+      const hasDateFilter = Boolean(filters.startDate || filters.endDate);
+      if (filters.startDate) dateRange.gte = new Date(filters.startDate);
+      if (filters.endDate) {
+        const end = new Date(filters.endDate);
+        end.setHours(23, 59, 59, 999);
+        dateRange.lte = end;
+      }
+
+      const userWhere: any = {};
+      if (filters.userId) userWhere.id = filters.userId;
+      if (filters.status === 'ACTIVE') userWhere.isActive = true;
+      else if (filters.status === 'INACTIVE') userWhere.isActive = false;
+      if (filters.search) {
+        userWhere.OR = [
+          { fullName: { contains: filters.search, mode: 'insensitive' } },
+          { username: { contains: filters.search, mode: 'insensitive' } },
+          { department: { contains: filters.search, mode: 'insensitive' } },
+          { email: { contains: filters.search, mode: 'insensitive' } },
+        ];
+      }
+
+      const [
+        usersList,
+        allRequests,
+        allPreorders,
+        allOrders,
+        allMovements,
+        allOrderPayments,
+        allDirectPayments,
+      ] = await Promise.all([
+        prisma.user.findMany({
+          where: userWhere,
+          include: {
+            userRoles: { include: { role: true } },
+          },
+          orderBy: { fullName: 'asc' },
+        }),
+        prisma.request.findMany({
+          where: {
+            ...(hasDateFilter ? { createdAt: dateRange } : {}),
+            ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),
+          },
+          include: {
+            department: true,
+            user: { select: { id: true, fullName: true, username: true, department: true } },
+            approvedBy: { select: { id: true, fullName: true, username: true } },
+            items: {
+              include: {
+                product: { include: { baseUnit: true } },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        prisma.purchaseRequisition.findMany({
+          where: {
+            ...(hasDateFilter ? { createdAt: dateRange } : {}),
+            ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),
+          },
+          include: {
+            department: true,
+            createdBy: { select: { id: true, fullName: true, username: true, department: true } },
+            items: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        prisma.order.findMany({
+          where: {
+            ...(hasDateFilter ? { createdAt: dateRange } : {}),
+            ...(filters.supplierId ? { supplierId: filters.supplierId } : {}),
+          },
+          include: {
+            supplier: true,
+            createdBy: { select: { id: true, fullName: true, username: true, department: true } },
+            items: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        prisma.stockMovement.findMany({
+          where: {
+            ...(hasDateFilter ? { createdAt: dateRange } : {}),
+          },
+          include: {
+            createdBy: { select: { id: true, fullName: true, username: true, department: true } },
+            items: {
+              include: {
+                batch: {
+                  include: {
+                    product: { include: { baseUnit: true } },
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        prisma.orderPayment.findMany({
+          where: {
+            ...(hasDateFilter ? { paymentDate: dateRange } : {}),
+          },
+          include: {
+            order: { include: { supplier: true } },
+            registeredBy: { select: { id: true, fullName: true, username: true, department: true } },
+          },
+          orderBy: { paymentDate: 'desc' },
+        }),
+        prisma.directPayment.findMany({
+          where: {
+            ...(hasDateFilter ? { paymentDate: dateRange } : {}),
+          },
+          include: {
+            registeredBy: { select: { id: true, fullName: true, username: true, department: true } },
+          },
+          orderBy: { paymentDate: 'desc' },
+        }),
+      ]);
+
+      const userStatsMap = new Map<
+        number,
+        {
+          userId: number;
+          username: string;
+          fullName: string;
+          department: string;
+          roles: string[];
+          isActive: boolean;
+          requestsCreated: number;
+          requestsPending: number;
+          requestsApproved: number;
+          requestsCompleted: number;
+          requestsRejected: number;
+          unitsRequested: number;
+          unitsReceived: number;
+          requestsEvaluatedByMe: number;
+          dispatchesExecuted: number;
+          receptionsExecuted: number;
+          adjustmentsExecuted: number;
+          wastesExecuted: number;
+          preordersCreated: number;
+          ordersCreated: number;
+          ordersTotalUsd: number;
+          paymentsRegistered: number;
+          paymentsTotalUsd: number;
+          totalActions: number;
+        }
+      >();
+
+      usersList.forEach((u) => {
+        userStatsMap.set(u.id, {
+          userId: u.id,
+          username: u.username,
+          fullName: u.fullName,
+          department: u.department || 'General',
+          roles: u.userRoles.map((ur) => ur.role.name),
+          isActive: u.isActive,
+          requestsCreated: 0,
+          requestsPending: 0,
+          requestsApproved: 0,
+          requestsCompleted: 0,
+          requestsRejected: 0,
+          unitsRequested: 0,
+          unitsReceived: 0,
+          requestsEvaluatedByMe: 0,
+          dispatchesExecuted: 0,
+          receptionsExecuted: 0,
+          adjustmentsExecuted: 0,
+          wastesExecuted: 0,
+          preordersCreated: 0,
+          ordersCreated: 0,
+          ordersTotalUsd: 0,
+          paymentsRegistered: 0,
+          paymentsTotalUsd: 0,
+          totalActions: 0,
+        });
+      });
+
+      const actionLogs: Array<{
+        id: string;
+        date: Date;
+        userId: number;
+        userName: string;
+        department: string;
+        module: string;
+        actionType: string;
+        reference: string;
+        detail: string;
+        quantityOrAmount: string;
+        status: string;
+      }> = [];
+
+      // Procesar Solicitudes
+      allRequests.forEach((req) => {
+        const uStat = userStatsMap.get(req.userId);
+        let reqUnits = 0;
+        let dispUnits = 0;
+        req.items.forEach((it) => {
+          reqUnits += Number(it.quantityRequested);
+          dispUnits += Number(it.quantityDispatched || 0);
+        });
+
+        if (uStat) {
+          uStat.requestsCreated += 1;
+          uStat.unitsRequested += reqUnits;
+          uStat.unitsReceived += dispUnits;
+          if (req.status === RequestStatus.PENDIENTE) uStat.requestsPending += 1;
+          else if (req.status === RequestStatus.APROBADA || req.status === RequestStatus.DESPACHADA_PARCIAL)
+            uStat.requestsApproved += 1;
+          else if (req.status === RequestStatus.COMPLETADA) uStat.requestsCompleted += 1;
+          else if (req.status === RequestStatus.RECHAZADA) uStat.requestsRejected += 1;
+          uStat.totalActions += 1;
+        }
+
+        if (req.approvedById && userStatsMap.has(req.approvedById)) {
+          const appStat = userStatsMap.get(req.approvedById)!;
+          appStat.requestsEvaluatedByMe += 1;
+          appStat.totalActions += 1;
+        }
+
+        if (!filters.userId || req.userId === filters.userId) {
+          actionLogs.push({
+            id: `REQ-${req.id}`,
+            date: req.createdAt,
+            userId: req.userId,
+            userName: req.user.fullName || req.user.username,
+            department: req.department.name,
+            module: 'Solicitudes',
+            actionType: 'Solicitud Creada',
+            reference: `#${req.requestNumber}`,
+            detail: `${req.items.length} insumo(s) · ${req.justification}`,
+            quantityOrAmount: `${dispUnits} / ${reqUnits} unid.`,
+            status: req.status,
+          });
+        }
+      });
+
+      // Procesar Preórdenes
+      allPreorders.forEach((pr) => {
+        const uStat = userStatsMap.get(pr.createdById);
+        if (uStat) {
+          uStat.preordersCreated += 1;
+          uStat.totalActions += 1;
+        }
+        if (!filters.userId || pr.createdById === filters.userId) {
+          actionLogs.push({
+            id: `PRE-${pr.id}`,
+            date: pr.createdAt,
+            userId: pr.createdById,
+            userName: pr.createdBy.fullName || pr.createdBy.username,
+            department: pr.department.name,
+            module: 'Compras',
+            actionType: 'Preorden Creada',
+            reference: `#${pr.requisitionNumber}`,
+            detail: `${pr.items.length} insumo(s) · ${pr.justification}`,
+            quantityOrAmount: `${pr.items.length} renglones`,
+            status: pr.status,
+          });
+        }
+      });
+
+      // Procesar Órdenes de Compra
+      allOrders.forEach((ord) => {
+        const uStat = userStatsMap.get(ord.createdById);
+        const totalUsd = Number(ord.total);
+        if (uStat) {
+          uStat.ordersCreated += 1;
+          uStat.ordersTotalUsd += totalUsd;
+          uStat.totalActions += 1;
+        }
+        if (!filters.userId || ord.createdById === filters.userId) {
+          actionLogs.push({
+            id: `ORD-${ord.id}`,
+            date: ord.createdAt,
+            userId: ord.createdById,
+            userName: ord.createdBy.fullName || ord.createdBy.username,
+            department: ord.createdBy.department || 'Compras',
+            module: 'Compras',
+            actionType: 'Orden de Compra',
+            reference: `#${ord.orderNumber}`,
+            detail: `Proveedor: ${ord.supplier?.name || 'General'} (${ord.items.length} insumos)`,
+            quantityOrAmount: `$${totalUsd.toFixed(2)} USD`,
+            status: ord.status,
+          });
+        }
+      });
+
+      // Procesar Movimientos de Almacén (Recepciones, Despachos, Ajustes, Mermas)
+      allMovements.forEach((mov) => {
+        if (mov.type === StockMovementType.PAGO_ORDEN || mov.type === StockMovementType.EGRESO_DIRECTO) {
+          return;
+        }
+        const uStat = userStatsMap.get(mov.createdById);
+        if (uStat) {
+          if (mov.type === StockMovementType.ENTRADA_COMPRA) uStat.receptionsExecuted += 1;
+          else if (mov.type === StockMovementType.DESPACHO_SOLICITUD) uStat.dispatchesExecuted += 1;
+          else if (mov.type === StockMovementType.AJUSTE_INVENTARIO) uStat.adjustmentsExecuted += 1;
+          else if (mov.type === StockMovementType.DESCARTE_MERMA) uStat.wastesExecuted += 1;
+          uStat.totalActions += 1;
+        }
+
+        if (!filters.userId || mov.createdById === filters.userId) {
+          const totalUnits = mov.items.reduce((acc, it) => acc + Math.abs(Number(it.quantity)), 0);
+          const actionLabel =
+            mov.type === StockMovementType.ENTRADA_COMPRA
+              ? 'Recepción Compra'
+              : mov.type === StockMovementType.DESPACHO_SOLICITUD
+                ? 'Despacho Almacén'
+                : mov.type === StockMovementType.AJUSTE_INVENTARIO
+                  ? 'Ajuste Stock'
+                  : mov.type === StockMovementType.DESCARTE_MERMA
+                    ? 'Merma'
+                    : 'Traslado';
+
+          actionLogs.push({
+            id: `MOV-${mov.id}`,
+            date: mov.createdAt,
+            userId: mov.createdById,
+            userName: mov.createdBy.fullName || mov.createdBy.username,
+            department: mov.createdBy.department || 'Almacén',
+            module: 'Almacén',
+            actionType: actionLabel,
+            reference: mov.referenceNumber,
+            detail: mov.notes || `${mov.items.length} lote(s) movilizados`,
+            quantityOrAmount: `${totalUnits} unid.`,
+            status: 'PROCESADO',
+          });
+        }
+      });
+
+      // Procesar Pagos de Órdenes y Egresos Directos
+      allOrderPayments.forEach((pay) => {
+        const uStat = userStatsMap.get(pay.registeredById);
+        const rate = Number(pay.exchangeRate) > 0 ? Number(pay.exchangeRate) : 1;
+        const eqUsd =
+          Number(pay.amortizedAmountUsd) > 0
+            ? Number(pay.amortizedAmountUsd)
+            : Number(pay.amountPaid) / rate;
+        if (uStat) {
+          uStat.paymentsRegistered += 1;
+          uStat.paymentsTotalUsd += eqUsd;
+          uStat.totalActions += 1;
+        }
+        if (!filters.userId || pay.registeredById === filters.userId) {
+          actionLogs.push({
+            id: `PAY-ORD-${pay.id}`,
+            date: pay.paymentDate,
+            userId: pay.registeredById,
+            userName: pay.registeredBy.fullName || pay.registeredBy.username,
+            department: pay.registeredBy.department || 'Pagos',
+            module: 'Pagos',
+            actionType: 'Pago de Orden',
+            reference: pay.referenceNumber || `OC #${pay.order.orderNumber}`,
+            detail: `Proveedor: ${pay.order.supplier?.name || 'General'} (${pay.method})`,
+            quantityOrAmount: `$${eqUsd.toFixed(2)} USD`,
+            status: 'PAGADO',
+          });
+        }
+      });
+
+      allDirectPayments.forEach((dp) => {
+        const uStat = userStatsMap.get(dp.registeredById);
+        const rate = Number(dp.exchangeRate) > 0 ? Number(dp.exchangeRate) : 1;
+        const eqUsd =
+          Number(dp.equivalentAmountUsd) > 0
+            ? Number(dp.equivalentAmountUsd)
+            : Number(dp.amountPaid) / rate;
+        if (uStat) {
+          uStat.paymentsRegistered += 1;
+          uStat.paymentsTotalUsd += eqUsd;
+          uStat.totalActions += 1;
+        }
+        if (!filters.userId || dp.registeredById === filters.userId) {
+          actionLogs.push({
+            id: `PAY-DIR-${dp.id}`,
+            date: dp.paymentDate,
+            userId: dp.registeredById,
+            userName: dp.registeredBy.fullName || dp.registeredBy.username,
+            department: dp.registeredBy.department || 'Pagos',
+            module: 'Pagos',
+            actionType: 'Gasto Directo',
+            reference: dp.referenceNumber || `EGR-${dp.id}`,
+            detail: `${dp.beneficiary} · ${dp.concept}`,
+            quantityOrAmount: `$${eqUsd.toFixed(2)} USD`,
+            status: 'PAGADO',
+          });
+        }
+      });
+
+      actionLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      const userRows = Array.from(userStatsMap.values()).map((u) => ({
+        ...u,
+        unitsRequested: Number(u.unitsRequested.toFixed(2)),
+        unitsReceived: Number(u.unitsReceived.toFixed(2)),
+        ordersTotalUsd: Number(u.ordersTotalUsd.toFixed(2)),
+        paymentsTotalUsd: Number(u.paymentsTotalUsd.toFixed(2)),
+      }));
+
+      return {
+        reportType: 'USER_ACTIVITY',
+        generatedAt: now,
+        totalRecords: userRows.length,
+        summary: {
+          totalUsers: userRows.length,
+          totalRequestsCreated: userRows.reduce((a, b) => a + b.requestsCreated, 0),
+          totalDispatchesExecuted: userRows.reduce((a, b) => a + b.dispatchesExecuted, 0),
+          totalOrdersCreated: userRows.reduce((a, b) => a + b.ordersCreated, 0),
+          totalPreordersCreated: userRows.reduce((a, b) => a + b.preordersCreated, 0),
+          totalAdjustmentsAndWastes: userRows.reduce(
+            (a, b) => a + b.adjustmentsExecuted + b.wastesExecuted,
+            0
+          ),
+          totalPaymentsRegistered: userRows.reduce((a, b) => a + b.paymentsRegistered, 0),
+          totalActions: userRows.reduce((a, b) => a + b.totalActions, 0),
+        },
+        rows: userRows,
+        userActionLogs: actionLogs.slice(0, 500),
+      };
+    }
+
+    // 5. REPORTE DE PREÓRDENES DE COMPRA
+    if (reportType === 'PREORDERS') {
+      const preWhere: any = {};
+      if (filters.departmentId) preWhere.departmentId = filters.departmentId;
+      if (filters.userId) preWhere.createdById = filters.userId;
+      if (filters.status) preWhere.status = filters.status;
+      if (filters.startDate || filters.endDate) {
+        preWhere.createdAt = {};
+        if (filters.startDate) preWhere.createdAt.gte = new Date(filters.startDate);
+        if (filters.endDate) {
+          const end = new Date(filters.endDate);
+          end.setHours(23, 59, 59, 999);
+          preWhere.createdAt.lte = end;
+        }
+      }
+      if (filters.productId) {
+        preWhere.items = { some: { productId: BigInt(filters.productId) } };
+      }
+      if (filters.search) {
+        preWhere.OR = [
+          { requisitionNumber: { contains: filters.search, mode: 'insensitive' } },
+          { justification: { contains: filters.search, mode: 'insensitive' } },
+          { department: { name: { contains: filters.search, mode: 'insensitive' } } },
+        ];
+      }
+
+      const preorders = await prisma.purchaseRequisition.findMany({
+        where: preWhere,
+        include: {
+          department: true,
+          createdBy: { select: { id: true, fullName: true, username: true, department: true } },
+          orders: { select: { id: true, orderNumber: true, status: true } },
+          items: {
+            include: {
+              product: { include: { category: true } },
+              unit: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      });
+
+      let draftCount = 0;
+      let quotingCount = 0;
+      let awardedCount = 0;
+      let cancelledCount = 0;
+      let totalEstimatedUsd = 0;
+
+      const rows = preorders.map((pr) => {
+        if (pr.status === 'BORRADOR') draftCount += 1;
+        else if (pr.status === 'EN_COTIZACION') quotingCount += 1;
+        else if (pr.status === 'ADJUDICADA') awardedCount += 1;
+        else if (pr.status === 'CANCELADA') cancelledCount += 1;
+
+        let prEstUsd = 0;
+        const itemsList = pr.items.map((it) => {
+          const qty = Number(it.quantityRequested);
+          const price = Number(it.estimatedPrice || 0);
+          const lineEst = qty * price;
+          prEstUsd += lineEst;
+          return {
+            productId: Number(it.productId),
+            productName: it.product.name,
+            sku: it.product.sku,
+            unit: it.unit.abbreviation,
+            quantityRequested: qty,
+            estimatedPrice: price,
+            estimatedLineUsd: Number(lineEst.toFixed(2)),
+          };
+        });
+        totalEstimatedUsd += prEstUsd;
+
+        return {
+          id: Number(pr.id),
+          requisitionNumber: pr.requisitionNumber,
+          createdAt: pr.createdAt,
+          departmentName: pr.department.name,
+          createdBy: pr.createdBy.fullName || pr.createdBy.username,
+          status: pr.status,
+          justification: pr.justification,
+          itemsCount: itemsList.length,
+          estimatedTotalUsd: Number(prEstUsd.toFixed(2)),
+          linkedOrders: pr.orders.map((o) => `#${o.orderNumber}`).join(', ') || 'Sin orden',
+          items: itemsList,
+        };
+      });
+
+      return {
+        reportType: 'PREORDERS',
+        generatedAt: now,
+        totalRecords: rows.length,
+        summary: {
+          totalPreorders: rows.length,
+          draftCount,
+          quotingCount,
+          awardedCount,
+          cancelledCount,
+          totalEstimatedUsd: Number(totalEstimatedUsd.toFixed(2)),
         },
         rows,
       };

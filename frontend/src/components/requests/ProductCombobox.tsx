@@ -17,6 +17,7 @@ interface ProductComboboxProps {
   onSelect: (productId: number) => void;
   placeholder?: string;
   disabled?: boolean;
+  showStock?: boolean;
 }
 
 export function ProductCombobox({
@@ -26,6 +27,7 @@ export function ProductCombobox({
   onSelect,
   placeholder = "Buscar insumo por nombre o SKU...",
   disabled = false,
+  showStock = true,
 }: ProductComboboxProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -146,16 +148,18 @@ export function ProductCombobox({
                     {selectedProduct.category.name}
                   </span>
                 )}
-                <span
-                  className={cn(
-                    "shrink-0 font-mono text-[10px] px-1.5 py-0.5 rounded font-medium",
-                    selectedStock > 0
-                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                      : "bg-destructive/10 text-destructive"
-                  )}
-                >
-                  Stock: {selectedStock} {selectedUnit}
-                </span>
+                {showStock && (
+                  <span
+                    className={cn(
+                      "shrink-0 font-mono text-[10px] px-1.5 py-0.5 rounded font-medium",
+                      selectedStock > 0
+                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                        : "bg-destructive/10 text-destructive"
+                    )}
+                  >
+                    Stock: {selectedStock} {selectedUnit}
+                  </span>
+                )}
               </div>
             ) : (
               <span className="text-muted-foreground">{placeholder}</span>
@@ -288,16 +292,18 @@ export function ProductCombobox({
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
-                    <span
-                      className={cn(
-                        "font-mono text-[11px] px-2 py-0.5 rounded-full font-semibold",
-                        hasStock
-                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-                          : "bg-destructive/10 text-destructive border border-destructive/20"
-                      )}
-                    >
-                      {hasStock ? `${stock} ${unit}` : "Sin stock"}
-                    </span>
+                    {showStock && (
+                      <span
+                        className={cn(
+                          "font-mono text-[11px] px-2 py-0.5 rounded-full font-semibold",
+                          hasStock
+                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                            : "bg-destructive/10 text-destructive border border-destructive/20"
+                        )}
+                      >
+                        {hasStock ? `${stock} ${unit}` : "Sin stock"}
+                      </span>
+                    )}
 
                     {isSelected && (
                       <Check className="w-4 h-4 text-primary shrink-0" />

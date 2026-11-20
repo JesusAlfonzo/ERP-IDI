@@ -31,6 +31,12 @@ export const QualityClientService = {
       id: Number(b.id),
       currentQuantity: Number(b.currentQuantity),
       costPrice: Number(b.costPrice ?? 0),
+      purchaseOrder: b.purchaseOrder
+        ? {
+            id: Number(b.purchaseOrder.id),
+            orderNumber: b.purchaseOrder.orderNumber,
+          }
+        : null,
       product: {
         ...b.product,
         id: Number(b.product.id),

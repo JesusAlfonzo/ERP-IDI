@@ -708,17 +708,17 @@ export default function PurchaseOrdersPage() {
               )}
             </TableBody>
           </Table>
-          <TablePagination
-            currentPage={pagination.currentPage}
-            totalPages={pagination.totalPages}
-            pageSize={pagination.pageSize}
-            totalItems={pagination.totalItems}
-            onPageChange={pagination.onPageChange}
-            onPageSizeChange={pagination.onPageSizeChange}
-            pageSizeOptions={[10, 25, 50, 100]}
-            entityName="órdenes de compra"
-          />
         </div>
+        <TablePagination
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          pageSize={pagination.pageSize}
+          totalItems={pagination.totalItems}
+          onPageChange={pagination.onPageChange}
+          onPageSizeChange={pagination.onPageSizeChange}
+          pageSizeOptions={[10, 25, 50, 100]}
+          entityName="órdenes de compra"
+        />
       </Card>
 
       {/* Modal: Nueva Orden con Soporte Fiscal SENIAT */}

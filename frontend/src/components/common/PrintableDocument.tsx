@@ -246,7 +246,7 @@ export interface DocumentFooterProps {
 export function DocumentFooter({
   notes,
   institutionText = "INMUNOLOGIA ASOCIACION CIVIL · RIF: J-30710739-1",
-  systemSignature = "ERP-IDI v2.0 · Sistema de Gestión Hospitalaria e Inmunológica",
+  systemSignature = "ERP-IDI v2.0 · Sistema de Planeación de Recursos Empresariales",
   className = "",
 }: DocumentFooterProps) {
   return (

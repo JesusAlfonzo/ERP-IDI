@@ -180,12 +180,15 @@ export const createAdjustment = async (
 
     const userRoles = req.user?.roles ?? [];
     const isAuthorized =
-      userRoles.includes('ADMINISTRADOR') || userRoles.includes('ALMACENISTA');
+      userRoles.includes('ADMINISTRADOR') ||
+      userRoles.includes('ALMACENISTA') ||
+      userRoles.includes('COORDINADOR') ||
+      userRoles.includes('COORDINADOR_LABORATORIO');
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
         message:
-          'Acceso denegado: Se requieren privilegios de Almacén o Administración.',
+          'Acceso denegado: Se requieren privilegios de Almacén, Coordinación o Administración.',
       });
       return;
     }
@@ -224,12 +227,15 @@ export const registerDirectWaste = async (
 
     const userRoles = req.user?.roles ?? [];
     const isAuthorized =
-      userRoles.includes('ADMINISTRADOR') || userRoles.includes('ALMACENISTA');
+      userRoles.includes('ADMINISTRADOR') ||
+      userRoles.includes('ALMACENISTA') ||
+      userRoles.includes('COORDINADOR') ||
+      userRoles.includes('COORDINADOR_LABORATORIO');
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
         message:
-          'Acceso denegado: Se requieren privilegios de Almacén o Administración.',
+          'Acceso denegado: Se requieren privilegios de Almacén, Coordinación o Administración.',
       });
       return;
     }
@@ -267,12 +273,15 @@ export const updateBatchStatus = async (
 
     const userRoles = req.user?.roles ?? [];
     const isAuthorized =
-      userRoles.includes('ADMINISTRADOR') || userRoles.includes('ALMACENISTA');
+      userRoles.includes('ADMINISTRADOR') ||
+      userRoles.includes('ALMACENISTA') ||
+      userRoles.includes('COORDINADOR') ||
+      userRoles.includes('COORDINADOR_LABORATORIO');
     if (!isAuthorized) {
       res.status(403).json({
         status: 'FORBIDDEN',
         message:
-          'Acceso denegado: Se requieren privilegios de Almacén o Administración.',
+          'Acceso denegado: Se requieren privilegios de Almacén, Coordinación o Administración.',
       });
       return;
     }

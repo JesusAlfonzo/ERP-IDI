@@ -113,7 +113,7 @@ const BREADCRUMB_GROUPS: BreadcrumbGroup[] = [
     roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS"],
     subModules: [
       {
-        label: "Insumos y Lotes",
+        label: "Inventario",
         href: "/inventory/products",
         icon: Package,
         roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS"],

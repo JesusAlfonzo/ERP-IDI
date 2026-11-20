@@ -490,17 +490,17 @@ export default function SuppliersPage() {
               )}
             </TableBody>
           </Table>
-          <TablePagination
-            currentPage={pagination.currentPage}
-            totalPages={pagination.totalPages}
-            pageSize={pagination.pageSize}
-            totalItems={pagination.totalItems}
-            onPageChange={pagination.onPageChange}
-            onPageSizeChange={pagination.onPageSizeChange}
-            pageSizeOptions={[10, 25, 50, 100]}
-            entityName="proveedores"
-          />
         </div>
+        <TablePagination
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          pageSize={pagination.pageSize}
+          totalItems={pagination.totalItems}
+          onPageChange={pagination.onPageChange}
+          onPageSizeChange={pagination.onPageSizeChange}
+          pageSizeOptions={[10, 25, 50, 100]}
+          entityName="proveedores"
+        />
       </Card>
 
       {/* Modal: Registrar Proveedor */}

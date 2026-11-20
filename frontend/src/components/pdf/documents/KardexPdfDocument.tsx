@@ -128,7 +128,7 @@ export function KardexPdfDocument({ movement }: KardexPdfDocumentProps) {
   const docNumber = movement.referenceNumber || `#MOV-${movement.id}`;
 
   const originName = movement.originLocation?.name || (movement.order ? `Proveedor (${movement.order.supplier?.name || "Externo"})` : "Almacén Central");
-  const destinationName = movement.destinationLocation?.name || "Almacén Central / Área Hospitalaria";
+  const destinationName = movement.destinationLocation?.name || "Almacén Central / Instituto IDI";
 
   const totalQuantity = items.reduce(
     (acc, it) => acc + Number(it.quantity || 0),

@@ -4,36 +4,38 @@ import {
   useState,
   useEffect,
   useCallback,
-  useTransition,
-  type FormEvent,
+  useMemo,
+  Suspense,
 } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
-import { useDebounce } from "@/hooks/use-debounce";
 import { usePagination } from "@/hooks/use-pagination";
 import { TablePagination } from "@/components/common/TablePagination";
 import type { Product, Category, Brand, Unit, StockBatch } from "@/types/inventory";
+import { cn } from "@/lib/utils";
+
 import {
   Package,
   Plus,
   Search,
   RefreshCw,
   FlaskConical,
-  Barcode,
   Layers,
   X,
   CheckCircle2,
   AlertCircle,
-  Loader2,
+  AlertTriangle,
+  AlertOctagon,
   Boxes,
   Calendar,
   MapPin,
   ExternalLink,
+  SlidersHorizontal,
 } from "lucide-react";
 
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Card, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableHeader,
@@ -45,68 +47,25 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+
+type ActiveTab = "todos" | "disponibles" | "bajo_stock" | "agotados" | "reactivos";
 
 export default function ProductsPage() {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [brands, setBrands] = useState<Brand[]>([]);
-  const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filtros
+  const [activeTab, setActiveTab] = useState<ActiveTab>("todos");
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 350);
   const [categoryFilter, setCategoryFilter] = useState("");
-  const [reagentFilter, setReagentFilter] = useState<
-    "ALL" | "REAGENT" | "NON_REAGENT"
-  >("ALL");
 
-  // Paginación
-  const pagination = usePagination(products, { initialPageSize: 10 });
-  const { resetPage } = pagination;
-
-  useEffect(() => {
-    resetPage();
-  }, [debouncedSearch, categoryFilter, reagentFilter, resetPage]);
-
-  // Nivel 2: Ficha Detallada / Lotes (Drawer / Modal)
+  // Slide-Over Drawer (Nivel 2: Ficha Técnica y Lotes)
   const [selectedProductForDetail, setSelectedProductForDetail] =
     useState<Product | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-
-  // Modal de Creación
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [brandId, setBrandId] = useState("");
-  const [baseUnitId, setBaseUnitId] = useState("");
-  const [purchaseUnitId, setPurchaseUnitId] = useState("");
-  const [conversionFactor, setConversionFactor] = useState<number | "">(1);
-  const [barcode, setBarcode] = useState("");
-  const [description, setDescription] = useState("");
-  const [minStockAlert, setMinStockAlert] = useState<number | "">(5);
-  const [isReagent, setIsReagent] = useState(false);
-  const [isTaxExempt] = useState(true);
-
-  const [submitting, setSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState<{
-    status: "success" | "error";
-    message: string;
-  } | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -117,27 +76,17 @@ export default function ProductsPage() {
           brands: [],
           units: [],
         })),
-        InventoryClientService.getCatalog({
-          search: debouncedSearch || undefined,
-          categoryId: categoryFilter ? Number(categoryFilter) : undefined,
-          isReagent:
-            reagentFilter === "ALL" ? undefined : reagentFilter === "REAGENT",
-        }).catch(() => []),
+        InventoryClientService.getCatalog().catch(() => []),
       ]);
 
-      startTransition(() => {
-        setCategories(catalogsData.categories);
-        setBrands(catalogsData.brands);
-        setUnits(catalogsData.units);
-        setProducts(productsData);
-        setLoading(false);
-      });
+      setCategories(catalogsData.categories || []);
+      setProducts(productsData || []);
     } catch {
-      startTransition(() => {
-        setLoading(false);
-      });
+      // Manejado globalmente
+    } finally {
+      setLoading(false);
     }
-  }, [debouncedSearch, categoryFilter, reagentFilter]);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -154,95 +103,108 @@ export default function ProductsPage() {
     };
   }, [router, loadData]);
 
-  const handleCreateProduct = async (e: FormEvent) => {
-    e.preventDefault();
-    setFeedback(null);
+  // Métricas rápidas para KPIs y Tabs
+  const totalProducts = products.length;
+  const availableCount = useMemo(
+    () =>
+      products.filter(
+        (p) => Number(p.totalStock ?? 0) > Number(p.minStockAlert ?? 0)
+      ).length,
+    [products]
+  );
+  const lowStockCount = useMemo(
+    () =>
+      products.filter(
+        (p) =>
+          Number(p.totalStock ?? 0) > 0 &&
+          Number(p.totalStock ?? 0) <= Number(p.minStockAlert ?? 0)
+      ).length,
+    [products]
+  );
+  const depletedCount = useMemo(
+    () => products.filter((p) => Number(p.totalStock ?? 0) <= 0).length,
+    [products]
+  );
+  const reagentsCount = useMemo(
+    () => products.filter((p) => Boolean(p.isReagent)).length,
+    [products]
+  );
 
-    if (!name.trim() || !categoryId || !baseUnitId) {
-      setFeedback({
-        status: "error",
-        message: "Nombre, categoría y unidad base son obligatorios.",
-      });
-      return;
-    }
+  // Filtrado reactivo en memoria (0ms lag)
+  const filteredProducts = useMemo(() => {
+    return products.filter((p) => {
+      const total = Number(p.totalStock ?? 0);
+      const minAlert = Number(p.minStockAlert ?? 0);
 
-    if (purchaseUnitId && String(purchaseUnitId) === String(baseUnitId)) {
-      setFeedback({
-        status: "error",
-        message: "La unidad de empaque de compra debe ser diferente a la unidad base de consumo (o seleccionar '-- Misma que la base --').",
-      });
-      return;
-    }
+      // Pestaña
+      if (activeTab === "disponibles" && !(total > minAlert)) return false;
+      if (activeTab === "bajo_stock" && !(total > 0 && total <= minAlert))
+        return false;
+      if (activeTab === "agotados" && !(total <= 0)) return false;
+      if (activeTab === "reactivos" && !p.isReagent) return false;
 
-    setSubmitting(true);
-    try {
-      await InventoryClientService.createProduct({
-        name: name.trim(),
-        categoryId: Number(categoryId),
-        baseUnitId: Number(baseUnitId),
-        brandId: brandId ? Number(brandId) : null,
-        purchaseUnitId: purchaseUnitId ? Number(purchaseUnitId) : null,
-        conversionFactor: conversionFactor ? Number(conversionFactor) : 1,
-        barcode: barcode.trim() || null,
-        description: description.trim() || null,
-        minStockAlert: minStockAlert ? Number(minStockAlert) : 0,
-        isReagent,
-        isTaxExempt,
-      });
+      // Categoría
+      if (
+        categoryFilter &&
+        String(p.categoryId || p.category?.id) !== categoryFilter
+      ) {
+        return false;
+      }
 
-      setFeedback({
-        status: "success",
-        message: "Insumo registrado correctamente en el catálogo.",
-      });
-      await loadData();
+      // Buscador
+      if (search.trim()) {
+        const q = search.toLowerCase().trim();
+        const nameMatch = (p.name || "").toLowerCase().includes(q);
+        const skuMatch = (p.sku || "").toLowerCase().includes(q);
+        const barMatch = (p.barcode || "").toLowerCase().includes(q);
+        const descMatch = (p.description || "").toLowerCase().includes(q);
+        if (!nameMatch && !skuMatch && !barMatch && !descMatch) return false;
+      }
 
-      setTimeout(() => {
-        setIsModalOpen(false);
-        setName("");
-        setCategoryId("");
-        setBrandId("");
-        setBaseUnitId("");
-        setPurchaseUnitId("");
-        setConversionFactor(1);
-        setBarcode("");
-        setDescription("");
-        setMinStockAlert(5);
-        setIsReagent(false);
-        setFeedback(null);
-      }, 1000);
-    } catch (err: unknown) {
-      setFeedback({
-        status: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "Error al registrar el producto.",
-      });
-    } finally {
-      setSubmitting(false);
-    }
+      return true;
+    });
+  }, [products, activeTab, categoryFilter, search]);
+
+  const pagination = usePagination(filteredProducts, { initialPageSize: 10 });
+
+  const hasActiveFilters = Boolean(search.trim() || categoryFilter);
+
+  const handleClearFilters = () => {
+    setSearch("");
+    setCategoryFilter("");
   };
 
-  const getStockBadge = (totalStock: number = 0, minStockAlert: number = 0) => {
+  const getStockBadge = (
+    totalStock: number = 0,
+    minStockAlert: number = 0
+  ) => {
     if (totalStock <= 0) {
       return {
         label: "Agotado",
         variant: "destructive" as const,
+        className:
+          "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20",
       };
     }
     if (totalStock <= minStockAlert) {
       return {
         label: "Bajo Stock",
         variant: "warning" as const,
+        className:
+          "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
       };
     }
     return {
       label: "Disponible",
       variant: "success" as const,
+      className:
+        "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20",
     };
   };
 
-  const getBatchStatusVariant = (status: string): "success" | "warning" | "destructive" | "secondary" | "default" => {
+  const getBatchStatusVariant = (
+    status: string
+  ): "success" | "warning" | "destructive" | "secondary" | "default" => {
     switch (status) {
       case "DISPONIBLE":
         return "success";
@@ -261,7 +223,7 @@ export default function ProductsPage() {
   };
 
   const formatExpirationDate = (dateStr: string | null) => {
-    if (!dateStr) return "Sin caducidad asignada";
+    if (!dateStr) return "Sin expiración";
     try {
       const d = new Date(dateStr);
       return d.toLocaleDateString("es-VE", {
@@ -275,284 +237,459 @@ export default function ProductsPage() {
   };
 
   const handleOpenDetail = (product: Product) => {
-    startTransition(() => {
-      setSelectedProductForDetail(product);
-      setIsDetailOpen(true);
-    });
+    setSelectedProductForDetail(product);
+    setIsDetailOpen(true);
   };
-
-  // Métricas para badges superiores del Catálogo
-  const totalProducts = products.length;
-  const availableCount = products.filter(
-    (p) => Number(p.totalStock ?? 0) > Number(p.minStockAlert ?? 0)
-  ).length;
-  const lowStockCount = products.filter(
-    (p) =>
-      Number(p.totalStock ?? 0) > 0 &&
-      Number(p.totalStock ?? 0) <= Number(p.minStockAlert ?? 0)
-  ).length;
-  const depletedCount = products.filter(
-    (p) => Number(p.totalStock ?? 0) <= 0
-  ).length;
-  const reagentsCount = products.filter((p) => Boolean(p.isReagent)).length;
 
   return (
     <div className="space-y-6">
-      {/* Encabezado Principal */}
+      {/* ========================================================
+          ENCABEZADO ESTANDARIZADO
+         ======================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
         <div>
-          <div className="flex items-center gap-2 flex-wrap mb-1.5">
-            <Badge variant="indigo" className="text-xs">
-              Catálogo ({totalProducts})
-            </Badge>
-            <Badge variant="success" className="text-xs gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              {availableCount} Disponibles
-            </Badge>
-            {lowStockCount > 0 && (
-              <Badge variant="warning" className="text-xs">
-                {lowStockCount} Bajo Stock
-              </Badge>
-            )}
-            {depletedCount > 0 && (
-              <Badge variant="rose" className="text-xs">
-                {depletedCount} Agotados
-              </Badge>
-            )}
-            {reagentsCount > 0 && (
-              <Badge variant="purple" className="text-xs gap-1">
-                <FlaskConical className="w-3 h-3" />
-                {reagentsCount} Reactivos
-              </Badge>
-            )}
-          </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <Package className="w-6 h-6 text-primary" />
-            Catálogo Institucional de Insumos y Reactivos
+            Inventario
           </h1>
           <p className="text-xs text-muted-foreground">
-            Registro maestro de productos agrupados, stock físico total disponible y trazabilidad de lotes
+            Control de existencias físicas, reactivos clínicos y trazabilidad de lotes
           </p>
         </div>
 
-        <Button asChild className="gap-2 self-start sm:self-auto cursor-pointer">
-          <Link href="/inventory/products/new">
-            <Plus className="w-4 h-4" />
-            Registrar Insumo
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-auto">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={loadData}
+            disabled={loading}
+            className="h-9 gap-1.5 text-xs cursor-pointer shadow-2xs"
+            title="Actualizar listado de productos"
+          >
+            <RefreshCw
+              className={cn("w-3.5 h-3.5", loading && "animate-spin")}
+            />
+            <span>Actualizar</span>
+          </Button>
+
+          <Button
+            asChild
+            className="h-9 gap-1.5 text-xs font-bold shadow-2xs cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <Link href="/inventory/products/new">
+              <Plus className="w-4 h-4" />
+              <span>Registrar Insumo</span>
+            </Link>
+          </Button>
+        </div>
       </div>
 
-      {/* Barra de Filtros */}
-      <Card className="p-4 shadow-2xs">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2 flex-1">
-            <div className="relative w-full sm:w-72">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por SKU, nombre o descripción..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 pr-8 text-xs"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch("")}
-                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground cursor-pointer"
-                  title="Borrar búsqueda"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+      {/* ========================================================
+          4 TARJETAS KPI ESTANDARIZADAS
+         ======================================================== */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* KPI 1: Total Insumos */}
+        <Card className="p-4 border-border shadow-2xs hover:border-primary/40 transition-all flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              Total Insumos
+            </span>
+            <div className="text-2xl font-bold font-mono text-foreground">
+              {totalProducts}
             </div>
+            <span className="text-[11px] text-muted-foreground block">
+              Ítems catalogados en sistema
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 flex items-center justify-center shrink-0">
+            <Package className="w-5 h-5" />
+          </div>
+        </Card>
 
+        {/* KPI 2: Stock Disponible */}
+        <Card className="p-4 border-border shadow-2xs hover:border-emerald-500/40 transition-all flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              Stock Disponible
+            </span>
+            <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
+              {availableCount}
+            </div>
+            <span className="text-[11px] text-muted-foreground block">
+              Existencias sobre el mínimo
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+        </Card>
+
+        {/* KPI 3: Bajo Stock */}
+        <Card className="p-4 border-border shadow-2xs hover:border-amber-500/40 transition-all flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              Bajo Stock
+            </span>
+            <div className="text-2xl font-bold font-mono text-amber-600 dark:text-amber-400">
+              {lowStockCount}
+            </div>
+            <span className="text-[11px] text-muted-foreground block">
+              En punto de reposición
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-5 h-5" />
+          </div>
+        </Card>
+
+        {/* KPI 4: Agotados */}
+        <Card className="p-4 border-border shadow-2xs hover:border-rose-500/40 transition-all flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              Agotados
+            </span>
+            <div className="text-2xl font-bold font-mono text-rose-600 dark:text-rose-400">
+              {depletedCount}
+            </div>
+            <span className="text-[11px] text-muted-foreground block">
+              Sin existencias físicas (0)
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+            <AlertOctagon className="w-5 h-5" />
+          </div>
+        </Card>
+      </div>
+
+      {/* ========================================================
+          PESTAÑAS, BUSCADOR Y FILTROS
+         ======================================================== */}
+      <Card className="p-4 border-border shadow-2xs space-y-3.5">
+        {/* Pestañas de estado */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-border text-xs">
+          <button
+            type="button"
+            onClick={() => setActiveTab("todos")}
+            className={cn(
+              "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
+              activeTab === "todos"
+                ? "bg-primary text-primary-foreground shadow-2xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <span>Todos</span>
+            <Badge
+              variant={activeTab === "todos" ? "secondary" : "outline"}
+              className="text-[10px] px-1.5 py-0 font-mono"
+            >
+              {totalProducts}
+            </Badge>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("disponibles")}
+            className={cn(
+              "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
+              activeTab === "disponibles"
+                ? "bg-emerald-600 text-white shadow-2xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <span>Disponibles</span>
+            <Badge
+              variant={activeTab === "disponibles" ? "secondary" : "outline"}
+              className="text-[10px] px-1.5 py-0 font-mono"
+            >
+              {availableCount}
+            </Badge>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("bajo_stock")}
+            className={cn(
+              "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
+              activeTab === "bajo_stock"
+                ? "bg-amber-600 text-white shadow-2xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <span>Bajo Stock</span>
+            <Badge
+              variant={activeTab === "bajo_stock" ? "secondary" : "outline"}
+              className="text-[10px] px-1.5 py-0 font-mono"
+            >
+              {lowStockCount}
+            </Badge>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("agotados")}
+            className={cn(
+              "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
+              activeTab === "agotados"
+                ? "bg-rose-600 text-white shadow-2xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <span>Agotados</span>
+            <Badge
+              variant={activeTab === "agotados" ? "secondary" : "outline"}
+              className="text-[10px] px-1.5 py-0 font-mono"
+            >
+              {depletedCount}
+            </Badge>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("reactivos")}
+            className={cn(
+              "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
+              activeTab === "reactivos"
+                ? "bg-purple-600 text-white shadow-2xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <FlaskConical className="w-3.5 h-3.5" />
+            <span>Reactivos</span>
+            <Badge
+              variant={activeTab === "reactivos" ? "secondary" : "outline"}
+              className="text-[10px] px-1.5 py-0 font-mono"
+            >
+              {reagentsCount}
+            </Badge>
+          </button>
+        </div>
+
+        {/* Barra de Búsqueda y Filtros */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por SKU, nombre, descripción o código de barras..."
+              className="pl-9 h-9 text-xs bg-background"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
+              className="h-9 bg-background border border-input rounded-md px-2.5 text-xs font-semibold text-foreground focus:ring-2 focus:ring-ring cursor-pointer"
             >
               <option value="">Todas las categorías</option>
               {categories.map((c) => (
-                <option key={c.id} value={c.id}>
+                <option key={c.id} value={String(c.id)}>
                   {c.name}
                 </option>
               ))}
             </select>
 
-            <select
-              value={reagentFilter}
-              onChange={(e) =>
-                setReagentFilter(
-                  e.target.value as "ALL" | "REAGENT" | "NON_REAGENT",
-                )
-              }
-              className="h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
-            >
-              <option value="ALL">Todos los tipos</option>
-              <option value="REAGENT">Solo Reactivos</option>
-              <option value="NON_REAGENT">Insumos Generales</option>
-            </select>
-
-            {(search || categoryFilter || reagentFilter !== "ALL") && (
+            {hasActiveFilters && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  setSearch("");
-                  setCategoryFilter("");
-                  setReagentFilter("ALL");
-                }}
-                className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-9"
-                title="Restablecer todos los filtros"
+                onClick={handleClearFilters}
+                className="h-9 text-xs text-muted-foreground hover:text-foreground gap-1.5 cursor-pointer shrink-0"
               >
                 <X className="w-3.5 h-3.5" />
                 <span>Limpiar filtros</span>
               </Button>
             )}
           </div>
-
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => loadData()}
-            disabled={loading || isPending}
-            title="Actualizar catálogo"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${loading || isPending ? "animate-spin" : ""}`}
-            />
-          </Button>
         </div>
       </Card>
 
-      {/* NIVEL 1: Tabla Principal (Una fila por producto único) */}
-      <Card className="overflow-hidden shadow-2xs">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/30">
-              <TableHead className="py-3 px-4 font-semibold">SKU</TableHead>
-              <TableHead className="py-3 px-4 font-semibold">Nombre / Descripción</TableHead>
-              <TableHead className="py-3 px-4 font-semibold">Categoría</TableHead>
-              <TableHead className="py-3 px-4 text-center font-semibold">Unidad Base</TableHead>
-              <TableHead className="py-3 px-4 text-right font-semibold">Stock Físico Total</TableHead>
-              <TableHead className="py-3 px-4 text-center font-semibold">Estado</TableHead>
-              <TableHead className="py-3 px-4 text-center font-semibold">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
+      {/* ========================================================
+          TABLA PRINCIPAL DE INVENTARIO
+         ======================================================== */}
+      <Card className="border-border shadow-2xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader className="bg-muted/40 text-[11px] uppercase tracking-wider">
               <TableRow>
-                <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
-                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
-                  Cargando catálogo maestro de insumos...
-                </TableCell>
+                <TableHead className="w-32 py-3 px-4 font-semibold">SKU</TableHead>
+                <TableHead className="min-w-[260px] py-3 px-4 font-semibold">
+                  Insumo / Reactivo
+                </TableHead>
+                <TableHead className="w-40 py-3 px-4 font-semibold">
+                  Categoría
+                </TableHead>
+                <TableHead className="w-24 py-3 px-4 text-center font-semibold">
+                  Unidad
+                </TableHead>
+                <TableHead className="w-36 py-3 px-4 text-right font-semibold">
+                  Stock Total
+                </TableHead>
+                <TableHead className="w-24 py-3 px-4 text-center font-semibold">
+                  Lotes
+                </TableHead>
+                <TableHead className="w-32 py-3 px-4 text-center font-semibold">
+                  Estado
+                </TableHead>
+                <TableHead className="w-32 py-3 px-4 text-right font-semibold">
+                  Acciones
+                </TableHead>
               </TableRow>
-            ) : products.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
-                  No se encontraron insumos registrados en el catálogo.
-                </TableCell>
-              </TableRow>
-            ) : (
-              pagination.paginatedItems.map((p, index) => {
-                const totalStock = Number(p.totalStock ?? 0);
-                const minAlert = Number(p.minStockAlert ?? 0);
-                const badge = getStockBadge(totalStock, minAlert);
-                const unitAbbr = p.baseUnit?.abbreviation || p.baseUnit?.name || "UND";
-                const batchesCount = p.batches?.length ?? 0;
-
-                return (
-                  <TableRow
-                    key={`${p.id}-${index}`}
-                    className="hover:bg-muted/40 transition-colors"
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={8}
+                    className="py-12 text-center text-muted-foreground text-xs"
                   >
-                    {/* SKU */}
-                    <TableCell className="py-3 px-4 font-mono font-bold text-foreground whitespace-nowrap">
-                      {p.sku || `#${p.id}`}
-                    </TableCell>
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
+                    Cargando existencias del inventario...
+                  </TableCell>
+                </TableRow>
+              ) : filteredProducts.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={8}
+                    className="py-12 text-center text-muted-foreground text-xs"
+                  >
+                    <Package className="w-8 h-8 text-muted-foreground/60 mx-auto mb-2" />
+                    {hasActiveFilters
+                      ? "No se encontraron insumos que coincidan con los filtros aplicados."
+                      : "No hay insumos registrados en esta categoría."}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                pagination.paginatedItems.map((p, index) => {
+                  const totalStock = Number(p.totalStock ?? 0);
+                  const minAlert = Number(p.minStockAlert ?? 0);
+                  const badge = getStockBadge(totalStock, minAlert);
+                  const unitAbbr =
+                    p.baseUnit?.abbreviation || p.baseUnit?.name || "UND";
+                  const batchesCount = p.batches?.length ?? 0;
 
-                    {/* Nombre y Detalles */}
-                    <TableCell className="py-3 px-4 max-w-xs sm:max-w-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-foreground">
-                          {p.name}
-                        </span>
-                        {p.isReagent && (
-                          <Badge variant="purple" className="gap-1 shrink-0">
-                            <FlaskConical className="w-2.5 h-2.5" />
-                            Reactivo
-                          </Badge>
-                        )}
-                      </div>
-                      {p.description && (
-                        <div className="text-[11px] text-muted-foreground truncate mt-0.5">
-                          {p.description}
+                  return (
+                    <TableRow
+                      key={`${p.id}-${index}`}
+                      className="hover:bg-muted/40 transition-colors"
+                    >
+                      {/* SKU */}
+                      <TableCell className="py-3 px-4 font-mono font-bold text-xs text-foreground whitespace-nowrap">
+                        {p.sku || `#${p.id}`}
+                      </TableCell>
+
+                      {/* Insumo */}
+                      <TableCell className="py-3 px-4 max-w-xs sm:max-w-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-xs text-foreground">
+                            {p.name}
+                          </span>
+                          {p.isReagent && (
+                            <Badge
+                              variant="purple"
+                              className="text-[10px] gap-1 shrink-0 py-0 px-1.5"
+                            >
+                              <FlaskConical className="w-2.5 h-2.5" />
+                              Reactivo
+                            </Badge>
+                          )}
                         </div>
-                      )}
-                    </TableCell>
+                        {p.description && (
+                          <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+                            {p.description}
+                          </div>
+                        )}
+                      </TableCell>
 
-                    {/* Categoría */}
-                    <TableCell className="py-3 px-4 text-muted-foreground">
-                      <span className="inline-flex items-center gap-1">
-                        <Layers className="w-3 h-3 text-muted-foreground/70 shrink-0" />
-                        {p.category?.name || "Sin categoría"}
-                      </span>
-                    </TableCell>
+                      {/* Categoría */}
+                      <TableCell className="py-3 px-4 text-xs text-muted-foreground">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
+                          <span>{p.category?.name || "Sin categoría"}</span>
+                        </span>
+                      </TableCell>
 
-                    {/* Unidad Base */}
-                    <TableCell className="py-3 px-4 text-center font-semibold text-foreground">
-                      {unitAbbr}
-                    </TableCell>
-
-                    {/* Stock Físico Total */}
-                    <TableCell className="py-3 px-4 text-right font-mono font-bold text-foreground">
-                      {totalStock}{" "}
-                      <span className="text-[10px] font-normal text-muted-foreground font-sans">
+                      {/* Unidad Base */}
+                      <TableCell className="py-3 px-4 text-center font-semibold text-xs text-foreground">
                         {unitAbbr}
-                      </span>
-                    </TableCell>
+                      </TableCell>
 
-                    {/* Badge de Estado: Agotado, Bajo Stock, Disponible */}
-                    <TableCell className="py-3 px-4 text-center">
-                      <Badge variant={badge.variant}>
-                        {badge.label}
-                      </Badge>
-                    </TableCell>
+                      {/* Stock Físico Total */}
+                      <TableCell className="py-3 px-4 text-right font-mono font-bold text-xs text-foreground">
+                        {totalStock}{" "}
+                        <span className="text-[10px] font-normal text-muted-foreground font-sans">
+                          {unitAbbr}
+                        </span>
+                      </TableCell>
 
-                    {/* Acciones */}
-                    <TableCell className="py-3 px-4 text-center whitespace-nowrap">
-                      <div className="inline-flex items-center gap-1.5">
-                        <Button
+                      {/* Lotes */}
+                      <TableCell className="py-3 px-4 text-center">
+                        <Badge
                           variant="outline"
-                          size="sm"
-                          onClick={() => handleOpenDetail(p)}
-                          className="h-7 text-xs font-semibold gap-1.5 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 border-indigo-200/80"
-                          title="Ver Ficha y Lotes del Insumo"
+                          className="font-mono text-[10px] bg-muted/30"
                         >
-                          <Boxes className="w-3.5 h-3.5" />
-                          <span>Ver Ficha ({batchesCount})</span>
-                        </Button>
+                          {batchesCount} {batchesCount === 1 ? "lote" : "lotes"}
+                        </Badge>
+                      </TableCell>
 
-                        <Button
-                          asChild
-                          variant="ghost"
-                          size="icon-sm"
-                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          title="Ir a página técnica del insumo"
+                      {/* Estado */}
+                      <TableCell className="py-3 px-4 text-center">
+                        <Badge
+                          variant="outline"
+                          className={cn("text-[11px] font-semibold py-0.5", badge.className)}
                         >
-                          <Link href={`/inventory/products/${p.id}`}>
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </Link>
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
+                          {badge.label}
+                        </Badge>
+                      </TableCell>
+
+                      {/* Acciones */}
+                      <TableCell className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenDetail(p)}
+                            className="h-7 text-xs font-semibold gap-1.5 bg-indigo-50/80 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:hover:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200/80 dark:border-indigo-800/50 cursor-pointer shadow-2xs"
+                            title="Ver Ficha y Lotes Físicos"
+                          >
+                            <Boxes className="w-3.5 h-3.5" />
+                            <span>Ver Lotes</span>
+                          </Button>
+
+                          <Button
+                            asChild
+                            variant="ghost"
+                            size="icon-sm"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground cursor-pointer"
+                            title="Ir a página técnica del insumo"
+                          >
+                            <Link href={`/inventory/products/${p.id}`}>
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </Link>
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {/* Paginación Estandarizada al Ras */}
         <TablePagination
           currentPage={pagination.currentPage}
           totalPages={pagination.totalPages}
@@ -565,32 +702,38 @@ export default function ProductsPage() {
         />
       </Card>
 
-      {/* NIVEL 2: Ficha Detallada / Lotes (Drawer Slide-over) */}
+      {/* ========================================================
+          NIVEL 2: FICHA DETALLADA / LOTES (DRAWER SLIDE-OVER)
+         ======================================================== */}
       {isDetailOpen && selectedProductForDetail && (
         <div className="fixed inset-0 z-50 overflow-hidden bg-black/60 backdrop-blur-xs flex justify-end">
           <div className="w-full max-w-3xl bg-background border-l border-border h-full shadow-2xl flex flex-col overflow-y-auto animate-in slide-in-from-right duration-200">
             {/* Header del Drawer */}
             <div className="p-5 border-b border-border bg-muted/30 flex items-start justify-between gap-4 sticky top-0 z-10 backdrop-blur-xs">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant="indigo" className="font-mono text-xs font-bold">
-                    {selectedProductForDetail.sku || `#${selectedProductForDetail.id}`}
+                    {selectedProductForDetail.sku ||
+                      `#${selectedProductForDetail.id}`}
                   </Badge>
                   {selectedProductForDetail.isReagent ? (
-                    <Badge variant="purple" className="gap-1">
+                    <Badge variant="purple" className="gap-1 text-xs">
                       <FlaskConical className="w-3 h-3" /> Reactivo Clínico
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="border-border/60 bg-muted/20 text-muted-foreground text-xs">
+                    <Badge
+                      variant="outline"
+                      className="border-border/60 bg-muted/20 text-muted-foreground text-xs"
+                    >
                       Insumo General
                     </Badge>
                   )}
                 </div>
-                <h2 className="text-lg font-bold text-foreground leading-tight">
+                <h2 className="text-lg font-bold text-foreground leading-tight truncate">
                   {selectedProductForDetail.name}
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Ficha maestra del insumo y auditoría de existencias físicas por lote
+                  Ficha de existencias físicas y auditoría de lotes
                 </p>
               </div>
 
@@ -599,9 +742,25 @@ export default function ProductsPage() {
                   asChild
                   variant="outline"
                   size="sm"
+                  className="gap-1.5 text-xs font-semibold shadow-2xs"
+                >
+                  <Link
+                    href={`/inventory/adjustments/new?productId=${selectedProductForDetail.id}`}
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-primary" />
+                    <span>Ajustar Stock</span>
+                  </Link>
+                </Button>
+
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
                   className="gap-1 text-xs"
                 >
-                  <Link href={`/inventory/products/${selectedProductForDetail.id}`}>
+                  <Link
+                    href={`/inventory/products/${selectedProductForDetail.id}`}
+                  >
                     <ExternalLink className="w-3.5 h-3.5" />
                     <span>Página Completa</span>
                   </Link>
@@ -611,6 +770,7 @@ export default function ProductsPage() {
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => setIsDetailOpen(false)}
+                  className="cursor-pointer"
                   title="Cerrar ficha"
                 >
                   <X className="w-5 h-5" />
@@ -619,14 +779,14 @@ export default function ProductsPage() {
             </div>
 
             {/* Contenido del Drawer */}
-            <div className="p-6 space-y-6 flex-1">
+            <div className="p-6 space-y-6 flex-1 text-xs">
               {/* Tarjetas de Métricas Rápidas */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Card className="p-3 shadow-2xs">
-                  <span className="text-[11px] text-muted-foreground font-medium block">
-                    Stock Físico Total
+                <Card className="p-3.5 shadow-2xs border-border space-y-1">
+                  <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider block">
+                    Stock Físico
                   </span>
-                  <span className="text-xl font-bold font-mono text-foreground">
+                  <span className="text-xl font-bold font-mono text-foreground block">
                     {Number(selectedProductForDetail.totalStock ?? 0)}{" "}
                     <span className="text-xs font-sans text-muted-foreground font-normal">
                       {selectedProductForDetail.baseUnit?.abbreviation}
@@ -634,17 +794,24 @@ export default function ProductsPage() {
                   </span>
                 </Card>
 
-                <Card className="p-3 shadow-2xs">
-                  <span className="text-[11px] text-muted-foreground font-medium block">
+                <Card className="p-3.5 shadow-2xs border-border space-y-1">
+                  <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider block">
                     Estado Actual
                   </span>
-                  <div className="mt-1">
+                  <div>
                     {(() => {
-                      const total = Number(selectedProductForDetail.totalStock ?? 0);
-                      const minAlert = Number(selectedProductForDetail.minStockAlert ?? 0);
+                      const total = Number(
+                        selectedProductForDetail.totalStock ?? 0
+                      );
+                      const minAlert = Number(
+                        selectedProductForDetail.minStockAlert ?? 0
+                      );
                       const b = getStockBadge(total, minAlert);
                       return (
-                        <Badge variant={b.variant}>
+                        <Badge
+                          variant="outline"
+                          className={cn("text-xs font-semibold py-0.5", b.className)}
+                        >
                           {b.label}
                         </Badge>
                       );
@@ -652,88 +819,91 @@ export default function ProductsPage() {
                   </div>
                 </Card>
 
-                <Card className="p-3 shadow-2xs">
-                  <span className="text-[11px] text-muted-foreground font-medium block">
-                    Alerta Stock Mínimo
+                <Card className="p-3.5 shadow-2xs border-border space-y-1">
+                  <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider block">
+                    Stock Mínimo
                   </span>
-                  <span className="text-xl font-bold font-mono text-foreground">
-                    {selectedProductForDetail.minStockAlert}{" "}
+                  <span className="text-xl font-bold font-mono text-foreground block">
+                    {selectedProductForDetail.minStockAlert ?? 0}{" "}
                     <span className="text-xs font-sans text-muted-foreground font-normal">
                       {selectedProductForDetail.baseUnit?.abbreviation}
                     </span>
                   </span>
                 </Card>
 
-                <Card className="p-3 shadow-2xs">
-                  <span className="text-[11px] text-muted-foreground font-medium block">
-                    Lotes Físicos
+                <Card className="p-3.5 shadow-2xs border-border space-y-1">
+                  <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider block">
+                    Lotes Activos
                   </span>
-                  <span className="text-xl font-bold font-mono text-primary">
+                  <span className="text-xl font-bold font-mono text-primary block">
                     {selectedProductForDetail.batches?.length ?? 0}
                   </span>
                 </Card>
               </div>
 
               {/* Ficha Maestra: Parámetros Técnicos */}
-              <Card className="p-4 space-y-3 shadow-2xs">
-                <CardTitle className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
+              <Card className="p-4 space-y-3 shadow-2xs border-border">
+                <CardTitle className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-2 border-b border-border pb-2">
                   <Layers className="w-4 h-4 text-primary" />
-                  Parámetros Maestros del Insumo
+                  <span>Especificaciones del Insumo</span>
                 </CardTitle>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">
-                  <div className="flex justify-between py-1 border-b border-border">
+                  <div className="flex justify-between py-1 border-b border-border/50">
                     <span className="text-muted-foreground">Categoría:</span>
                     <span className="font-semibold text-foreground">
-                      {selectedProductForDetail.category?.name || "Sin categoría"}
+                      {selectedProductForDetail.category?.name ||
+                        "Sin categoría"}
                     </span>
                   </div>
 
-                  <div className="flex justify-between py-1 border-b border-border">
-                    <span className="text-muted-foreground">Marca Comercial:</span>
+                  <div className="flex justify-between py-1 border-b border-border/50">
+                    <span className="text-muted-foreground">
+                      Marca Comercial:
+                    </span>
                     <span className="font-semibold text-foreground">
                       {selectedProductForDetail.brand?.name || "Genérico"}
                     </span>
                   </div>
 
-                  <div className="flex justify-between py-1 border-b border-border">
-                    <span className="text-muted-foreground">Unidad de medida (consumo):</span>
+                  <div className="flex justify-between py-1 border-b border-border/50">
+                    <span className="text-muted-foreground">
+                      Unidad de Consumo:
+                    </span>
                     <span className="font-semibold text-foreground">
                       {selectedProductForDetail.baseUnit?.name} (
                       {selectedProductForDetail.baseUnit?.abbreviation})
                     </span>
                   </div>
 
-                  <div className="flex justify-between py-1 border-b border-border">
-                    <span className="text-muted-foreground">Empaque / Unidad de Compra:</span>
+                  <div className="flex justify-between py-1 border-b border-border/50">
+                    <span className="text-muted-foreground">
+                      Empaque de Compra:
+                    </span>
                     <span className="font-semibold text-foreground">
                       {selectedProductForDetail.purchaseUnit &&
-                      (selectedProductForDetail.purchaseUnitId || selectedProductForDetail.purchaseUnit?.id) !== (selectedProductForDetail.baseUnitId || selectedProductForDetail.baseUnit?.id)
+                      (selectedProductForDetail.purchaseUnitId ||
+                        selectedProductForDetail.purchaseUnit?.id) !==
+                        (selectedProductForDetail.baseUnitId ||
+                          selectedProductForDetail.baseUnit?.id)
                         ? `${selectedProductForDetail.purchaseUnit.name} (${selectedProductForDetail.purchaseUnit.abbreviation})`
-                        : "Sin empaque (Misma que consumo)"}
+                        : "Sin empaque secundario (1:1)"}
                     </span>
                   </div>
 
-                  <div className="flex justify-between py-1 border-b border-border">
-                    <span className="text-muted-foreground">Relación de Conversión:</span>
-                    <span className="font-mono font-semibold text-primary">
-                      {selectedProductForDetail.purchaseUnit &&
-                      (selectedProductForDetail.purchaseUnitId || selectedProductForDetail.purchaseUnit?.id) !== (selectedProductForDetail.baseUnitId || selectedProductForDetail.baseUnit?.id) &&
-                      Number(selectedProductForDetail.conversionFactor || 1) > 1
-                        ? `1 ${selectedProductForDetail.purchaseUnit.name} = ${Number(selectedProductForDetail.conversionFactor)} ${selectedProductForDetail.baseUnit?.name || selectedProductForDetail.baseUnit?.abbreviation}`
-                        : `1:1 (Directo por ${selectedProductForDetail.baseUnit?.name || selectedProductForDetail.baseUnit?.abbreviation || "UND"})`}
+                  <div className="flex justify-between py-1 border-b border-border/50">
+                    <span className="text-muted-foreground">
+                      Código de Barras / Ref:
                     </span>
-                  </div>
-
-                  <div className="flex justify-between py-1 border-b border-border">
-                    <span className="text-muted-foreground">Código de Barras / Ref:</span>
-                    <span className="font-mono text-foreground">
+                    <span className="font-mono text-foreground font-semibold">
                       {selectedProductForDetail.barcode || "No asignado"}
                     </span>
                   </div>
 
-                  <div className="flex justify-between py-1 border-b border-border sm:col-span-2">
-                    <span className="text-muted-foreground">Régimen Fiscal:</span>
+                  <div className="flex justify-between py-1 border-b border-border/50">
+                    <span className="text-muted-foreground">
+                      Régimen Fiscal:
+                    </span>
                     <span className="font-semibold text-foreground">
                       {selectedProductForDetail.isTaxExempt
                         ? "Exento de IVA"
@@ -742,9 +912,11 @@ export default function ProductsPage() {
                   </div>
 
                   {selectedProductForDetail.description && (
-                    <div className="sm:col-span-2 pt-2">
-                      <span className="text-muted-foreground block mb-1">Descripción:</span>
-                      <p className="p-2.5 bg-muted/40 rounded-lg text-foreground leading-relaxed border border-border">
+                    <div className="sm:col-span-2 pt-1">
+                      <span className="text-muted-foreground block mb-1 font-semibold">
+                        Descripción Técnica:
+                      </span>
+                      <p className="p-3 bg-muted/30 rounded-lg text-foreground leading-relaxed border border-border">
                         {selectedProductForDetail.description}
                       </p>
                     </div>
@@ -753,7 +925,7 @@ export default function ProductsPage() {
               </Card>
 
               {/* Sub-tabla: Lotes Físicos */}
-              <Card className="overflow-hidden shadow-2xs">
+              <Card className="overflow-hidden shadow-2xs border-border">
                 <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Boxes className="w-4 h-4 text-primary" />
@@ -761,7 +933,7 @@ export default function ProductsPage() {
                       Lotes Físicos en Existencia
                     </CardTitle>
                   </div>
-                  <Badge variant="indigo" className="font-mono text-xs">
+                  <Badge variant="outline" className="font-mono text-xs bg-muted">
                     {selectedProductForDetail.batches?.length ?? 0} lote(s)
                   </Badge>
                 </div>
@@ -774,71 +946,83 @@ export default function ProductsPage() {
                       No hay lotes físicos registrados para este insumo.
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      Los lotes se crean automáticamente al recibir órdenes de compra o registrar ingresos.
+                      Los lotes se crean automáticamente al recibir órdenes de compra o registrar entradas de inventario.
                     </p>
                   </div>
                 ) : (
                   <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/30">
-                        <TableHead className="py-2.5 px-3 font-semibold">N° de Lote</TableHead>
-                        <TableHead className="py-2.5 px-3 font-semibold">Vencimiento</TableHead>
-                        <TableHead className="py-2.5 px-3 font-semibold">Ubicación Física</TableHead>
-                        <TableHead className="py-2.5 px-3 text-center font-semibold">Estado</TableHead>
-                        <TableHead className="py-2.5 px-3 text-right font-semibold">Cantidad</TableHead>
+                    <TableHeader className="bg-muted/40 text-[11px] uppercase tracking-wider">
+                      <TableRow>
+                        <TableHead className="py-2.5 px-3 font-semibold">
+                          N° de Lote
+                        </TableHead>
+                        <TableHead className="py-2.5 px-3 font-semibold">
+                          Vencimiento
+                        </TableHead>
+                        <TableHead className="py-2.5 px-3 font-semibold">
+                          Ubicación
+                        </TableHead>
+                        <TableHead className="py-2.5 px-3 text-center font-semibold">
+                          Estado
+                        </TableHead>
+                        <TableHead className="py-2.5 px-3 text-right font-semibold">
+                          Saldo
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {selectedProductForDetail.batches.map((batch: StockBatch, index: number) => {
-                        const variant = getBatchStatusVariant(batch.status);
-                        return (
-                          <TableRow
-                            key={`${batch.id ?? 'batch'}-${index}`}
-                            className="hover:bg-muted/40 transition-colors"
-                          >
-                            {/* N° Lote */}
-                            <TableCell className="py-2.5 px-3 font-mono font-bold text-foreground">
-                              {batch.lotNumber}
-                            </TableCell>
+                      {selectedProductForDetail.batches.map(
+                        (batch: StockBatch, index: number) => {
+                          const variant = getBatchStatusVariant(batch.status);
+                          return (
+                            <TableRow
+                              key={`${batch.id ?? "batch"}-${index}`}
+                              className="hover:bg-muted/40 transition-colors"
+                            >
+                              {/* N° Lote */}
+                              <TableCell className="py-2.5 px-3 font-mono font-bold text-xs text-amber-700 dark:text-amber-400">
+                                #{batch.lotNumber}
+                              </TableCell>
 
-                            {/* Vencimiento */}
-                            <TableCell className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
-                              <span className="inline-flex items-center gap-1">
-                                <Calendar className="w-3 h-3 text-muted-foreground/70" />
-                                {formatExpirationDate(batch.expirationDate)}
-                              </span>
-                            </TableCell>
+                              {/* Vencimiento */}
+                              <TableCell className="py-2.5 px-3 text-muted-foreground whitespace-nowrap text-xs">
+                                <span className="inline-flex items-center gap-1 font-mono">
+                                  <Calendar className="w-3 h-3 text-muted-foreground/70" />
+                                  {formatExpirationDate(batch.expirationDate)}
+                                </span>
+                              </TableCell>
 
-                            {/* Ubicación Física */}
-                            <TableCell className="py-2.5 px-3 text-foreground">
-                              <span className="inline-flex items-center gap-1">
-                                <MapPin className="w-3 h-3 text-muted-foreground/70 shrink-0" />
-                                <span>{batch.location?.name || "Sin asignar"}</span>
-                                {batch.location?.type && (
-                                  <span className="text-[10px] text-muted-foreground">
-                                    ({batch.location.type})
+                              {/* Ubicación Física */}
+                              <TableCell className="py-2.5 px-3 text-foreground text-xs">
+                                <span className="inline-flex items-center gap-1">
+                                  <MapPin className="w-3 h-3 text-muted-foreground/70 shrink-0" />
+                                  <span>
+                                    {batch.location?.name || "Sin asignar"}
                                   </span>
-                                )}
-                              </span>
-                            </TableCell>
+                                </span>
+                              </TableCell>
 
-                            {/* Estado */}
-                            <TableCell className="py-2.5 px-3 text-center whitespace-nowrap">
-                              <Badge variant={variant}>
-                                {batch.status}
-                              </Badge>
-                            </TableCell>
+                              {/* Estado */}
+                              <TableCell className="py-2.5 px-3 text-center whitespace-nowrap">
+                                <Badge variant={variant} className="text-[10px]">
+                                  {batch.status}
+                                </Badge>
+                              </TableCell>
 
-                            {/* Cantidad */}
-                            <TableCell className="py-2.5 px-3 text-right font-mono font-bold text-foreground">
-                              {Number(batch.currentQuantity)}{" "}
-                              <span className="text-[10px] font-normal text-muted-foreground font-sans">
-                                {selectedProductForDetail.baseUnit?.abbreviation}
-                              </span>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
+                              {/* Cantidad */}
+                              <TableCell className="py-2.5 px-3 text-right font-mono font-bold text-xs text-foreground">
+                                {Number(batch.currentQuantity)}{" "}
+                                <span className="text-[10px] font-normal text-muted-foreground font-sans">
+                                  {
+                                    selectedProductForDetail.baseUnit
+                                      ?.abbreviation
+                                  }
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        }
+                      )}
                     </TableBody>
                   </Table>
                 )}
@@ -848,9 +1032,10 @@ export default function ProductsPage() {
             {/* Footer del Drawer */}
             <div className="p-4 border-t border-border bg-muted/20 flex justify-end">
               <Button
-                variant="default"
+                variant="outline"
                 size="sm"
                 onClick={() => setIsDetailOpen(false)}
+                className="cursor-pointer text-xs"
               >
                 Cerrar Ficha
               </Button>
@@ -858,266 +1043,6 @@ export default function ProductsPage() {
           </div>
         </div>
       )}
-
-      {/* Modal: Registrar Producto con shadcn Dialog */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Package className="w-5 h-5 text-primary" />
-              Registrar Nuevo Insumo / Reactivo
-            </DialogTitle>
-          </DialogHeader>
-
-          {feedback && (
-            <Alert variant={feedback.status === "success" ? "success" : "destructive"}>
-              {feedback.status === "success" ? (
-                <CheckCircle2 className="w-4 h-4" />
-              ) : (
-                <AlertCircle className="w-4 h-4" />
-              )}
-              <AlertTitle>{feedback.status === "success" ? "Operación Exitosa" : "Error"}</AlertTitle>
-              <AlertDescription>{feedback.message}</AlertDescription>
-            </Alert>
-          )}
-
-          <form onSubmit={handleCreateProduct} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase tracking-wider">
-                Nombre del producto / reactivo *
-              </Label>
-              <Input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Ej: Agar MacConkey / Tubos Vacutainer EDTA 4ml"
-                className="text-xs"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs uppercase tracking-wider">
-                  Categoría *
-                </Label>
-                <select
-                  value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
-                  className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
-                  required
-                >
-                  <option value="">-- Seleccionar categoría --</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs uppercase tracking-wider">
-                  Marca Comercial (Opcional)
-                </Label>
-                <select
-                  value={brandId}
-                  onChange={(e) => setBrandId(e.target.value)}
-                  className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
-                >
-                  <option value="">-- Sin marca / Genérico --</option>
-                  {brands.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs uppercase tracking-wider">
-                  Unidad de medida (consumo) *
-                </Label>
-                <select
-                  value={baseUnitId}
-                  onChange={(e) => setBaseUnitId(e.target.value)}
-                  className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
-                  required
-                >
-                  <option value="">-- Unidad base --</option>
-                  {units.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} ({u.abbreviation})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs uppercase tracking-wider">
-                  Unidad orden de compra
-                </Label>
-                <select
-                  value={purchaseUnitId}
-                  onChange={(e) => setPurchaseUnitId(e.target.value)}
-                  className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
-                >
-                  <option value="">-- Misma que la base --</option>
-                  {units.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} ({u.abbreviation})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs uppercase tracking-wider">
-                  Cantidad de conversión de compra
-                </Label>
-                <Input
-                  type="number"
-                  step="any"
-                  min="0.001"
-                  value={conversionFactor}
-                  onChange={(e) =>
-                    setConversionFactor(
-                      e.target.value === "" ? "" : Number(e.target.value),
-                    )
-                  }
-                  placeholder="Ej: 1000 (1L = 1000ml)"
-                  className="text-xs"
-                />
-              </div>
-            </div>
-
-            {/* Vista previa explicativa de la conversión */}
-            {baseUnitId && (
-              <div className="p-2.5 rounded-lg bg-primary/5 border border-primary/20 text-xs">
-                <span className="font-semibold text-foreground block mb-0.5">
-                  💡 Factor de Empaque y Conversión:
-                </span>
-                {purchaseUnitId && purchaseUnitId !== baseUnitId && Number(conversionFactor || 1) > 1 ? (
-                  <p className="text-muted-foreground">
-                    1{" "}
-                    <strong className="text-foreground">
-                      {units.find((u) => String(u.id) === String(purchaseUnitId))?.name || "Empaque"}
-                    </strong>{" "}
-                    contiene{" "}
-                    <strong className="text-primary font-mono text-sm">
-                      {conversionFactor}
-                    </strong>{" "}
-                    <strong className="text-foreground">
-                      {units.find((u) => String(u.id) === String(baseUnitId))?.name || "Unidades"}
-                    </strong>
-                    . Al recibir órdenes de compra, el inventario registrará automáticamente esa cantidad en unidades base.
-                  </p>
-                ) : (
-                  <p className="text-muted-foreground">
-                    Se compra y se dispensa directamente en{" "}
-                    <strong className="text-foreground">
-                      {units.find((u) => String(u.id) === String(baseUnitId))?.name || "Unidades"}
-                    </strong>{" "}
-                    (relación 1 a 1 sin empaque secundario).
-                  </p>
-                )}
-                {purchaseUnitId && purchaseUnitId === baseUnitId && (
-                  <p className="text-destructive font-semibold mt-1">
-                    ⚠️ La unidad de empaque no puede ser la misma unidad base. Si no usa empaque secundario, elija &quot;-- Misma que la base --&quot;.
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs uppercase tracking-wider">
-                  Código de Barras / Referencia
-                </Label>
-                <div className="relative">
-                  <Barcode className="w-4 h-4 absolute left-2.5 top-2.5 text-muted-foreground" />
-                  <Input
-                    type="text"
-                    value={barcode}
-                    onChange={(e) => setBarcode(e.target.value)}
-                    placeholder="EAN-13 / Referencia fabricante"
-                    className="pl-8 text-xs font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs uppercase tracking-wider">
-                  Alerta de Stock Mínimo
-                </Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={minStockAlert}
-                  onChange={(e) =>
-                    setMinStockAlert(
-                      e.target.value === "" ? "" : Number(e.target.value),
-                    )
-                  }
-                  className="text-xs"
-                />
-              </div>
-            </div>
-
-            <Card className="p-3 bg-muted/30 flex items-center justify-between">
-              <div>
-                <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <FlaskConical className="w-4 h-4 text-purple-600" />
-                  ¿Es un reactivo de laboratorio / bioanálisis?
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  Habilita trazabilidad analítica por lote, fecha de caducidad
-                  y descargo en sala
-                </div>
-              </div>
-              <Checkbox
-                checked={isReagent}
-                onCheckedChange={(checked) => setIsReagent(!!checked)}
-              />
-            </Card>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase tracking-wider">
-                Descripción o Especificación Técnica
-              </Label>
-              <Textarea
-                rows={2}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Detalles sobre presentación, conservación o uso analítico..."
-                className="text-xs"
-              />
-            </div>
-
-            <DialogFooter className="pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsModalOpen(false)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={submitting}
-                className="gap-2"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {submitting ? "Guardando..." : "Guardar Insumo"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

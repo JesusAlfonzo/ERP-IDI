@@ -11,7 +11,6 @@ import {
   PrintableDocument,
   DocumentHeader,
   DocumentMetadataGrid,
-  DocumentSignatures,
   DocumentFooter,
 } from "@/components/common/PrintableDocument";
 import {
@@ -27,6 +26,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Pencil,
+  PackageCheck,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -300,10 +300,26 @@ export default function RequestDetailPage() {
                 <Button
                   type="button"
                   size="sm"
-                  onClick={() => router.push(`/requests/dispatch?id=${request.id}`)}
+                  onClick={() => router.push(`/requests/dispatch/new?requestId=${request.id}`)}
                   className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer"
                 >
                   <Check className="w-3.5 h-3.5" /> Despachar
+                </Button>
+              )}
+
+              {Boolean(request.dispatchedMovementId || request.dispatchedMovement) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    router.push(`/requests/dispatch/${request.id}`)
+                  }
+                  className="gap-1.5 text-xs cursor-pointer"
+                  title="Ver comprobante de despacho"
+                >
+                  <PackageCheck className="w-3.5 h-3.5 text-primary" />
+                  <span>Comprobante</span>
                 </Button>
               )}
             </>
@@ -424,13 +440,13 @@ export default function RequestDetailPage() {
                     Unidad
                   </th>
                   <th className="py-2 px-2.5 text-right border-r border-slate-300 print:border-black">
-                    Cant. Solicitada
+                    Solicitado
                   </th>
                   <th className="py-2 px-2.5 text-right border-r border-slate-300 print:border-black">
-                    Cant. Aprobada
+                    Aprobado
                   </th>
                   <th className="py-2 px-2.5 text-right border-r border-slate-300 print:border-black">
-                    Cant. Despachada
+                    Despachado
                   </th>
                   <th className="py-2 px-3">
                     Lotes Asignados (Vencimiento)
@@ -576,34 +592,37 @@ export default function RequestDetailPage() {
           </div>
         </div>
 
-        {/* Sección Inferior de 3 Casillas de Firmas */}
-        <DocumentSignatures
-          signatures={[
-            {
-              role: "Solicitado por: Nombre y Firma",
-              name: request.applicant?.fullName || request.applicant?.username,
-              department:
-                request.applicant?.department ||
-                request.departmentSection ||
-                "Unidad Solicitante",
-              stampText: "Firma y Sello Solicitante",
-              date: formattedDate.split(",")[0],
-            },
-            {
-              role: "Despachado por (Almacén): Nombre y Firma",
-              name:
-                request.approvedBy?.fullName || "Responsable de Almacén",
-              department: "Almacén Central / Despacho de Materiales",
-              stampText: "Firma y Sello Almacén",
-            },
-            {
-              role: "Recibido Conforme: Nombre y Firma",
-              name: "Recepción de Material",
-              department: "Firma, Cédula y Fecha de Recepción",
-              stampText: "Firma Conforme y Huella",
-            },
-          ]}
-        />
+        {/* Responsables de Custodia y Entrega */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs pt-4 border-t border-slate-200 print:border-black">
+          <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 print:border-black space-y-1">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+              Solicitado por (Usuario final)
+            </span>
+            <p className="font-bold text-slate-900 text-sm">
+              {request.applicant?.fullName || request.applicant?.username || "—"}
+            </p>
+            <span className="text-[11px] text-slate-600 block">
+              {request.departmentSection || request.department?.name || "Área solicitante"}
+            </span>
+          </div>
+
+          <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 print:border-black space-y-1">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+              {request.status === "COMPLETADA" || request.status === "DESPACHADA_PARCIAL"
+                ? "Despachado por (Almacén)"
+                : "Aprobado por"}
+            </span>
+            <p className="font-bold text-slate-900 text-sm">
+              {request.dispatchedMovement?.createdBy?.fullName ||
+                request.approvedBy?.fullName ||
+                request.approvedBy?.username ||
+                "Personal de Almacén"}
+            </p>
+            <span className="text-[11px] text-slate-600 block">
+              Almacén Central / Control de Suministros
+            </span>
+          </div>
+        </div>
 
         {/* Pie Institucional */}
         <DocumentFooter

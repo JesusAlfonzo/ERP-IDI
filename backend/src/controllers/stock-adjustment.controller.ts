@@ -239,7 +239,7 @@ export const listStockMovements = async (
   try {
     const pagination = getPaginationParams(req, 10, 100);
 
-    const { batchId, productId, search, type, startDate, endDate } = req.query;
+    const { batchId, productId, search, type, types, startDate, endDate } = req.query;
 
     const filters: MovementFilterOptions = {};
 
@@ -257,6 +257,15 @@ export const listStockMovements = async (
       Object.values(StockMovementType).includes(type as StockMovementType)
     ) {
       filters.type = type as StockMovementType;
+    }
+    if (types) {
+      const typeList = Array.isArray(types) ? types : String(types).split(',');
+      const validTypes = typeList.filter((t) =>
+        Object.values(StockMovementType).includes(String(t).trim() as StockMovementType)
+      ) as StockMovementType[];
+      if (validTypes.length > 0) {
+        filters.types = validTypes;
+      }
     }
     if (startDate) {
       filters.startDate = new Date(String(startDate));

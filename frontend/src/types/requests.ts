@@ -61,10 +61,17 @@ export interface InternalRequest {
     username: string;
   } | null;
   items: InternalRequestItem[];
+  dispatchedMovementId?: number | null;
   dispatchedMovement?: {
     id: number;
     referenceNumber: string;
     createdAt?: string;
+    notes?: string | null;
+    createdBy?: {
+      id?: number;
+      fullName?: string;
+      username?: string;
+    } | null;
     items?: Array<{
       id?: number;
       quantity?: number;
@@ -73,6 +80,12 @@ export interface InternalRequest {
         lotNumber: string;
         expirationDate?: string | null;
         productId?: number;
+        product?: {
+          id?: number;
+          name?: string;
+          sku?: string;
+          baseUnit?: { abbreviation?: string };
+        };
       } | null;
     }>;
   } | null;

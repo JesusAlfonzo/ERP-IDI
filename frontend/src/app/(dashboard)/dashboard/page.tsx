@@ -1907,7 +1907,9 @@ export default function DashboardPage() {
                                   variant="default"
                                   size="sm"
                                   onClick={() =>
-                                    router.push(`/requests/dispatch?id=${req.id}`)
+                                    router.push(
+                                      `/requests/dispatch/new?requestId=${req.id}`
+                                    )
                                   }
                                   className="h-7 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white gap-1 cursor-pointer"
                                 >

@@ -23,7 +23,7 @@ import {
   ProtocolBadgeSelector,
   getConceptSummaryWord,
 } from "@/components/requests/ProtocolBadgeSelector";
-import type { RequestWindowStatus } from "@/types/requests";
+import type { RequestWindowStatus, RequestPriority, CreateInternalRequestPayload } from "@/types/requests";
 import type { Product, Category } from "@/types/inventory";
 import type { AuthUser } from "@/types/auth";
 import {
@@ -41,6 +41,12 @@ import {
   Send,
   Building2,
   Sparkles,
+  Clock,
+  LayoutGrid,
+  LayoutList,
+  Flame,
+  CheckCircle2,
+  Lock,
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -73,6 +79,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface RequestFormRow {
   uid: string;
@@ -103,13 +110,15 @@ export default function NewInternalRequestPage() {
   // Estados del formulario
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("");
   const [departmentSection, setDepartmentSection] = useState<string>("");
+  const [priority, setPriority] = useState<RequestPriority>("RUTINA");
   const [justification, setJustification] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
   const [rows, setRows] = useState<RequestFormRow[]>([
     { uid: "row-1", productId: 0, requestedQuantity: 1 },
   ]);
 
-  // Estados auxiliares de UX para solicitudes grandes
+  // Modos de visualización para solicitudes grandes (Tabla compacta vs Tarjetas)
+  const [viewMode, setViewMode] = useState<"table" | "cards">("table");
   const [searchTermInRows, setSearchTermInRows] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
@@ -118,6 +127,27 @@ export default function NewInternalRequestPage() {
   const userRoles = currentUser?.roles || [];
   const isWarehouseStaff =
     userRoles.includes("ADMINISTRADOR") || userRoles.includes("ALMACENISTA");
+  const isAdmin = userRoles.includes("ADMINISTRADOR");
+  const isCoordinator =
+    userRoles.includes("COORDINADOR") ||
+    userRoles.includes("COORDINADOR_LABORATORIO");
+  const isHighRole =
+    userRoles.includes("DIRECTOR") ||
+    userRoles.includes("GERENTE") ||
+    userRoles.includes("SUPERVISOR");
+
+  // Solo administradores, coordinadores y roles de alta jerarquía pueden elegir la prioridad
+  const canSelectPriority = isAdmin || isCoordinator || isHighRole;
+
+  // Visibilidad de stock confidencial: únicamente Almacenista, Administrador y Coordinadores
+  const canViewStock =
+    isAdmin ||
+    isCoordinator ||
+    userRoles.includes("ALMACENISTA");
+
+  // Solo administradores pueden cambiar el departamento si requieren gestionar solicitudes ajenas
+  const canChangeDepartment = isAdmin;
+
   const canCreateRole =
     userRoles.includes("SOLICITANTE") ||
     userRoles.includes("ADMINISTRADOR") ||
@@ -127,7 +157,7 @@ export default function NewInternalRequestPage() {
 
   const canCreate = canCreateRole;
 
-  // Carga inicial de datos concurrentemente
+  // Carga inicial concurrente de datos maestros
   useEffect(() => {
     let isMounted = true;
 
@@ -151,10 +181,25 @@ export default function NewInternalRequestPage() {
         setJustificationConcepts(concepts);
         setWindowStatus(winStatus);
 
-        // Preseleccionar primer departamento si existe
-        if (deps.length > 0) {
+        // Preseleccionar y vincular al departamento perteneciente al solicitante
+        const userDeptStr = currentUser?.department?.trim().toLowerCase() || "";
+        const matchedDept = deps.find(
+          (d) =>
+            userDeptStr &&
+            (d.name.toLowerCase() === userDeptStr ||
+              d.code.toLowerCase() === userDeptStr ||
+              d.name.toLowerCase().includes(userDeptStr) ||
+              userDeptStr.includes(d.name.toLowerCase()))
+        );
+
+        if (matchedDept) {
+          setSelectedDepartmentId(String(matchedDept.id));
+          setDepartmentSection(matchedDept.name);
+        } else if (deps.length > 0) {
           setSelectedDepartmentId(String(deps[0].id));
-          setDepartmentSection(deps[0].name);
+          setDepartmentSection(currentUser?.department || deps[0].name);
+        } else if (currentUser?.department) {
+          setDepartmentSection(currentUser.department);
         }
       } catch (error) {
         console.error("Error al cargar datos maestros para requisición:", error);
@@ -198,15 +243,41 @@ export default function NewInternalRequestPage() {
     []
   );
 
+  const handleQuickQuantity = useCallback(
+    (uid: string, delta: number) => {
+      setRows((prev) =>
+        prev.map((r) => {
+          if (r.uid !== uid) return r;
+          const next = Math.max(1, r.requestedQuantity + delta);
+          return { ...r, requestedQuantity: next };
+        })
+      );
+    },
+    []
+  );
+
+  const handleSetMaxStock = useCallback(
+    (uid: string, maxStock: number) => {
+      if (maxStock <= 0) return;
+      setRows((prev) =>
+        prev.map((r) =>
+          r.uid === uid ? { ...r, requestedQuantity: maxStock } : r
+        )
+      );
+      toast.info(`Cantidad ajustada al stock actual (${maxStock}).`);
+    },
+    []
+  );
+
   const handleAddRow = useCallback(() => {
-    const newUid = `row-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const newUid = `row-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     setRows((prev) => [...prev, { uid: newUid, productId: 0, requestedQuantity: 1 }]);
   }, []);
 
   const handleAddMultipleRows = useCallback((count: number) => {
     setRows((prev) => {
       const added: RequestFormRow[] = Array.from({ length: count }).map((_, i) => ({
-        uid: `row-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 4)}`,
+        uid: `row-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
         productId: 0,
         requestedQuantity: 1,
       }));
@@ -220,7 +291,7 @@ export default function NewInternalRequestPage() {
       const idx = prev.findIndex((r) => r.uid === uid);
       if (idx === -1) return prev;
       const target = prev[idx];
-      const newUid = `row-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+      const newUid = `row-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       const newRow: RequestFormRow = {
         uid: newUid,
         productId: target.productId,
@@ -250,7 +321,7 @@ export default function NewInternalRequestPage() {
     toast.info("Se limpiaron los renglones sin insumo asignado.");
   }, []);
 
-  // Inserción / alternancia inteligente de conceptos en Justificación (sin códigos de protocolos)
+  // Justificaciones rápidas de un clic
   const isConceptSelected = useCallback(
     (concept: JustificationConceptItem) => {
       return justification.toLowerCase().includes(concept.title.toLowerCase());
@@ -266,7 +337,6 @@ export default function NewInternalRequestPage() {
       const summaryWord = getConceptSummaryWord(concept);
 
       if (isPresent) {
-        // Remover las líneas que correspondan a esta justificación
         const lines = justification.split("\n");
         const filtered = lines.filter(
           (line) =>
@@ -274,7 +344,7 @@ export default function NewInternalRequestPage() {
         );
         const cleaned = filtered.join("\n").replace(/\n{3,}/g, "\n\n").trim();
         setJustification(cleaned);
-        toast.info(`Justificación "${summaryWord}" removida.`);
+        toast.info(`Concepto "${summaryWord}" removido.`);
       } else {
         const snippet = `• ${concept.title}${
           concept.description ? `: ${concept.description}` : ""
@@ -282,7 +352,7 @@ export default function NewInternalRequestPage() {
         setJustification((prev) =>
           prev.trim() ? `${prev.trim()}\n${snippet}` : snippet
         );
-        toast.success(`Justificación "${summaryWord}" agregada.`);
+        toast.success(`Concepto "${summaryWord}" agregado.`);
       }
     },
     [justification]
@@ -301,10 +371,15 @@ export default function NewInternalRequestPage() {
       }
     }
     setJustification(text.replace(/\n{3,}/g, "\n\n").trim());
-    toast.info("Se removieron las justificaciones rápidas.");
+    toast.info("Se removieron los conceptos rápidos.");
   }, [justification, justificationConcepts]);
 
-  // Cálculo de estadísticas y validaciones en vivo
+  // Departamento vinculado al solicitante
+  const selectedDept = useMemo(() => {
+    return departments.find((d) => String(d.id) === String(selectedDepartmentId));
+  }, [departments, selectedDepartmentId]);
+
+  // Mapa de productos para búsqueda O(1)
   const productMap = useMemo(() => {
     const map = new Map<number, Product>();
     for (const p of products) {
@@ -313,6 +388,7 @@ export default function NewInternalRequestPage() {
     return map;
   }, [products]);
 
+  // Métricas y validaciones en vivo
   const {
     totalUnits,
     validRowsCount,
@@ -360,7 +436,7 @@ export default function NewInternalRequestPage() {
     };
   }, [rows, productMap]);
 
-  // Filtrado local de filas para búsquedas dentro de requisiciones enormes
+  // Filtrado local para búsquedas en pedidos extensos
   const displayedRows = useMemo(() => {
     if (!searchTermInRows.trim()) return rows;
     const term = searchTermInRows.toLowerCase();
@@ -399,34 +475,36 @@ export default function NewInternalRequestPage() {
     e.preventDefault();
 
     if (!selectedDepartmentId) {
-      toast.error("Debe seleccionar un área o departamento solicitante.");
+      toast.error("Debe seleccionar un departamento solicitante.");
       return;
     }
 
     if (!justification.trim() || justification.trim().length < 5) {
       toast.error(
-        "La justificación técnica es obligatoria y debe tener al menos 5 caracteres."
+        "La justificación es obligatoria y debe tener al menos 5 caracteres."
       );
       return;
     }
 
     const activeItems = rows.filter((r) => r.productId > 0);
     if (activeItems.length === 0) {
-      toast.error("Debe incluir al menos un insumo o reactivo en la solicitud.");
+      toast.error("Debe incluir al menos un insumo en la solicitud.");
       return;
     }
 
     const invalidItem = activeItems.find((r) => r.requestedQuantity <= 0);
     if (invalidItem) {
-      toast.error("Todos los insumos deben tener una cantidad solicitada mayor a 0.");
+      toast.error("Todos los insumos deben tener una cantidad mayor a 0.");
       return;
     }
 
     setSubmitting(true);
     try {
-      const payload = {
-        departmentId: Number(selectedDepartmentId),
-        departmentSection: departmentSection || undefined,
+      const deptIdNum = Number(selectedDepartmentId);
+      const payload: CreateInternalRequestPayload = {
+        departmentId: deptIdNum > 0 ? deptIdNum : undefined,
+        departmentSection: departmentSection || currentUser?.department || undefined,
+        priority: canSelectPriority ? priority : "RUTINA",
         justification: justification.trim(),
         notes: notes.trim() || undefined,
         items: activeItems.map((r) => ({
@@ -437,12 +515,12 @@ export default function NewInternalRequestPage() {
 
       const newReq = await RequestClientService.createRequest(payload);
       toast.success(
-        `Solicitud interna #${newReq.requestNumber || newReq.id} creada exitosamente.`
+        `Solicitud #${newReq.requestNumber || newReq.id} creada exitosamente.`
       );
       router.push(`/requests/${newReq.id}`);
     } catch (err: unknown) {
       const errorMsg =
-        err instanceof Error ? err.message : "Error al procesar la requisición";
+        err instanceof Error ? err.message : "Error al procesar la solicitud";
       toast.error(errorMsg);
       setSubmitting(false);
     }
@@ -453,119 +531,209 @@ export default function NewInternalRequestPage() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
         <p className="text-sm text-muted-foreground">
-          Cargando catálogo maestro y configuración de solicitudes...
+          Cargando catálogo e información de solicitudes...
         </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 pb-20 max-w-7xl mx-auto">
-      {/* Barra de Navegación y Encabezado Principal */}
+    <div className="space-y-6 pb-24 max-w-7xl mx-auto">
+      {/* ========================================================
+          ENCABEZADO PRINCIPAL ESTANDARIZADO
+         ======================================================== */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={handleBackNavigation}
-              className="gap-1.5 text-xs text-muted-foreground hover:text-foreground -ml-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Volver a Solicitudes
-            </Button>
-            <span className="text-muted-foreground/40">•</span>
-            <span className="text-xs text-muted-foreground font-mono">
-              Requisición de Materiales
-            </span>
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={handleBackNavigation}
+            className="h-9 w-9 cursor-pointer"
+            title="Volver a Solicitudes"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0 shadow-2xs">
+            <ClipboardList className="w-5 h-5" />
           </div>
-          <h1 className="text-xl md:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-              <ClipboardList className="w-5 h-5" />
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                Nueva Solicitud
+              </h1>
+              <Badge variant="outline" className="text-[11px] font-mono bg-muted/20">
+                Borrador
+              </Badge>
             </div>
-            Nueva Solicitud Interna
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Complete los renglones y la justificación técnica requerida por el almacén
-            central.
-          </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Registre los insumos necesarios y el motivo del pedido
+            </p>
+          </div>
         </div>
 
-        {/* Resumen Superior Rápido con badges estilizados y coloridos */}
-        <div className="flex items-center gap-2.5 flex-wrap">
+        {/* Resumen Superior Rápido con badges estilizados */}
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="indigo" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
             <Layers className="w-3.5 h-3.5" />
             <span className="font-bold">{validRowsCount}</span>
-            <span>
-              {validRowsCount === 1 ? "renglón" : "renglones"}
-            </span>
+            <span>{validRowsCount === 1 ? "insumo" : "insumos"}</span>
           </Badge>
           <Badge variant="purple" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
             <span className="font-bold">{totalUnits}</span>
-            <span>unidades totales</span>
+            <span>unidades</span>
           </Badge>
         </div>
       </div>
 
+      {/* Control de rol de solicitante */}
+      {!canCreate && (
+        <Alert variant="destructive">
+          <AlertCircle className="w-4 h-4" />
+          <AlertTitle>Acceso Restringido</AlertTitle>
+          <AlertDescription>
+            No posee permisos de solicitante para registrar nuevos pedidos internos.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Banner de Horario de Ventana de Recepción */}
+      {windowStatus && !windowStatus.isOpen && (
+        <div className="p-3.5 rounded-xl border border-amber-300/70 bg-amber-50/80 dark:border-amber-900/60 dark:bg-amber-950/30 text-xs flex items-center justify-between gap-3 text-amber-900 dark:text-amber-200">
+          <div className="flex items-center gap-2.5">
+            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Horario de pedidos:</strong> {windowStatus.message || "La recepción de pedidos se encuentra temporalmente inactiva."}
+            </span>
+          </div>
+          <Badge variant="outline" className="text-[10px] bg-background/80 shrink-0">
+            Cerrado
+          </Badge>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* SECCIÓN 1: DATOS GENERALES DEL SOLICITANTE */}
-        <Card className="border-border">
+        {/* ========================================================
+            SECCIÓN 1: DATOS GENERALES
+           ======================================================== */}
+        <Card className="border-border shadow-2xs">
           <CardHeader className="pb-3 border-b border-border/50 bg-muted/20">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Building2 className="w-4 h-4 text-primary" />
-              1. Información General del Área Solicitante
+              Datos Generales
             </CardTitle>
             <CardDescription className="text-xs">
-              Especifique el departamento que asumirá el consumo de los materiales.
+              Información del solicitante y departamento de adscripción
             </CardDescription>
           </CardHeader>
-          <CardContent className="pt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Departamento */}
+          <CardContent
+            className={cn(
+              "pt-4 grid gap-4",
+              canSelectPriority
+                ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+                : "grid-cols-1 sm:grid-cols-3"
+            )}
+          >
+            {/* Solicitante: solo el nombre */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Área / Departamento Solicitante *
+                Solicitante
               </Label>
-              <Select
-                value={selectedDepartmentId}
-                onValueChange={handleDepartmentChange}
-                disabled={departments.length === 0}
-              >
-                <SelectTrigger className="h-9 text-xs font-medium">
-                  <SelectValue placeholder="Seleccione un departamento..." />
-                </SelectTrigger>
-                <SelectContent className="w-[var(--radix-select-trigger-width)] max-h-80">
-                  {departments.map((dep) => (
-                    <SelectItem key={dep.id} value={String(dep.id)} className="text-xs">
-                      <span className="font-mono font-bold text-primary mr-1.5">
-                        [{dep.code}]
-                      </span>
-                      {dep.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Solicitante */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Usuario Solicitante
-              </Label>
-              <div className="h-9 rounded-lg border border-input bg-muted/40 px-3 py-1 flex items-center justify-between text-xs font-medium">
+              <div className="h-9 rounded-lg border border-input bg-muted/40 px-3 py-1 flex items-center text-xs font-semibold text-foreground">
                 <span className="truncate">
                   {currentUser?.fullName || currentUser?.username || "Usuario"}
-                </span>
-                <span className="text-[10px] font-mono text-muted-foreground bg-background px-1.5 py-0.5 rounded border border-border">
-                  {currentUser?.department || "General"}
                 </span>
               </div>
             </div>
 
-            {/* Fecha de Emisión */}
+            {/* Departamento: bloqueado al perteneciente del solicitante */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Fecha de Emisión
+                Departamento
+              </Label>
+              {canChangeDepartment ? (
+                <Select
+                  value={selectedDepartmentId}
+                  onValueChange={handleDepartmentChange}
+                  disabled={departments.length === 0}
+                >
+                  <SelectTrigger className="h-9 text-xs font-medium cursor-pointer">
+                    <SelectValue placeholder="Seleccione departamento..." />
+                  </SelectTrigger>
+                  <SelectContent className="w-[var(--radix-select-trigger-width)] max-h-80">
+                    {departments.map((dep) => (
+                      <SelectItem key={dep.id} value={String(dep.id)} className="text-xs">
+                        <span className="font-mono font-bold text-primary mr-1.5">
+                          [{dep.code}]
+                        </span>
+                        {dep.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="h-9 rounded-lg border border-input bg-muted/40 px-3 py-1 flex items-center justify-between text-xs font-medium">
+                  <span className="truncate font-semibold text-foreground">
+                    {selectedDept ? (
+                      <>
+                        <span className="font-mono font-bold text-primary mr-1.5">
+                          [{selectedDept.code}]
+                        </span>
+                        {selectedDept.name}
+                      </>
+                    ) : (
+                      currentUser?.department || "General"
+                    )}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground flex items-center gap-1 font-mono shrink-0 ml-2">
+                    <Lock className="w-3 h-3 text-muted-foreground/60" />
+                    Asignado
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Prioridad: visible únicamente para Administradores, Coordinadores y roles de alta jerarquía */}
+            {canSelectPriority && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Prioridad
+                </Label>
+                <Select
+                  value={priority}
+                  onValueChange={(val) => setPriority(val as RequestPriority)}
+                >
+                  <SelectTrigger className="h-9 text-xs font-medium cursor-pointer">
+                    <SelectValue placeholder="Prioridad" />
+                  </SelectTrigger>
+                  <SelectContent className="text-xs">
+                    <SelectItem value="BAJA">
+                      <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+                        <span className="w-2 h-2 rounded-full bg-slate-400" />
+                        Baja
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="RUTINA">
+                      <span className="inline-flex items-center gap-1.5 text-sky-600 dark:text-sky-400 font-medium">
+                        <span className="w-2 h-2 rounded-full bg-sky-500" />
+                        Normal / Rutina
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="URGENTE">
+                      <span className="inline-flex items-center gap-1.5 text-rose-600 dark:text-rose-400 font-bold">
+                        <Flame className="w-3.5 h-3.5 text-rose-500" />
+                        Urgente
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Fecha */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Fecha
               </Label>
               <div className="h-9 rounded-lg border border-input bg-muted/40 px-3 py-1 flex items-center justify-between text-xs font-medium">
                 <span className="font-mono text-foreground font-semibold">
@@ -583,25 +751,53 @@ export default function NewInternalRequestPage() {
           </CardContent>
         </Card>
 
-        {/* SECCIÓN 2: INSUMOS Y REACTIVOS (DISEÑADO PARA SOLICITUDES ENORMES) */}
-        <Card className="border-border">
+        {/* ========================================================
+            SECCIÓN 2: INSUMOS SOLICITADOS (DISEÑADO PARA PEDIDOS GRANDES)
+           ======================================================== */}
+        <Card className="border-border shadow-2xs">
           <CardHeader className="pb-3 border-b border-border/50 bg-muted/20">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div>
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <Layers className="w-4 h-4 text-primary" />
-                  2. Insumos y Reactivos Requeridos
+                  Insumos Solicitados
                 </CardTitle>
                 <CardDescription className="text-xs">
                   {rows.length} {rows.length === 1 ? "renglón listado" : "renglones listados"} • {validRowsCount} válidos
                 </CardDescription>
               </div>
 
-              {/* Barra de herramientas para solicitudes grandes */}
+              {/* Barra de herramientas ergonómica */}
               <div className="flex items-center gap-2 flex-wrap">
+                {/* Conmutador de modo de vista: Tabla (compacta) vs Tarjetas (espaciada) */}
+                <Tabs
+                  value={viewMode}
+                  onValueChange={(v) => setViewMode(v as "table" | "cards")}
+                  className="w-auto"
+                >
+                  <TabsList className="h-8 p-0.5 bg-muted/60">
+                    <TabsTrigger
+                      value="table"
+                      className="text-xs px-2.5 h-7 gap-1 data-[state=active]:bg-background"
+                      title="Vista compacta de alta densidad"
+                    >
+                      <LayoutList className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Tabla</span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="cards"
+                      className="text-xs px-2.5 h-7 gap-1 data-[state=active]:bg-background"
+                      title="Vista espaciada por tarjetas"
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Tarjetas</span>
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+
                 {/* Buscador dentro de los renglones agregados */}
-                {rows.length > 5 && (
-                  <div className="relative w-full sm:w-56">
+                {rows.length > 3 && (
+                  <div className="relative w-full sm:w-52">
                     <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
                     <Input
                       type="text"
@@ -613,16 +809,16 @@ export default function NewInternalRequestPage() {
                   </div>
                 )}
 
-                {/* Acciones de agregado masivo */}
+                {/* Acciones de agregado rápido */}
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={handleAddRow}
-                  className="h-8 text-xs gap-1.5 text-primary border-primary/20 bg-primary/5 hover:bg-primary/10"
+                  className="h-8 text-xs gap-1.5 text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  Agregar renglón
+                  <span>Renglón</span>
                 </Button>
 
                 <Button
@@ -630,10 +826,10 @@ export default function NewInternalRequestPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => handleAddMultipleRows(5)}
-                  className="h-8 text-xs text-muted-foreground hover:text-foreground"
-                  title="Agrega 5 renglones vacíos a la vez para agilizar el llenado"
+                  className="h-8 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                  title="Agrega 5 renglones vacíos a la vez"
                 >
-                  +5 Renglones
+                  +5 Filas
                 </Button>
 
                 {rows.length > 2 && (
@@ -642,11 +838,11 @@ export default function NewInternalRequestPage() {
                     variant="ghost"
                     size="sm"
                     onClick={handleClearEmptyRows}
-                    className="h-8 text-xs text-muted-foreground hover:text-destructive gap-1"
-                    title="Elimina renglones donde no se haya seleccionado producto"
+                    className="h-8 text-xs text-muted-foreground hover:text-destructive gap-1 cursor-pointer"
+                    title="Elimina renglones vacíos"
                   >
                     <FilterX className="w-3.5 h-3.5" />
-                    Limpiar vacíos
+                    <span className="hidden sm:inline">Limpiar vacíos</span>
                   </Button>
                 )}
               </div>
@@ -659,74 +855,270 @@ export default function NewInternalRequestPage() {
               <div className="p-3 bg-amber-500/10 border-b border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
                 <span>
-                  Hay productos repetidos en más de un renglón. Considere unificar las
-                  cantidades para evitar confusiones en almacén.
+                  Hay insumos repetidos en más de un renglón. Considere unificarlos para facilitar la gestión en almacén.
                 </span>
               </div>
             )}
 
-            {stockDeficitRows.length > 0 && (
+            {canViewStock && stockDeficitRows.length > 0 && (
               <div className="p-3 bg-blue-500/10 border-b border-blue-500/20 text-blue-800 dark:text-blue-300 text-xs flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0 text-blue-600" />
                 <span>
                   Aviso de stock: {stockDeficitRows.length}{" "}
                   {stockDeficitRows.length === 1 ? "insumo solicita" : "insumos solicitan"}{" "}
-                  una cantidad mayor al stock actual disponible. Almacén podrá despachar
-                  parcialmente o gestionar abastecimiento.
+                  una cantidad superior al stock actual disponible. Almacén podrá despachar parcialmente.
                 </span>
               </div>
             )}
 
-            {/* TABLA DE RENGLONES */}
-            <div className="overflow-x-auto min-h-[220px]">
-              <Table className="min-w-[760px]">
-                <TableHeader className="bg-muted/40 text-[11px] uppercase tracking-wider">
-                  <TableRow>
-                    <TableHead className="w-12 text-center">#</TableHead>
-                    <TableHead className="min-w-[320px] sm:min-w-[420px]">
-                      Insumo / Reactivo
-                    </TableHead>
-                    <TableHead className="w-32 text-center">Stock Almacén</TableHead>
-                    <TableHead className="w-36 text-center">Cantidad</TableHead>
-                    <TableHead className="w-24 text-center">Unidad</TableHead>
-                    <TableHead className="w-24 text-right pr-4">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayedRows.length === 0 ? (
+            {viewMode === "table" ? (
+              /* ========================================================
+                  MODO TABLA (ALTA DENSIDAD)
+                 ======================================================== */
+              <div className="overflow-x-auto min-h-[200px]">
+                <Table className="min-w-[760px]">
+                  <TableHeader className="bg-muted/40 text-[11px] uppercase tracking-wider">
                     <TableRow>
-                      <TableCell
-                        colSpan={6}
-                        className="h-24 text-center text-xs text-muted-foreground"
-                      >
-                        No se encontraron renglones con el filtro especificado.
-                      </TableCell>
+                      <TableHead className="w-12 text-center font-semibold">#</TableHead>
+                      <TableHead className="min-w-[320px] font-semibold">Insumo</TableHead>
+                      {canViewStock && (
+                        <TableHead className="w-28 text-center font-semibold">Stock</TableHead>
+                      )}
+                      <TableHead className="w-40 text-center font-semibold">Cantidad</TableHead>
+                      <TableHead className="w-20 text-center font-semibold">Unidad</TableHead>
+                      <TableHead className="w-20 text-right pr-4 font-semibold">Acción</TableHead>
                     </TableRow>
-                  ) : (
-                    displayedRows.map((row, index) => {
-                      const selectedProd = productMap.get(row.productId);
-                      const unit =
-                        selectedProd?.unitOfMeasure ||
-                        selectedProd?.baseUnit?.abbreviation ||
-                        "UND";
-                      const stock = selectedProd?.totalStock ?? 0;
-                      const isDeficit =
-                        row.productId > 0 && row.requestedQuantity > stock;
-                      const isDuplicate =
-                        row.productId > 0 && duplicateProductIds.has(row.productId);
-
-                      return (
-                        <TableRow
-                          key={row.uid}
-                          className={isDuplicate ? "bg-amber-500/5" : undefined}
+                  </TableHeader>
+                  <TableBody>
+                    {displayedRows.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={canViewStock ? 6 : 5}
+                          className="h-24 text-center text-xs text-muted-foreground"
                         >
-                          {/* Número correlativo */}
-                          <TableCell className="text-center font-mono text-xs font-bold text-muted-foreground">
-                            {index + 1}
-                          </TableCell>
+                          No se encontraron renglones con el filtro especificado.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      displayedRows.map((row, index) => {
+                        const selectedProd = productMap.get(row.productId);
+                        const unit =
+                          selectedProd?.unitOfMeasure ||
+                          selectedProd?.baseUnit?.abbreviation ||
+                          "UND";
+                        const stock = selectedProd?.totalStock ?? 0;
+                        const isDeficit =
+                          row.productId > 0 && row.requestedQuantity > stock;
+                        const isDuplicate =
+                          row.productId > 0 && duplicateProductIds.has(row.productId);
 
-                          {/* Selector de Producto */}
-                          <TableCell>
+                        return (
+                          <TableRow
+                            key={row.uid}
+                            className={cn(
+                              "transition-colors",
+                              isDuplicate && "bg-amber-500/5",
+                              !row.productId && "bg-muted/5"
+                            )}
+                          >
+                            {/* Número correlativo */}
+                            <TableCell className="text-center font-mono text-xs font-bold text-muted-foreground">
+                              {index + 1}
+                            </TableCell>
+
+                            {/* Selector de Producto */}
+                            <TableCell>
+                              <ProductCombobox
+                                products={products}
+                                categories={categories}
+                                selectedProductId={row.productId}
+                                onSelect={(prodId) =>
+                                  handleProductSelect(row.uid, prodId)
+                                }
+                                placeholder="Buscar por nombre, SKU o categoría..."
+                                showStock={canViewStock}
+                              />
+                            </TableCell>
+
+                            {/* Stock Almacén (Solo para roles con permiso) */}
+                            {canViewStock && (
+                              <TableCell className="text-center">
+                                {selectedProd ? (
+                                  <div className="flex flex-col items-center">
+                                    <Badge
+                                      variant={stock > 0 ? "success" : "destructive"}
+                                      className="font-mono text-[10px]"
+                                    >
+                                      {stock} {unit}
+                                    </Badge>
+                                    {isDeficit && (
+                                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold mt-0.5">
+                                        Insuficiente
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground/60">—</span>
+                                )}
+                              </TableCell>
+                            )}
+
+                            {/* Cantidad Solicitada con botones de ajuste rápido */}
+                            <TableCell className="text-center">
+                              <div className="flex items-center justify-center gap-1 max-w-[150px] mx-auto">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon"
+                                  onClick={() => handleQuickQuantity(row.uid, -1)}
+                                  disabled={row.requestedQuantity <= 1}
+                                  className="h-8 w-7 text-xs shrink-0 cursor-pointer"
+                                  title="Disminuir 1"
+                                >
+                                  -
+                                </Button>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  value={row.requestedQuantity}
+                                  onChange={(e) =>
+                                    handleQuantityChange(
+                                      row.uid,
+                                      Number(e.target.value)
+                                    )
+                                  }
+                                  className="h-8 text-center font-mono font-bold text-xs px-1 w-16"
+                                  required
+                                />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon"
+                                  onClick={() => handleQuickQuantity(row.uid, 1)}
+                                  className="h-8 w-7 text-xs shrink-0 cursor-pointer"
+                                  title="Aumentar 1"
+                                >
+                                  +
+                                </Button>
+                                {canViewStock && selectedProd && stock > 0 && stock !== row.requestedQuantity && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleSetMaxStock(row.uid, stock)}
+                                    className="h-8 px-1.5 text-[10px] text-primary hover:bg-primary/10 font-bold shrink-0 cursor-pointer"
+                                    title="Ajustar al stock disponible"
+                                  >
+                                    Máx
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+
+                            {/* Unidad */}
+                            <TableCell className="text-center font-mono text-xs text-muted-foreground">
+                              {selectedProd ? unit : "—"}
+                            </TableCell>
+
+                            {/* Acciones */}
+                            <TableCell className="text-right pr-4">
+                              <div className="inline-flex items-center gap-1">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => handleDuplicateRow(row.uid)}
+                                  className="text-muted-foreground hover:text-foreground cursor-pointer"
+                                  title="Duplicar renglón"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => handleRemoveRow(row.uid)}
+                                  disabled={rows.length === 1}
+                                  className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                                  title="Eliminar renglón"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              /* ========================================================
+                  MODO TARJETAS (VISTA DETALLADA Y ESPACIADA)
+                 ======================================================== */
+              <div className="p-4 space-y-3">
+                {displayedRows.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-muted-foreground">
+                    No se encontraron renglones con el filtro especificado.
+                  </div>
+                ) : (
+                  displayedRows.map((row, index) => {
+                    const selectedProd = productMap.get(row.productId);
+                    const unit =
+                      selectedProd?.unitOfMeasure ||
+                      selectedProd?.baseUnit?.abbreviation ||
+                      "UND";
+                    const stock = selectedProd?.totalStock ?? 0;
+                    const isDeficit =
+                      row.productId > 0 && row.requestedQuantity > stock;
+                    const isDuplicate =
+                      row.productId > 0 && duplicateProductIds.has(row.productId);
+
+                    return (
+                      <div
+                        key={row.uid}
+                        className={cn(
+                          "p-3.5 rounded-xl border border-border bg-card shadow-2xs space-y-3 transition-colors",
+                          isDuplicate && "border-amber-300 dark:border-amber-800 bg-amber-500/5"
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-full bg-muted flex items-center justify-center font-mono text-xs font-bold text-muted-foreground">
+                              {index + 1}
+                            </span>
+                            <span className="text-xs font-semibold text-foreground">
+                              {selectedProd?.name || "Seleccione un insumo..."}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => handleDuplicateRow(row.uid)}
+                              className="text-muted-foreground hover:text-foreground cursor-pointer"
+                              title="Duplicar renglón"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => handleRemoveRow(row.uid)}
+                              disabled={rows.length === 1}
+                              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                              title="Eliminar renglón"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                          <div className={canViewStock ? "md:col-span-7" : "md:col-span-8"}>
                             <ProductCombobox
                               products={products}
                               categories={categories}
@@ -734,92 +1126,89 @@ export default function NewInternalRequestPage() {
                               onSelect={(prodId) =>
                                 handleProductSelect(row.uid, prodId)
                               }
-                              placeholder="Buscar insumo por nombre o SKU..."
+                              placeholder="Buscar por nombre, SKU o categoría..."
+                              showStock={canViewStock}
                             />
-                          </TableCell>
+                          </div>
 
-                          {/* Stock Almacén */}
-                          <TableCell className="text-center">
-                            {selectedProd ? (
-                              <div className="flex flex-col items-center">
+                          {canViewStock && (
+                            <div className="md:col-span-2 flex items-center justify-center gap-2">
+                              <span className="text-[11px] text-muted-foreground font-medium">Stock:</span>
+                              {selectedProd ? (
                                 <Badge
                                   variant={stock > 0 ? "success" : "destructive"}
                                   className="font-mono text-[10px]"
                                 >
                                   {stock} {unit}
                                 </Badge>
-                                {isDeficit && (
-                                  <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold mt-0.5">
-                                    Insuficiente
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground/60">
-                                —
-                              </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground/60">—</span>
+                              )}
+                            </div>
+                          )}
+
+                          <div className={cn("flex items-center justify-end gap-1.5", canViewStock ? "md:col-span-3" : "md:col-span-4")}>
+                            <Label className="text-[11px] text-muted-foreground font-medium mr-1">
+                              Cantidad:
+                            </Label>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={() => handleQuickQuantity(row.uid, -1)}
+                              disabled={row.requestedQuantity <= 1}
+                              className="h-8 w-7 text-xs shrink-0 cursor-pointer"
+                            >
+                              -
+                            </Button>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={row.requestedQuantity}
+                              onChange={(e) =>
+                                handleQuantityChange(row.uid, Number(e.target.value))
+                              }
+                              className="h-8 text-center font-mono font-bold text-xs w-16"
+                              required
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={() => handleQuickQuantity(row.uid, 1)}
+                              className="h-8 w-7 text-xs shrink-0 cursor-pointer"
+                            >
+                              +
+                            </Button>
+                            {canViewStock && selectedProd && stock > 0 && stock !== row.requestedQuantity && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSetMaxStock(row.uid, stock)}
+                                className="h-8 px-1.5 text-[10px] text-primary hover:bg-primary/10 font-bold shrink-0 cursor-pointer"
+                                title="Ajustar al stock disponible"
+                              >
+                                Máx
+                              </Button>
                             )}
-                          </TableCell>
+                          </div>
+                        </div>
 
-                          {/* Cantidad Solicitada */}
-                          <TableCell className="text-center">
-                            <div className="relative inline-block w-full max-w-[110px]">
-                              <Input
-                                type="number"
-                                min="1"
-                                value={row.requestedQuantity}
-                                onChange={(e) =>
-                                  handleQuantityChange(
-                                    row.uid,
-                                    Number(e.target.value)
-                                  )
-                                }
-                                className="h-8 text-center font-mono font-bold text-xs"
-                                required
-                              />
-                            </div>
-                          </TableCell>
+                        {canViewStock && isDeficit && (
+                          <div className="text-[11px] text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1.5 pt-1">
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                            <span>La cantidad solicitada ({row.requestedQuantity}) supera el stock disponible en almacén ({stock}).</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
 
-                          {/* Unidad */}
-                          <TableCell className="text-center font-mono text-xs text-muted-foreground">
-                            {selectedProd ? unit : "—"}
-                          </TableCell>
-
-                          {/* Acciones */}
-                          <TableCell className="text-right pr-4">
-                            <div className="inline-flex items-center gap-1">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => handleDuplicateRow(row.uid)}
-                                className="text-muted-foreground hover:text-foreground"
-                                title="Duplicar renglón"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => handleRemoveRow(row.uid)}
-                                disabled={rows.length === 1}
-                                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                title="Eliminar renglón"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Footer de la tabla con botón de añadir */}
+            {/* Pie de tabla con botón para añadir renglón */}
             <div className="p-3 border-t border-border bg-muted/10 flex items-center justify-between">
               <span className="text-xs text-muted-foreground">
                 {validRowsCount} de {rows.length} renglones configurados con insumo.
@@ -829,28 +1218,30 @@ export default function NewInternalRequestPage() {
                 variant="outline"
                 size="sm"
                 onClick={handleAddRow}
-                className="h-8 text-xs gap-1.5 text-primary border-primary/20 bg-primary/5 hover:bg-primary/10"
+                className="h-8 text-xs gap-1.5 text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
-                Agregar otro renglón
+                <span>Agregar otro renglón</span>
               </Button>
             </div>
           </CardContent>
         </Card>
 
-        {/* SECCIÓN 3: JUSTIFICACIÓN DE USO / MOTIVO */}
-        <Card className="border-border">
+        {/* ========================================================
+            SECCIÓN 3: JUSTIFICACIÓN
+           ======================================================== */}
+        <Card className="border-border shadow-2xs">
           <CardHeader className="pb-3 border-b border-border/50 bg-muted/20">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-primary" />
-              3. Justificación de Uso / Motivo Técnico *
+              Justificación
             </CardTitle>
             <CardDescription className="text-xs">
-              Seleccione un badge de resumen de una palabra para autocompletar la justificación o detalle el motivo del pedido.
+              Conceptos rápidos y detalle del requerimiento
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-4 space-y-4">
-            {/* Selector de Protocolos Rápidos */}
+            {/* Selector de Conceptos Rápidos */}
             <ProtocolBadgeSelector
               concepts={justificationConcepts}
               isConceptSelected={isConceptSelected}
@@ -861,7 +1252,7 @@ export default function NewInternalRequestPage() {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Detalle de la Justificación *
+                  Motivo del Pedido *
                 </Label>
                 <span className="text-[11px] text-muted-foreground">
                   Mínimo 5 caracteres • {justification.trim().length} ingresados
@@ -880,7 +1271,7 @@ export default function NewInternalRequestPage() {
             {/* Notas opcionales para almacén */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Notas / Instrucciones Especiales de Entrega (Opcional)
+                Notas Adicionales (Opcional)
               </Label>
               <Input
                 type="text"
@@ -893,22 +1284,25 @@ export default function NewInternalRequestPage() {
           </CardContent>
         </Card>
 
-        {/* BARRA FLOTANTE / INFERIOR DE ACCIONES */}
+        {/* ========================================================
+            BARRA FLOTANTE INFERIOR DE ACCIÓN
+           ======================================================== */}
         <div className="sticky bottom-4 z-40 bg-card/95 backdrop-blur-md border border-border shadow-xl rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-3 text-xs text-muted-foreground w-full sm:w-auto justify-between sm:justify-start">
             <div className="flex items-center gap-1.5">
               <span className="font-semibold text-foreground">{validRowsCount}</span>
-              <span>renglones</span>
+              <span>insumos</span>
             </div>
             <span>•</span>
             <div className="flex items-center gap-1.5">
               <span className="font-semibold text-foreground">{totalUnits}</span>
-              <span>piezas/unidades</span>
+              <span>unidades</span>
             </div>
-            {stockDeficitRows.length > 0 && (
+            {canViewStock && stockDeficitRows.length > 0 && (
               <>
                 <span>•</span>
-                <span className="text-amber-600 dark:text-amber-400 font-medium">
+                <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" />
                   {stockDeficitRows.length} en déficit de stock
                 </span>
               </>
@@ -922,6 +1316,7 @@ export default function NewInternalRequestPage() {
               size="sm"
               onClick={handleBackNavigation}
               disabled={submitting}
+              className="cursor-pointer"
             >
               Cancelar
             </Button>
@@ -930,12 +1325,12 @@ export default function NewInternalRequestPage() {
               type="submit"
               size="sm"
               disabled={submitting || !canCreate || validRowsCount === 0}
-              className="gap-2 min-w-[160px]"
+              className="gap-2 min-w-[160px] cursor-pointer"
             >
               {submitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Enviando Solicitud...
+                  Enviando Pedido...
                 </>
               ) : (
                 <>
@@ -948,7 +1343,9 @@ export default function NewInternalRequestPage() {
         </div>
       </form>
 
-      {/* DIÁLOGO DE CONFIRMACIÓN AL SALIR CON CAMBIOS SIN GUARDAR */}
+      {/* ========================================================
+          DIÁLOGO DE CONFIRMACIÓN AL DESCARTAR CAMBIOS
+         ======================================================== */}
       <Dialog open={confirmLeaveOpen} onOpenChange={setConfirmLeaveOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -957,8 +1354,7 @@ export default function NewInternalRequestPage() {
               ¿Descartar cambios no guardados?
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Ha ingresado renglones o justificaciones en esta solicitud. Si regresa
-              a la lista, la información no enviada se perderá.
+              Ha ingresado renglones o justificaciones en este pedido. Si regresa a la lista, la información no enviada se perderá.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -967,6 +1363,7 @@ export default function NewInternalRequestPage() {
               variant="outline"
               size="sm"
               onClick={() => setConfirmLeaveOpen(false)}
+              className="cursor-pointer"
             >
               Continuar editando
             </Button>
@@ -978,6 +1375,7 @@ export default function NewInternalRequestPage() {
                 setConfirmLeaveOpen(false);
                 router.push("/requests");
               }}
+              className="cursor-pointer"
             >
               Descartar y Salir
             </Button>

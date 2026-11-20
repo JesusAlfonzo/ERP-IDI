@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useTheme } from "next-themes";
 import { AuthService } from "@/services/auth.service";
 import type { AuthUser } from "@/types/auth";
 import { Sidebar } from "./sidebar";
@@ -14,7 +13,6 @@ const SIDEBAR_STORAGE_KEY = "idi_sidebar_collapsed";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { setTheme } = useTheme();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -26,19 +24,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       return false;
     }
   });
-
-  // Forzar modo claro de forma permanente dentro del sistema interno
-  useEffect(() => {
-    try {
-      setTheme("light");
-      if (typeof document !== "undefined") {
-        document.documentElement.classList.remove("dark");
-        document.documentElement.classList.add("light");
-      }
-    } catch (e) {
-      console.error("Error forzando modo claro en el sistema interno:", e);
-    }
-  }, [setTheme]);
 
   useEffect(() => {
     const checkAuth = async () => {

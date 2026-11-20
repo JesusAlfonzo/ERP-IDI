@@ -75,7 +75,7 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS"],
     children: [
       {
-        label: "Insumos y Lotes",
+        label: "Inventario",
         href: "/inventory/products",
         icon: Package,
         roles: ["ADMINISTRADOR", "ALMACENISTA", "COMPRAS"],
@@ -90,7 +90,14 @@ const NAVIGATION_GROUPS: NavGroup[] = [
         label: "Cuarentena",
         href: "/quality/quarantine",
         icon: ShieldAlert,
-        roles: ["ADMINISTRADOR", "ALMACENISTA", "LABORATORIO"],
+        roles: [
+          "ADMINISTRADOR",
+          "ALMACENISTA",
+          "LABORATORIO",
+          "COMPRAS",
+          "COORDINADOR",
+          "COORDINADOR_LABORATORIO",
+        ],
       },
     ],
   },

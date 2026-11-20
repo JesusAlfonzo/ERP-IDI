@@ -73,6 +73,13 @@ export default function EditInternalRequestPage() {
     AuthService.getCurrentUser()
   );
 
+  const userRoles = currentUser?.roles || [];
+  const canViewStock =
+    userRoles.includes("ADMINISTRADOR") ||
+    userRoles.includes("ALMACENISTA") ||
+    userRoles.includes("COORDINADOR") ||
+    userRoles.includes("COORDINADOR_LABORATORIO");
+
   // Estados de datos
   const [existingRequest, setExistingRequest] = useState<InternalRequest | null>(null);
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
@@ -557,6 +564,7 @@ export default function EditInternalRequestPage() {
                         selectedProductId={row.productId}
                         onSelect={(pId: number) => handleUpdateRow(row.uid, "productId", pId)}
                         disabled={false}
+                        showStock={canViewStock}
                       />
                     </div>
 

@@ -25,7 +25,6 @@ import {
   X,
   ExternalLink,
 } from "lucide-react";
-import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { AuthService } from "@/services/auth.service";
 
 export default function Home() {
@@ -121,10 +120,8 @@ export default function Home() {
             </a>
           </nav>
 
-          {/* Acciones del Lado Derecho: Toggle de Tema & Acceso */}
+          {/* Acceso */}
           <div className="flex items-center gap-2.5">
-            <ThemeToggle className="bg-white/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-white/10 shadow-2xs" />
-
             {isAuthenticated ? (
               <Link
                 href="/dashboard"
@@ -603,13 +600,13 @@ export default function Home() {
         <div className="text-center max-w-2xl mx-auto mb-16 space-y-3">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100/70 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 text-xs font-bold border border-blue-200/60 dark:border-blue-800/40">
             <Boxes className="w-3.5 h-3.5" />
-            Arquitectura Hospitalaria Unificada
+            Arquitectura Integral ERP
           </div>
           <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
             Módulos Diseñados para Bioanálisis & Almacén
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-            Plataforma integral concebida con estándares hospitalarios de alta exigencia,
+            Plataforma integral de planeación de recursos empresariales concebida con estándares de alta exigencia,
             trazabilidad analítica y control financiero multimoneda.
           </p>
         </div>
@@ -630,7 +627,7 @@ export default function Home() {
                   Criocustodia & Control
                 </span>
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                  Cadena de Frío Hospitalaria
+                  Cadena de Frío & Criocustodia
                 </h3>
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
@@ -815,7 +812,7 @@ export default function Home() {
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-600" />
-                  Gestión Hospitalaria Digital
+                  Planeación de Recursos Empresariales (ERP)
                 </span>
               </div>
             </div>
@@ -868,7 +865,7 @@ export default function Home() {
             </div>
             <div>
               <span className="font-bold text-slate-800 dark:text-slate-200 block">
-                ERP-IDI &bull; Sistema de Gestión Hospitalaria
+                ERP-IDI &bull; Sistema de Planeación de Recursos Empresariales
               </span>
               <span className="text-[11px] text-slate-400">
                 Instituto de Inmunología &bull; Facultad de Medicina &bull; UCV

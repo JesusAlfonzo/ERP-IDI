@@ -26,7 +26,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { toast } from "@/utils/toast";
 
 export default function LoginPage() {
@@ -167,8 +166,6 @@ export default function LoginPage() {
             <span>Portal IDI</span>
             <ExternalLink className="w-3 h-3 text-slate-400" />
           </a>
-
-          <ThemeToggle className="bg-white/70 dark:bg-slate-900/60 border border-white/80 dark:border-white/10 shadow-2xs backdrop-blur-xl" />
         </div>
       </header>
 
@@ -217,7 +214,7 @@ export default function LoginPage() {
                 <div className="flex items-center justify-between gap-3">
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full backdrop-blur-md bg-white/70 dark:bg-white/10 border border-blue-200/80 dark:border-white/15 text-blue-700 dark:text-blue-300 text-xs font-semibold shadow-2xs">
                     <ShieldCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                    <span>Control Hospitalario & Trazabilidad</span>
+                    <span>ERP · Planeación de Recursos Empresariales</span>
                   </div>
                   <div className="hidden sm:inline-flex bg-white/90 dark:bg-white rounded-xl px-2.5 py-1 shadow-xs border border-slate-200/60 items-center justify-center">
                     <Image

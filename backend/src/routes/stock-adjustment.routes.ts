@@ -21,13 +21,13 @@ router.use(authenticateJWT);
 
 router.get(
   '/movements',
-  requireRoles(['ADMINISTRADOR', 'ALMACENISTA']),
+  requireRoles(['ADMINISTRADOR', 'ALMACENISTA', 'COORDINADOR', 'COORDINADOR_LABORATORIO']),
   listStockMovements
 );
 
 router.get(
   '/movements/:id',
-  requireRoles(['ADMINISTRADOR', 'ALMACENISTA']),
+  requireRoles(['ADMINISTRADOR', 'ALMACENISTA', 'COORDINADOR', 'COORDINADOR_LABORATORIO']),
   getStockMovementById
 );
 

@@ -32,7 +32,7 @@ router.get('/movements/:id', getMovementById);
 // Dictamen de Calidad / Liberación de Cuarentena
 router.patch(
   '/batches/:id/status',
-  requireRoles(['ADMINISTRADOR', 'ALMACENISTA']),
+  requireRoles(['ADMINISTRADOR', 'ALMACENISTA', 'COORDINADOR', 'COORDINADOR_LABORATORIO']),
   updateBatchStatus
 );
 

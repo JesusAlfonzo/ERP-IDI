@@ -15,6 +15,7 @@ import type { KardexItem, KardexFilters } from "@/types/kardex";
 import type {
   InventoryAdjustmentPayload,
   AdjustmentResponseData,
+  StockMovementRecord,
 } from "@/types/adjustments";
 
 export const InventoryClientService = {
@@ -487,5 +488,34 @@ export const InventoryClientService = {
       newBalance: Number(detail?.batch?.currentQuantity ?? 0),
       message: response.data.message || "Merma registrada correctamente",
     };
+  },
+
+  /**
+   * Consulta el listado paginado de movimientos de inventario (Ajustes y Mermas)
+   */
+  async getMovements(filters?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    type?: string;
+    types?: string[];
+    startDate?: string;
+    endDate?: string;
+  }): Promise<PaginatedApiResponse<StockMovementRecord>> {
+    const params = new URLSearchParams();
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.limit) params.append("limit", String(filters.limit));
+    if (filters?.search) params.append("search", filters.search);
+    if (filters?.type) params.append("type", filters.type);
+    if (filters?.types && filters.types.length > 0) {
+      params.append("types", filters.types.join(","));
+    }
+    if (filters?.startDate) params.append("startDate", filters.startDate);
+    if (filters?.endDate) params.append("endDate", filters.endDate);
+
+    const response = await apiClient.get<PaginatedApiResponse<StockMovementRecord>>(
+      `/inventory/movements?${params.toString()}`
+    );
+    return response.data;
   },
 };

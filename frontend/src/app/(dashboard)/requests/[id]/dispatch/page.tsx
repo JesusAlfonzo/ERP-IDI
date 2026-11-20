@@ -12,7 +12,7 @@ export default function RequestIdDispatchPage() {
 
   useEffect(() => {
     if (id) {
-      router.replace(`/requests/dispatch?id=${id}`);
+      router.replace(`/requests/dispatch/new?requestId=${id}`);
     } else {
       router.replace("/requests/dispatch");
     }

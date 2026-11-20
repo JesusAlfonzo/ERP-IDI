@@ -6,56 +6,45 @@ import {
   useMemo,
   useCallback,
   useTransition,
-  useRef,
   Suspense,
-  type FormEvent,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { RequestClientService } from "@/services/request.service";
-import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
 import { useDebounce } from "@/hooks/use-debounce";
-import { toast } from "@/utils/toast";
 import { TablePagination } from "@/components/common/TablePagination";
 import type {
   InternalRequest,
-  RequestStatus,
+  RequestPriority,
   RequestWindowStatus,
-  DispatchRequestItemPayload,
 } from "@/types/requests";
-import type { StockBatch } from "@/types/inventory";
 import type { AuthUser } from "@/types/auth";
+import { toast } from "@/utils/toast";
+import { cn } from "@/lib/utils";
 import {
   ClipboardList,
   Plus,
-  Filter,
   RefreshCw,
-  AlertCircle,
-  CheckCircle2,
+  Search,
   X,
-  Trash2,
-  Loader2,
+  Building2,
+  Calendar,
+  Layers,
+  Clock,
+  CheckCircle2,
+  PackageCheck,
   Check,
   Ban,
-  AlertTriangle,
-  XCircle,
   Eye,
-  CheckCheck,
-  Search,
-  Clock,
-  ShieldAlert,
-  Layers,
-  Sliders,
-  PackageCheck,
   Pencil,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
+  Loader2,
+  AlertCircle,
+  XCircle,
+  ShieldAlert,
 } from "lucide-react";
 
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableHeader,
@@ -67,498 +56,231 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 
-const STATUS_CONFIG: Record<
-  RequestStatus,
-  { label: string; variant: "warning" | "info" | "purple" | "success" | "destructive" }
-> = {
-  PENDIENTE: {
-    label: "Pendiente",
-    variant: "warning",
-  },
-  APROBADA: {
-    label: "Aprobada",
-    variant: "info",
-  },
-  DESPACHADA_PARCIAL: {
-    label: "Despacho parcial",
-    variant: "purple",
-  },
-  COMPLETADA: {
-    label: "Completada",
-    variant: "success",
-  },
-  RECHAZADA: {
-    label: "Rechazada",
-    variant: "destructive",
-  },
-};
+type RequestsTab = "PENDING" | "APPROVED" | "DISPATCHED" | "REJECTED" | "ALL";
 
-interface DispatchAllocationRow {
-  batchId: number;
-  quantity: number | "";
-}
-
-function RequestsContent() {
+function RequestsIndexContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const dispatchQueryId = searchParams.get("dispatch");
 
+  // Redirección si se invoca con ?dispatch=ID
+  useEffect(() => {
+    if (dispatchQueryId) {
+      router.replace(`/requests/dispatch/new?requestId=${dispatchQueryId}`);
+    }
+  }, [dispatchQueryId, router]);
+
   const [currentUser] = useState<AuthUser | null>(() =>
     AuthService.getCurrentUser()
   );
-  const [requests, setRequests] = useState<InternalRequest[]>([]);
-  const [windowStatus, setWindowStatus] = useState<RequestWindowStatus | null>(
-    null
-  );
-  const [availableBatches, setAvailableBatches] = useState<
-    (StockBatch & {
-      productId?: number;
-      product: {
-        id?: number;
-        name: string;
-        sku: string;
-        unitOfMeasure?: string;
-      };
-    })[]
-  >([]);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [searchTerm, setSearchTerm] = useState<string>("");
-  const debouncedSearchTerm = useDebounce(searchTerm, 350);
-  const [, startTransition] = useTransition();
-
-  // Permisos basados en Roles (RBAC estricto)
   const userRoles = currentUser?.roles || [];
   const isWarehouseStaff =
     userRoles.includes("ADMINISTRADOR") || userRoles.includes("ALMACENISTA");
-  const canCreateRole =
+  const canCreate =
     userRoles.includes("SOLICITANTE") ||
     userRoles.includes("ADMINISTRADOR") ||
     userRoles.includes("ALMACENISTA") ||
     userRoles.includes("LABORATORIO") ||
-    userRoles.includes("COMPRAS");
+    userRoles.includes("COMPRAS") ||
+    userRoles.includes("COORDINADOR") ||
+    userRoles.includes("BIOANALISTA");
 
-  // Permisos para creación
-  const canCreate = canCreateRole;
+  const [requests, setRequests] = useState<InternalRequest[]>([]);
+  const [windowStatus, setWindowStatus] = useState<RequestWindowStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Modal Despacho Multi-Lote (Solo Almacén)
-  const [selectedForDispatch, setSelectedForDispatch] =
-    useState<InternalRequest | null>(null);
-  const [dispatchItemAllocations, setDispatchItemAllocations] = useState<
-    Record<number, DispatchAllocationRow[]>
-  >({});
-  const [dispatchNotes, setDispatchNotes] = useState("");
-  const [dispatching, setDispatching] = useState(false);
-  const [dispatchFeedback, setDispatchFeedback] = useState<{
-    status: "success" | "error";
-    message: string;
-  } | null>(null);
+  // Filtros
+  const [activeTab, setActiveTab] = useState<RequestsTab>("PENDING");
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 250);
+  const [selectedDept, setSelectedDept] = useState<string>("ALL");
+  const [selectedPriority, setSelectedPriority] = useState<string>("ALL");
 
-  // Referencias para evitar re-renders y bucles infinitos
-  const batchesRef = useRef(availableBatches);
-  const openedDispatchIdRef = useRef<string | null>(null);
+  // Paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [, startTransition] = useTransition();
 
-  useEffect(() => {
-    batchesRef.current = availableBatches;
-  }, [availableBatches]);
-
-  // Modal Rechazo (Solo Almacén)
-  const [requestToReject, setRequestToReject] =
-    useState<InternalRequest | null>(null);
+  // Estados de Modales y Acciones
+  const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [requestToReject, setRequestToReject] = useState<InternalRequest | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [rejecting, setRejecting] = useState(false);
 
-  // Acción rápida Aprobar
-  const [approvingId, setApprovingId] = useState<number | null>(null);
-
-  const [feedback, setFeedback] = useState<{
-    status: "success" | "error";
-    message: string;
-  } | null>(null);
-
-  const handleCloseDispatchModal = useCallback(() => {
-    setSelectedForDispatch(null);
-    setDispatchFeedback(null);
-    openedDispatchIdRef.current = null;
-    if (typeof window !== "undefined") {
-      const url = new URL(window.location.href);
-      if (url.searchParams.has("dispatch")) {
-        url.searchParams.delete("dispatch");
-        window.history.replaceState(
-          {},
-          "",
-          url.pathname + (url.search ? url.search : "")
-        );
-      }
+  const loadData = useCallback(async (isManualRefresh = false) => {
+    if (isManualRefresh) setRefreshing(true);
+    try {
+      const [reqData, winData] = await Promise.all([
+        RequestClientService.getRequests(),
+        RequestClientService.getWindowStatus().catch(() => null),
+      ]);
+      setRequests(reqData);
+      setWindowStatus(winData);
+    } catch (err) {
+      console.error("Error al cargar pedidos:", err);
+      toast.error("Error al cargar pedidos");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
-  const openDispatchModal = useCallback(
-    (req: InternalRequest, batchesList?: typeof availableBatches) => {
-      if (!isWarehouseStaff) return;
-      setSelectedForDispatch(req);
-      const batches = batchesList ?? batchesRef.current;
-      const initialMap: Record<number, DispatchAllocationRow[]> = {};
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
-      req.items.forEach((it) => {
-        if (it.id) {
-          const qtyApproved = Number(
-            it.quantityApproved && it.quantityApproved > 0
-              ? it.quantityApproved
-              : it.quantityRequested ?? it.requestedQuantity ?? 0
-          );
-          const qtyDispatched = Number(
-            it.quantityDispatched ?? it.dispatchedQuantity ?? 0
-          );
-          const pendingQuantity = Math.max(0, qtyApproved - qtyDispatched);
+  // Lista de departamentos para el selector de filtro
+  const departmentsList = useMemo(() => {
+    const set = new Set<string>();
+    requests.forEach((r) => {
+      const d = r.departmentSection || r.department?.name;
+      if (d) set.add(d);
+    });
+    return Array.from(set).sort();
+  }, [requests]);
 
-          const candidateBatches = batches.filter(
-            (b) => (b.productId ?? b.product?.id) === it.productId
-          );
-          const firstBatch = candidateBatches[0];
+  // Contadores para métricas y tabs
+  const metrics = useMemo(() => {
+    let pendingCount = 0;
+    let approvedCount = 0;
+    let dispatchedCount = 0;
+    let rejectedCount = 0;
+    let totalCount = requests.length;
 
-          initialMap[it.id] = [
-            {
-              batchId: firstBatch ? firstBatch.id : 0,
-              quantity: firstBatch
-                ? Math.min(pendingQuantity, firstBatch.currentQuantity)
-                : pendingQuantity > 0
-                  ? pendingQuantity
-                  : "",
-            },
-          ];
+    requests.forEach((r) => {
+      if (r.status === "PENDIENTE") pendingCount++;
+      else if (r.status === "APROBADA") approvedCount++;
+      else if (r.status === "COMPLETADA" || r.status === "DESPACHADA_PARCIAL") {
+        dispatchedCount++;
+      } else if (r.status === "RECHAZADA") {
+        rejectedCount++;
+      }
+    });
+
+    return {
+      totalCount,
+      pendingCount,
+      approvedCount,
+      dispatchedCount,
+      rejectedCount,
+    };
+  }, [requests]);
+
+  // Filtrado según Tab + Búsqueda + Filtros
+  const filteredRequests = useMemo(() => {
+    return requests.filter((r) => {
+      // 1. Filtro por Tab
+      if (activeTab === "PENDING") {
+        if (r.status !== "PENDIENTE") return false;
+      } else if (activeTab === "APPROVED") {
+        if (r.status !== "APROBADA") return false;
+      } else if (activeTab === "DISPATCHED") {
+        if (r.status !== "COMPLETADA" && r.status !== "DESPACHADA_PARCIAL") {
+          return false;
         }
-      });
+      } else if (activeTab === "REJECTED") {
+        if (r.status !== "RECHAZADA") return false;
+      }
 
-      setDispatchItemAllocations(initialMap);
-      setDispatchNotes("");
-      setDispatchFeedback(null);
-    },
-    [isWarehouseStaff]
-  );
+      // 2. Filtro por Departamento
+      if (selectedDept !== "ALL") {
+        const d = r.departmentSection || r.department?.name;
+        if (d !== selectedDept) return false;
+      }
 
-  // Función reutilizable para recargar datos manualmente tras una acción
-  const refreshData = async () => {
-    setLoading(true);
-    try {
-      const [reqs, batches, wStatus] = await Promise.all([
-        RequestClientService.getRequests(statusFilter || undefined).catch(
-          () => []
-        ),
-        isWarehouseStaff
-          ? InventoryClientService.getActiveBatches().catch(() => [])
-          : Promise.resolve([]),
-        RequestClientService.getWindowStatus().catch(() => null),
-      ]);
-      setRequests(reqs);
-      setAvailableBatches(batches);
-      setWindowStatus(wStatus);
-    } finally {
-      setLoading(false);
-    }
+      // 3. Filtro por Prioridad
+      if (selectedPriority !== "ALL") {
+        if (r.priority !== selectedPriority) return false;
+      }
+
+      // 4. Búsqueda libre
+      if (debouncedSearch.trim() !== "") {
+        const q = debouncedSearch.toLowerCase().trim();
+        const num = r.requestNumber.toLowerCase();
+        const dept = (r.departmentSection || r.department?.name || "").toLowerCase();
+        const app = (r.applicant?.fullName || r.applicant?.username || "").toLowerCase();
+        const hasItem = r.items.some(
+          (i) =>
+            i.product?.name?.toLowerCase().includes(q) ||
+            i.product?.sku?.toLowerCase().includes(q)
+        );
+
+        if (!num.includes(q) && !dept.includes(q) && !app.includes(q) && !hasItem) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [requests, activeTab, selectedDept, selectedPriority, debouncedSearch]);
+
+  // Paginación
+  const totalItems = filteredRequests.length;
+  const paginatedRequests = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredRequests.slice(start, start + pageSize);
+  }, [filteredRequests, currentPage, pageSize]);
+
+  const hasActiveFilters =
+    debouncedSearch.trim() !== "" ||
+    selectedDept !== "ALL" ||
+    selectedPriority !== "ALL";
+
+  const clearFilters = () => {
+    setSearch("");
+    setSelectedDept("ALL");
+    setSelectedPriority("ALL");
+    setCurrentPage(1);
   };
 
-  useEffect(() => {
-    if (!AuthService.isAuthenticated()) {
-      router.replace("/login");
-      return;
-    }
-
-    let isMounted = true;
-
-    startTransition(() => {
-      void (async () => {
-        try {
-          const [reqs, batches, wStatus] = await Promise.all([
-            RequestClientService.getRequests(statusFilter || undefined).catch(
-              () => []
-            ),
-            isWarehouseStaff
-              ? InventoryClientService.getActiveBatches().catch(() => [])
-              : Promise.resolve([]),
-            RequestClientService.getWindowStatus().catch(() => null),
-          ]);
-          if (isMounted) {
-            setRequests(reqs);
-            setAvailableBatches(batches);
-            setWindowStatus(wStatus);
-            setLoading(false);
-
-            // Si vino query param de despacho y es personal de almacén, abrir modal
-            if (
-              dispatchQueryId &&
-              isWarehouseStaff &&
-              openedDispatchIdRef.current !== dispatchQueryId
-            ) {
-              const target = reqs.find((r) => String(r.id) === dispatchQueryId);
-              if (
-                target &&
-                (target.status === "APROBADA" ||
-                  target.status === "DESPACHADA_PARCIAL")
-              ) {
-                openedDispatchIdRef.current = dispatchQueryId;
-                openDispatchModal(target, batches);
-              }
-            }
-          }
-        } catch {
-          if (isMounted) {
-            setLoading(false);
-          }
-        }
-      })();
-    });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [router, statusFilter, isWarehouseStaff, dispatchQueryId, openDispatchModal]);
-
-  // Filtrado reactivo en cliente (Búsqueda libre con retardo/debounce + Filtro de Estado)
-  const filteredRequests = useMemo(() => {
-    const term = debouncedSearchTerm.toLowerCase().trim();
-
-    return requests.filter((req) => {
-      if (statusFilter && req.status !== statusFilter) {
-        return false;
-      }
-      if (!term) return true;
-
-      const reqNum = req.requestNumber?.toLowerCase() || "";
-      const dept = req.departmentSection?.toLowerCase() || "";
-      const applicant = (
-        req.applicant?.fullName ||
-        req.applicant?.username ||
-        ""
-      ).toLowerCase();
-      const itemsMatch = req.items?.some(
-        (it) =>
-          it.product?.name?.toLowerCase().includes(term) ||
-          it.product?.sku?.toLowerCase().includes(term)
-      );
-      const justification = req.justification?.toLowerCase() || "";
-
-      return (
-        reqNum.includes(term) ||
-        dept.includes(term) ||
-        applicant.includes(term) ||
-        itemsMatch ||
-        justification.includes(term)
-      );
-    });
-  }, [requests, statusFilter, debouncedSearchTerm]);
-
-  // Estados de Paginación
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-
-  const totalPages = Math.max(1, Math.ceil(filteredRequests.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedRequests = useMemo(() => {
-    const start = (safeCurrentPage - 1) * pageSize;
-    return filteredRequests.slice(start, start + pageSize);
-  }, [filteredRequests, safeCurrentPage, pageSize]);
-
+  // Acción rápida Aprobar
   const handleApprove = async (req: InternalRequest) => {
     if (!isWarehouseStaff) return;
     setApprovingId(req.id);
-    setFeedback(null);
     try {
-      const itemsPayload = (req.items || [])
-        .filter((it) => it && (it.id !== undefined && it.id !== null))
-        .map((it) => ({
-          itemId: Number(it.id),
-          quantityApproved: Number(
-            it.quantityRequested ?? it.requestedQuantity ?? 1,
-          ),
-        }));
+      const itemsToApprove = req.items.map((it) => ({
+        itemId: Number(it.id),
+        quantityApproved: Number(
+          it.quantityRequested ?? it.requestedQuantity ?? 1
+        ),
+      }));
 
-      if (itemsPayload.length === 0) {
-        throw new Error("La solicitud no contiene renglones válidos para ser aprobados.");
-      }
-
-      await RequestClientService.approveRequest(req.id, itemsPayload);
-      const successMsg = `Solicitud #${req.requestNumber} aprobada exitosamente y puesta en espera para retiro.`;
-      setFeedback({
-        status: "success",
-        message: successMsg,
-      });
-      toast.success(successMsg);
-      await refreshData();
+      await RequestClientService.approveRequest(req.id, itemsToApprove);
+      toast.success(`Pedido #${req.requestNumber} aprobado exitosamente.`);
+      await loadData();
     } catch (err: unknown) {
       const errorMsg =
-        err instanceof Error
-          ? err.message
-          : "Error al aprobar la requisición.";
-      setFeedback({
-        status: "error",
-        message: errorMsg,
-      });
+        err instanceof Error ? err.message : "Error al aprobar pedido";
       toast.error(errorMsg);
     } finally {
       setApprovingId(null);
     }
   };
 
-  const handleAddBatchRow = (itemId: number) => {
-    setDispatchItemAllocations((prev) => {
-      const current = prev[itemId] || [];
-      return {
-        ...prev,
-        [itemId]: [...current, { batchId: 0, quantity: "" }],
-      };
-    });
-  };
-
-  const handleRemoveBatchRow = (itemId: number, index: number) => {
-    setDispatchItemAllocations((prev) => {
-      const current = prev[itemId] || [];
-      return {
-        ...prev,
-        [itemId]: current.filter((_, i) => i !== index),
-      };
-    });
-  };
-
-  const handleAllocationFieldChange = (
-    itemId: number,
-    index: number,
-    field: "batchId" | "quantity",
-    value: number | ""
-  ) => {
-    setDispatchItemAllocations((prev) => {
-      const current = prev[itemId] || [];
-      const updated = [...current];
-      updated[index] = {
-        ...updated[index],
-        [field]: value,
-      };
-      return {
-        ...prev,
-        [itemId]: updated,
-      };
-    });
-  };
-
-  const handleConfirmDispatch = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!selectedForDispatch) return;
-
-    setDispatchFeedback(null);
-    const allocationsPayload: DispatchRequestItemPayload[] = [];
-
-    for (const item of selectedForDispatch.items) {
-      const itId = item.id;
-      if (!itId) continue;
-      const rows = dispatchItemAllocations[itId] || [];
-
-      const qtyApproved = Number(
-        item.quantityApproved && item.quantityApproved > 0
-          ? item.quantityApproved
-          : item.quantityRequested ?? item.requestedQuantity ?? 0
-      );
-      const qtyDispatched = Number(
-        item.quantityDispatched ?? item.dispatchedQuantity ?? 0
-      );
-      const pendingQuantity = Math.max(0, qtyApproved - qtyDispatched);
-
-      let itemTotalAllocated = 0;
-      const batchEntries: { batchId: number; quantity: number }[] = [];
-
-      for (const row of rows) {
-        const qtyNum = Number(row.quantity) || 0;
-        if (qtyNum > 0) {
-          if (!row.batchId || row.batchId === 0) {
-            setDispatchFeedback({
-              status: "error",
-              message: `Debe seleccionar un lote válido para "${item.product?.name}".`,
-            });
-            return;
-          }
-          itemTotalAllocated += qtyNum;
-          batchEntries.push({ batchId: row.batchId, quantity: qtyNum });
-        }
-      }
-
-      if (itemTotalAllocated > pendingQuantity) {
-        setDispatchFeedback({
-          status: "error",
-          message: `La cantidad a despachar para "${item.product?.name}" (${itemTotalAllocated}) excede el saldo pendiente (${pendingQuantity}).`,
-        });
-        return;
-      }
-
-      if (batchEntries.length > 0) {
-        allocationsPayload.push({
-          itemId: itId,
-          allocations: batchEntries,
-        });
-      }
-    }
-
-    if (allocationsPayload.length === 0) {
-      setDispatchFeedback({
-        status: "error",
-        message:
-          "Debe asignar cantidad mayor a cero en al menos un renglón para efectuar un despacho.",
-      });
-      return;
-    }
-
-    setDispatching(true);
-    try {
-      await RequestClientService.dispatchRequest({
-        requestId: selectedForDispatch.id,
-        items: allocationsPayload,
-        dispatchNotes: dispatchNotes.trim() || undefined,
-      });
-
-      const successMsg = "Insumos despachados y rebajados del inventario correctamente.";
-      setFeedback({
-        status: "success",
-        message: successMsg,
-      });
-      toast.success(successMsg);
-      handleCloseDispatchModal();
-      await refreshData();
-    } catch (err: unknown) {
-      const errorMsg =
-        err instanceof Error
-          ? err.message
-          : "Error al despachar los insumos.";
-      setDispatchFeedback({
-        status: "error",
-        message: errorMsg,
-      });
-      toast.error(errorMsg);
-    } finally {
-      setDispatching(false);
-    }
-  };
-
+  // Acción Rechazar
   const handleReject = async () => {
-    if (
-      !requestToReject ||
-      !isWarehouseStaff ||
-      rejectReason.trim().length < 5
-    ) {
-      const valMsg = "El motivo de rechazo debe tener al menos 5 caracteres.";
-      setFeedback({
-        status: "error",
-        message: valMsg,
-      });
-      toast.error(valMsg);
+    if (!requestToReject || !isWarehouseStaff || rejectReason.trim().length < 5) {
+      toast.error("El motivo de rechazo debe tener al menos 5 caracteres.");
       return;
     }
     setRejecting(true);
@@ -567,692 +289,648 @@ function RequestsContent() {
         requestToReject.id,
         rejectReason.trim()
       );
-      const successMsg = `Solicitud #${requestToReject.requestNumber} rechazada.`;
-      setFeedback({
-        status: "success",
-        message: successMsg,
-      });
-      toast.success(successMsg);
+      toast.success(`Pedido #${requestToReject.requestNumber} rechazado.`);
       setRequestToReject(null);
       setRejectReason("");
-      await refreshData();
+      await loadData();
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : "Error al rechazar";
-      setFeedback({
-        status: "error",
-        message: errorMsg,
-      });
       toast.error(errorMsg);
     } finally {
       setRejecting(false);
     }
   };
 
+  if (dispatchQueryId) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Abriendo despacho...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Encabezado */}
+    <div className="space-y-6 w-full pb-12">
+      {/* ========================================================
+          ENCABEZADO ESTANDARIZADO INSTITUCIONAL
+         ======================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <ClipboardList className="w-6 h-6 text-primary" />
-            Solicitudes Internas
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            {isWarehouseStaff
-              ? "Gestión, aprobación y despacho de requisiciones institucionales"
-              : "Mis requisiciones de material e insumos de laboratorio"}
-          </p>
+        <div className="flex items-start sm:items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0 shadow-2xs">
+            <ClipboardList className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+              Pedidos
+            </h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Gestión y seguimiento de requisiciones internas
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void loadData(true)}
+            disabled={refreshing}
+            className="h-8 text-xs gap-1.5 cursor-pointer"
+            title="Actualizar datos"
+          >
+            <RefreshCw
+              className={cn("w-3.5 h-3.5", refreshing && "animate-spin text-primary")}
+            />
+            <span>Actualizar</span>
+          </Button>
+
           {isWarehouseStaff && (
             <Button
+              type="button"
               variant="outline"
               size="sm"
               onClick={() => router.push("/requests/dispatch")}
-              className="gap-1.5 border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:border-emerald-800 dark:text-emerald-300 dark:bg-emerald-950/40"
-              title="Crear un nuevo despacho de materiales"
+              className="h-8 text-xs gap-1.5 cursor-pointer border-emerald-300/80 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100/70 dark:border-emerald-800 dark:text-emerald-300 dark:bg-emerald-950/30"
+              title="Ir a gestión de despachos"
             >
-              <PackageCheck className="w-4 h-4" />
-              Nuevo Despacho
+              <PackageCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Despachos</span>
             </Button>
           )}
 
-          {canCreateRole && (
+          {canCreate && (
             <Button
+              type="button"
+              variant="default"
+              size="sm"
               onClick={() => router.push("/requests/new")}
-              title="Crear una nueva requisición"
-              className="gap-2"
+              className="h-8 text-xs gap-1.5 font-semibold cursor-pointer shadow-xs"
             >
-              <Plus className="w-4 h-4" />
-              Nueva Solicitud
+              <Plus className="w-3.5 h-3.5" />
+              <span>Nuevo Pedido</span>
             </Button>
           )}
         </div>
       </div>
 
-      {feedback && (
-        <Alert variant={feedback.status === "success" ? "success" : "destructive"}>
-          {feedback.status === "success" ? (
-            <CheckCircle2 className="w-4 h-4" />
-          ) : (
-            <AlertCircle className="w-4 h-4" />
-          )}
-          <AlertTitle>{feedback.status === "success" ? "Operación Exitosa" : "Atención"}</AlertTitle>
-          <AlertDescription>{feedback.message}</AlertDescription>
-        </Alert>
+      {/* ========================================================
+          BANNER DE VENTANA OPERATIVA (Si está cerrada)
+         ======================================================== */}
+      {windowStatus && !windowStatus.isOpen && (
+        <div className="p-3.5 rounded-xl border border-amber-300/70 bg-amber-50/80 dark:border-amber-900/60 dark:bg-amber-950/30 text-xs flex items-center justify-between gap-3 text-amber-900 dark:text-amber-200">
+          <div className="flex items-center gap-2.5">
+            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Horario de pedidos:</strong> {windowStatus.message || "La recepción de solicitudes se encuentra inactiva actualmente."}
+            </span>
+          </div>
+          <Badge variant="outline" className="text-[10px] bg-background/80 shrink-0">
+            Cerrado
+          </Badge>
+        </div>
       )}
 
-      {/* Barra de Filtros y Búsqueda Avanzada */}
-      <Card className="p-4 shadow-2xs">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            {/* Input de Búsqueda Libre en Tiempo Real */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
-              <Input
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-                placeholder="Buscar por N° solicitud, área, solicitante o insumo..."
-                className="pl-9 pr-8 text-xs"
-              />
-              {searchTerm && (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => {
-                    setSearchTerm("");
-                    setCurrentPage(1);
-                  }}
-                  className="absolute right-1 top-1 text-muted-foreground"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </Button>
-              )}
+      {/* ========================================================
+          TARJETAS DE MÉTRICAS RÁPIDAS
+         ======================================================== */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Pedidos */}
+        <Card className="border-border shadow-2xs">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-[11px] font-medium text-muted-foreground">
+                Total Pedidos
+              </span>
+              <p className="text-2xl font-bold tracking-tight text-foreground">
+                {metrics.totalCount}
+              </p>
+              <span className="text-[10px] text-muted-foreground">
+                Registrados en el ciclo
+              </span>
             </div>
-
-            {/* Selector de Estado */}
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
-              <select
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
-              >
-                <option value="">Todos los estados</option>
-                <option value="PENDIENTE">Pendientes</option>
-                <option value="APROBADA">Aprobadas</option>
-                <option value="DESPACHADA_PARCIAL">Despacho parcial</option>
-                <option value="COMPLETADA">Completadas</option>
-                <option value="RECHAZADA">Rechazadas</option>
-              </select>
+            <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+              <ClipboardList className="w-4 h-4" />
             </div>
+          </CardContent>
+        </Card>
 
-            {(searchTerm || statusFilter) && (
+        {/* Pendientes */}
+        <Card className="border-border shadow-2xs">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-[11px] font-medium text-muted-foreground">
+                Pendientes
+              </span>
+              <p className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
+                {metrics.pendingCount}
+              </p>
+              <span className="text-[10px] text-muted-foreground">
+                Por revisar y aprobar
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <Clock className="w-4 h-4" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Aprobadas */}
+        <Card className="border-border shadow-2xs">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-[11px] font-medium text-muted-foreground">
+                Aprobadas
+              </span>
+              <p className="text-2xl font-bold tracking-tight text-sky-600 dark:text-sky-400">
+                {metrics.approvedCount}
+              </p>
+              <span className="text-[10px] text-muted-foreground">
+                Listas para despacho
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Despachadas */}
+        <Card className="border-border shadow-2xs">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-[11px] font-medium text-muted-foreground">
+                Despachadas
+              </span>
+              <p className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
+                {metrics.dispatchedCount}
+              </p>
+              <span className="text-[10px] text-muted-foreground">
+                Completas o parciales
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <PackageCheck className="w-4 h-4" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ========================================================
+          PESTAÑAS DE FILTRADO RÁPIDO
+         ======================================================== */}
+      <Tabs
+        value={activeTab}
+        onValueChange={(val) => {
+          setActiveTab(val as RequestsTab);
+          setCurrentPage(1);
+        }}
+        className="w-full"
+      >
+        <TabsList className="bg-muted/60 p-1 rounded-xl">
+          <TabsTrigger value="PENDING" className="text-xs gap-1.5 cursor-pointer">
+            <Clock className="w-3.5 h-3.5" />
+            <span>Pendientes</span>
+            <Badge variant="secondary" className="ml-1 text-[10px] py-0 px-1.5 h-4">
+              {metrics.pendingCount}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="APPROVED" className="text-xs gap-1.5 cursor-pointer">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Aprobadas</span>
+            <Badge variant="secondary" className="ml-1 text-[10px] py-0 px-1.5 h-4">
+              {metrics.approvedCount}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="DISPATCHED" className="text-xs gap-1.5 cursor-pointer">
+            <PackageCheck className="w-3.5 h-3.5" />
+            <span>Despachadas</span>
+            <Badge variant="secondary" className="ml-1 text-[10px] py-0 px-1.5 h-4">
+              {metrics.dispatchedCount}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="REJECTED" className="text-xs gap-1.5 cursor-pointer">
+            <Ban className="w-3.5 h-3.5" />
+            <span>Rechazadas</span>
+            <Badge variant="secondary" className="ml-1 text-[10px] py-0 px-1.5 h-4">
+              {metrics.rejectedCount}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="ALL" className="text-xs gap-1.5 cursor-pointer">
+            <ClipboardList className="w-3.5 h-3.5" />
+            <span>Todas</span>
+            <Badge variant="secondary" className="ml-1 text-[10px] py-0 px-1.5 h-4">
+              {metrics.totalCount}
+            </Badge>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* ========================================================
+          BARRA DE BÚSQUEDA Y FILTROS SECUNDARIOS
+         ======================================================== */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+        {/* Buscador */}
+        <div className="relative flex-1">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Buscar por N° pedido, solicitante, departamento o insumo..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="pl-8 pr-8 h-8 text-xs bg-card"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setCurrentPage(1);
+              }}
+              className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Filtro por Departamento */}
+        <div className="w-full sm:w-48">
+          <Select
+            value={selectedDept}
+            onValueChange={(val) => {
+              setSelectedDept(val);
+              setCurrentPage(1);
+            }}
+          >
+            <SelectTrigger className="h-8 text-xs bg-card">
+              <SelectValue placeholder="Departamento" />
+            </SelectTrigger>
+            <SelectContent className="max-h-64">
+              <SelectItem value="ALL" className="text-xs">
+                Todos los deptos.
+              </SelectItem>
+              {departmentsList.map((d) => (
+                <SelectItem key={d} value={d} className="text-xs">
+                  {d}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Filtro por Prioridad */}
+        <div className="w-full sm:w-40">
+          <Select
+            value={selectedPriority}
+            onValueChange={(val) => {
+              setSelectedPriority(val);
+              setCurrentPage(1);
+            }}
+          >
+            <SelectTrigger className="h-8 text-xs bg-card">
+              <SelectValue placeholder="Prioridad" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL" className="text-xs">
+                Toda prioridad
+              </SelectItem>
+              <SelectItem value="URGENTE" className="text-xs">
+                Urgente
+              </SelectItem>
+              <SelectItem value="RUTINA" className="text-xs">
+                Rutina
+              </SelectItem>
+              <SelectItem value="BAJA" className="text-xs">
+                Baja
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Limpiar filtros */}
+        {hasActiveFilters && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className="h-8 text-xs text-muted-foreground hover:text-foreground gap-1 px-2.5 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Limpiar</span>
+          </Button>
+        )}
+      </div>
+
+      {/* ========================================================
+          TABLA DE PEDIDOS
+         ======================================================== */}
+      <Card className="border-border shadow-2xs overflow-hidden">
+        {loading ? (
+          <div className="h-64 flex flex-col items-center justify-center gap-2">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-xs text-muted-foreground">
+              Cargando pedidos...
+            </span>
+          </div>
+        ) : filteredRequests.length === 0 ? (
+          <div className="p-12 text-center space-y-3">
+            <div className="w-10 h-10 rounded-full bg-muted/60 text-muted-foreground flex items-center justify-center mx-auto">
+              <ClipboardList className="w-5 h-5" />
+            </div>
+            <h3 className="text-sm font-semibold text-foreground">
+              No se encontraron pedidos
+            </h3>
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+              {hasActiveFilters
+                ? "No hay resultados para los filtros seleccionados."
+                : activeTab === "PENDING"
+                ? "No hay pedidos pendientes de aprobación."
+                : "No hay registros disponibles en esta sección."}
+            </p>
+            {hasActiveFilters && (
               <Button
-                variant="ghost"
+                type="button"
+                variant="outline"
                 size="sm"
-                onClick={() => {
-                  setSearchTerm("");
-                  setStatusFilter("");
-                  setCurrentPage(1);
-                }}
-                className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-9"
-                title="Restablecer búsqueda y filtros"
+                onClick={clearFilters}
+                className="h-8 text-xs"
               >
-                <X className="w-3.5 h-3.5" />
-                <span>Limpiar filtros</span>
+                Limpiar filtros
               </Button>
             )}
           </div>
-
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => void refreshData()}
-            title="Actualizar listado"
-            className="self-end sm:self-auto"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
-            />
-          </Button>
-        </div>
-      </Card>
-
-      {/* Tabla de Requisiciones */}
-      <Card className="overflow-hidden shadow-2xs">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/30">
-              <TableHead className="py-3 px-4 font-semibold">N° Solicitud</TableHead>
-              <TableHead className="py-3 px-4 font-semibold">Área / Sección</TableHead>
-              <TableHead className="py-3 px-4 font-semibold">Solicitante</TableHead>
-              <TableHead className="py-3 px-4 font-semibold">Fecha</TableHead>
-              <TableHead className="py-3 px-4 text-center font-semibold">Renglones</TableHead>
-              <TableHead className="py-3 px-4 text-center font-semibold">Estado</TableHead>
-              <TableHead className="py-3 px-4 text-center font-semibold">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
-                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
-                  Cargando requisiciones...
-                </TableCell>
-              </TableRow>
-            ) : filteredRequests.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
-                  No se encontraron solicitudes con los filtros aplicados.
-                </TableCell>
-              </TableRow>
-            ) : (
-              paginatedRequests.map((req) => {
-                const status = STATUS_CONFIG[req.status] || {
-                  label: req.status,
-                  variant: "default" as const,
-                };
-
-                // REGLA ESTRICTA: Despachar SOLO si APROBADA o DESPACHADA_PARCIAL
-                const canDispatch =
-                  req.status === "APROBADA" ||
-                  req.status === "DESPACHADA_PARCIAL";
-
-                return (
-                  <TableRow
-                    key={req.id}
-                    className="hover:bg-muted/40 transition-colors"
-                  >
-                    <TableCell className="py-3 px-4 font-mono font-bold text-foreground">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-indigo-50/80 text-indigo-700 border border-indigo-200/80">
-                        {req.requestNumber}
-                      </span>
-                    </TableCell>
-                    <TableCell className="py-3 px-4 font-semibold text-foreground">
-                      {req.departmentSection}
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-muted-foreground">
-                      {req.applicant?.fullName || req.applicant?.username}
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-muted-foreground whitespace-nowrap font-mono text-xs">
-                      {new Date(req.createdAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-center font-bold text-foreground">
-                      <span className="inline-flex items-center justify-center min-w-6 px-1.5 py-0.5 rounded-full text-xs font-mono bg-muted text-foreground">
-                        {req.items?.length || 0}
-                      </span>
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-center">
-                      <Badge variant={status.variant}>
-                        {status.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-center whitespace-nowrap">
-                      <div className="inline-flex items-center justify-center gap-1.5">
-                        {/* Botón Ver Comprobante */}
-                        <Button
-                          asChild
-                          variant="outline"
-                          size="sm"
-                          className="h-7 px-2 text-xs font-medium gap-1 text-muted-foreground hover:text-foreground border-border/80 cursor-pointer"
-                          title="Ver detalle del comprobante"
-                        >
-                          <Link href={`/requests/${req.id}`}>
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>Ver</span>
-                          </Link>
-                        </Button>
-
-                        {/* Botón Editar (Solo antes de aprobación) */}
-                        {req.status === "PENDIENTE" && (
-                          <Button
-                            asChild
-                            variant="outline"
-                            size="sm"
-                            className="h-7 px-2 text-xs font-semibold gap-1 text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100/90 border-indigo-200/80 cursor-pointer transition-colors"
-                            title="Modificar solicitud antes de ser aprobada"
-                          >
-                            <Link href={`/requests/${req.id}/edit`}>
-                              <Pencil className="w-3.5 h-3.5 text-indigo-600" />
-                              <span>Editar</span>
-                            </Link>
-                          </Button>
-                        )}
-
-                        {/* ACCIONES EXCLUSIVAS DE ALMACÉN / ADMINISTRACIÓN */}
-                        {isWarehouseStaff && (
-                          <>
-                            {req.status === "PENDIENTE" && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  onClick={() => void handleApprove(req)}
-                                  disabled={approvingId === req.id}
-                                  className="h-7 px-2.5 text-xs font-semibold gap-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs cursor-pointer"
-                                  title="Aprobar solicitud para retiro"
-                                >
-                                  {approvingId === req.id ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  ) : (
-                                    <CheckCheck className="w-3.5 h-3.5" />
-                                  )}
-                                  <span>Aprobar</span>
-                                </Button>
-
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  onClick={() => {
-                                    setRequestToReject(req);
-                                    setRejectReason("");
-                                    setFeedback(null);
-                                  }}
-                                  className="h-7 w-7 text-destructive hover:bg-destructive/10 cursor-pointer"
-                                  title="Rechazar solicitud"
-                                >
-                                  <Ban className="w-3.5 h-3.5" />
-                                </Button>
-                              </>
-                            )}
-
-                            {canDispatch && (
-                              <Button
-                                asChild
-                                size="sm"
-                                className="h-7 px-2.5 text-xs font-semibold gap-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs cursor-pointer"
-                                title="Despachar materiales y rebajar de lotes"
-                              >
-                                <Link href={`/requests/dispatch?id=${req.id}`}>
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Despachar</span>
-                                </Link>
-                              </Button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-
-        {/* Barra de Paginación */}
-        <TablePagination
-          currentPage={safeCurrentPage}
-          totalPages={totalPages}
-          pageSize={pageSize}
-          totalItems={filteredRequests.length}
-          onPageChange={setCurrentPage}
-          onPageSizeChange={(newSize) => {
-            setPageSize(newSize);
-            setCurrentPage(1);
-          }}
-          pageSizeOptions={[5, 10, 25, 50]}
-          entityName="solicitudes"
-        />
-      </Card>
-
-      {/* Modal: Despacho Multi-Lote y Despacho Parcial (Solo Almacén) */}
-      <Dialog
-        open={!!selectedForDispatch && isWarehouseStaff}
-        onOpenChange={(open) => {
-          if (!open) handleCloseDispatchModal();
-        }}
-      >
-        <DialogContent className="sm:max-w-5xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
-          <DialogHeader className="p-5 border-b border-border bg-muted/30">
-            <div>
-              <DialogTitle className="text-base font-bold text-foreground flex items-center gap-2">
-                <Layers className="w-5 h-5 text-primary" />
-                Despachar Requisición #{selectedForDispatch?.requestNumber}
-              </DialogTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Área: <strong className="text-foreground">{selectedForDispatch?.departmentSection}</strong> • Solicitado por:{" "}
-                <strong className="text-foreground">
-                  {selectedForDispatch?.applicant?.fullName ||
-                    selectedForDispatch?.applicant?.username}
-                </strong>
-              </p>
-            </div>
-          </DialogHeader>
-
-          <form onSubmit={handleConfirmDispatch} className="flex flex-col flex-1 overflow-hidden">
-            <div className="p-5 overflow-y-auto space-y-4 flex-1 scroll-smooth pr-3">
-              {dispatchFeedback && (
-                <Alert variant={dispatchFeedback.status === "success" ? "success" : "destructive"}>
-                  {dispatchFeedback.status === "success" ? (
-                    <CheckCircle2 className="w-4 h-4" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4" />
-                  )}
-                  <AlertTitle>{dispatchFeedback.status === "success" ? "Éxito" : "Atención"}</AlertTitle>
-                  <AlertDescription>{dispatchFeedback.message}</AlertDescription>
-                </Alert>
-              )}
-
-              <div className="space-y-4">
-                {selectedForDispatch?.items.map((item) => {
-                  const itId = item.id;
-                  if (!itId) return null;
-                  const unit =
-                    item.product?.unitOfMeasure ||
-                    item.product?.baseUnit?.abbreviation ||
-                    "UND";
-
-                  const qtyRequested = Number(
-                    item.quantityRequested ?? item.requestedQuantity ?? 0
-                  );
-                  const qtyApproved = Number(
-                    item.quantityApproved && item.quantityApproved > 0
-                      ? item.quantityApproved
-                      : qtyRequested
-                  );
-                  const qtyDispatched = Number(
-                    item.quantityDispatched ?? item.dispatchedQuantity ?? 0
-                  );
-                  const pendingQuantity = Math.max(0, qtyApproved - qtyDispatched);
-
-                  const candidateBatches = availableBatches.filter(
-                    (b) => (b.productId ?? b.product?.id) === item.productId
-                  );
-
-                  const rows = dispatchItemAllocations[itId] || [];
-                  const allocatedSum = rows.reduce(
-                    (acc, r) => acc + (Number(r.quantity) || 0),
-                    0
-                  );
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="text-xs font-semibold">N° Pedido</TableHead>
+                  <TableHead className="text-xs font-semibold">Fecha</TableHead>
+                  <TableHead className="text-xs font-semibold">Departamento</TableHead>
+                  <TableHead className="text-xs font-semibold">Solicitante</TableHead>
+                  <TableHead className="text-xs font-semibold">Renglones</TableHead>
+                  <TableHead className="text-xs font-semibold">Prioridad</TableHead>
+                  <TableHead className="text-xs font-semibold">Estado</TableHead>
+                  <TableHead className="text-right text-xs font-semibold">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginatedRequests.map((req) => {
+                  const isAuthor =
+                    currentUser &&
+                    (req.applicant?.id === currentUser.id ||
+                      (req as any).userId === currentUser.id);
+                  const isPending = req.status === "PENDIENTE";
+                  const canApproveReject = isWarehouseStaff && isPending;
+                  const canEdit = isPending && (isAuthor || isWarehouseStaff);
+                  const canDispatch =
+                    isWarehouseStaff &&
+                    (req.status === "APROBADA" || req.status === "DESPACHADA_PARCIAL");
 
                   return (
-                    <Card
-                      key={itId}
-                      className="p-4 bg-muted/20 border-border space-y-3"
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-2.5">
-                        <div>
-                          <span className="font-bold text-foreground text-sm">
-                            {item.product?.name}
-                          </span>
-                          <span className="ml-2 font-mono text-xs text-muted-foreground">
-                            [{item.product?.sku}]
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2 flex-wrap text-xs">
-                          <Badge variant="outline">
-                            Solicitado: {qtyRequested} {unit}
-                          </Badge>
-                          <Badge variant="info">
-                            Aprobado: {qtyApproved} {unit}
-                          </Badge>
-                          <Badge variant="purple">
-                            Ya despachado: {qtyDispatched} {unit}
-                          </Badge>
-                          <Badge variant="warning">
-                            Remanente: {pendingQuantity} {unit}
-                          </Badge>
-                        </div>
-                      </div>
-
-                      {/* Filas de lotes asignados */}
-                      <div className="space-y-2.5">
-                        {rows.map((row, allocIdx) => {
-                          const currentBatch = candidateBatches.find(
-                            (b) => b.id === row.batchId
-                          );
-                          const maxStock = currentBatch
-                            ? currentBatch.currentQuantity
-                            : 0;
-
-                          return (
-                            <div
-                              key={allocIdx}
-                              className="grid grid-cols-12 gap-3 items-center bg-background p-3 rounded-lg border border-border shadow-2xs"
-                            >
-                              <div className="col-span-12 sm:col-span-7">
-                                <Label className="text-[11px] mb-1 block">
-                                  Lote de Origen
-                                </Label>
-                                <select
-                                  value={row.batchId}
-                                  onChange={(e) => {
-                                    const bId = Number(e.target.value);
-                                    handleAllocationFieldChange(
-                                      itId,
-                                      allocIdx,
-                                      "batchId",
-                                      bId
-                                    );
-                                    const match = candidateBatches.find(
-                                      (b) => b.id === bId
-                                    );
-                                    if (
-                                      match &&
-                                      (row.quantity === "" ||
-                                        row.quantity === 0)
-                                    ) {
-                                      handleAllocationFieldChange(
-                                        itId,
-                                        allocIdx,
-                                        "quantity",
-                                        Math.min(
-                                          pendingQuantity,
-                                          match.currentQuantity
-                                        )
-                                      );
-                                    }
-                                  }}
-                                  className="w-full h-8 bg-background border border-input rounded-md px-2.5 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
-                                >
-                                  <option value="0">
-                                    -- Seleccione lote disponible ({candidateBatches.length} disp.) --
-                                  </option>
-                                  {candidateBatches.map((b) => (
-                                    <option key={b.id} value={b.id}>
-                                      Lote #{b.lotNumber} | Stock Disp:{" "}
-                                      {b.currentQuantity} {unit}
-                                      {b.expirationDate
-                                        ? ` (Vence: ${new Date(
-                                            b.expirationDate
-                                          ).toLocaleDateString()})`
-                                        : ""}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-
-                              <div className="col-span-10 sm:col-span-4">
-                                <Label className="text-[11px] mb-1 block">
-                                  Cantidad a entregar{" "}
-                                  {currentBatch && (
-                                    <span className="text-muted-foreground font-normal">
-                                      (máx: {maxStock})
-                                    </span>
-                                  )}
-                                </Label>
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  max={maxStock || undefined}
-                                  placeholder="0"
-                                  value={row.quantity}
-                                  onChange={(e) =>
-                                    handleAllocationFieldChange(
-                                      itId,
-                                      allocIdx,
-                                      "quantity",
-                                      e.target.value === ""
-                                        ? ""
-                                        : Math.max(
-                                            0,
-                                            Number(e.target.value)
-                                          )
-                                    )
-                                  }
-                                  className="h-8 font-mono font-bold text-xs"
-                                />
-                              </div>
-
-                              <div className="col-span-2 sm:col-span-1 text-center pt-5">
-                                {rows.length > 1 && (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    onClick={() =>
-                                      handleRemoveBatchRow(itId, allocIdx)
-                                    }
-                                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                    title="Quitar este lote"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs pt-1 border-t border-border">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleAddBatchRow(itId)}
-                          className="text-primary hover:text-primary font-semibold text-xs h-7 px-2 gap-1.5 self-start"
+                    <TableRow key={req.id} className="hover:bg-muted/30">
+                      {/* N° Pedido */}
+                      <TableCell className="text-xs font-mono font-bold">
+                        <Link
+                          href={`/requests/${req.id}`}
+                          className="text-primary hover:underline"
                         >
-                          <Plus className="w-3.5 h-3.5" /> + Agregar otro lote
-                        </Button>
+                          #{req.requestNumber}
+                        </Link>
+                      </TableCell>
 
-                        <div className="text-xs">
-                          <span className="text-muted-foreground">
-                            Total asignado en esta entrega:
-                          </span>{" "}
-                          <strong
-                            className={
-                              allocatedSum > pendingQuantity
-                                ? "text-destructive font-mono font-bold"
-                                : "text-foreground font-mono font-bold"
-                            }
+                      {/* Fecha */}
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(req.createdAt).toLocaleDateString("es-VE")}
+                      </TableCell>
+
+                      {/* Departamento */}
+                      <TableCell className="text-xs font-medium text-foreground">
+                        {req.departmentSection || req.department?.name || "—"}
+                      </TableCell>
+
+                      {/* Solicitante */}
+                      <TableCell className="text-xs text-muted-foreground">
+                        {req.applicant?.fullName || req.applicant?.username || "—"}
+                      </TableCell>
+
+                      {/* Renglones */}
+                      <TableCell className="text-xs text-muted-foreground font-mono">
+                        {req.items.length} insumo(s)
+                      </TableCell>
+
+                      {/* Prioridad */}
+                      <TableCell>
+                        <Badge
+                          variant={
+                            req.priority === "URGENTE"
+                              ? "destructive"
+                              : req.priority === "BAJA"
+                              ? "secondary"
+                              : "outline"
+                          }
+                          className="text-[10px]"
+                        >
+                          {req.priority}
+                        </Badge>
+                      </TableCell>
+
+                      {/* Estado */}
+                      <TableCell>
+                        <Badge
+                          variant={
+                            req.status === "COMPLETADA"
+                              ? "success"
+                              : req.status === "DESPACHADA_PARCIAL"
+                              ? "purple"
+                              : req.status === "APROBADA"
+                              ? "info"
+                              : req.status === "RECHAZADA"
+                              ? "destructive"
+                              : "warning"
+                          }
+                          className="text-[10px] font-semibold"
+                        >
+                          {req.status === "DESPACHADA_PARCIAL"
+                            ? "Parcial"
+                            : req.status === "PENDIENTE"
+                            ? "Pendiente"
+                            : req.status === "APROBADA"
+                            ? "Aprobada"
+                            : req.status === "COMPLETADA"
+                            ? "Completada"
+                            : "Rechazada"}
+                        </Badge>
+                      </TableCell>
+
+                      {/* Acciones */}
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Botón Aprobar rápido */}
+                          {canApproveReject && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => void handleApprove(req)}
+                              disabled={approvingId === req.id}
+                              className="h-7 px-2 text-xs font-semibold gap-1 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-2xs"
+                              title="Aprobar pedido"
+                            >
+                              {approvingId === req.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Check className="w-3 h-3" />
+                              )}
+                              <span>Aprobar</span>
+                            </Button>
+                          )}
+
+                          {/* Botón Rechazar */}
+                          {canApproveReject && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setRequestToReject(req);
+                                setRejectReason("");
+                              }}
+                              className="h-7 px-2 text-xs gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer"
+                              title="Rechazar pedido"
+                            >
+                              <Ban className="w-3 h-3" />
+                              <span>Rechazar</span>
+                            </Button>
+                          )}
+
+                          {/* Botón Despachar */}
+                          {canDispatch && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() =>
+                                router.push(`/requests/dispatch/new?requestId=${req.id}`)
+                              }
+                              className="h-7 px-2 text-xs font-semibold gap-1 bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer shadow-2xs"
+                              title="Despachar pedido"
+                            >
+                              <PackageCheck className="w-3 h-3" />
+                              <span>Despachar</span>
+                            </Button>
+                          )}
+
+                          {/* Botón Editar */}
+                          {canEdit && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => router.push(`/requests/${req.id}/edit`)}
+                              className="h-7 px-2 text-xs gap-1 cursor-pointer"
+                              title="Editar pedido"
+                            >
+                              <Pencil className="w-3 h-3 text-muted-foreground" />
+                              <span>Editar</span>
+                            </Button>
+                          )}
+
+                          {/* Botón Ver Detalle */}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => router.push(`/requests/${req.id}`)}
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                            title="Ver detalle del pedido"
                           >
-                            <span>{allocatedSum}</span> / <span>{pendingQuantity}</span>{" "}
-                            <span className="text-muted-foreground font-normal text-[11px]">
-                              {unit}
-                            </span>
-                          </strong>
-                          {allocatedSum > pendingQuantity && (
-                            <span className="text-destructive ml-1.5 font-semibold text-[11px]">
-                              (Excede saldo pendiente)
-                            </span>
-                          )}
-                          {allocatedSum === 0 && (
-                            <span className="text-amber-600 ml-1.5 text-[11px] font-medium">
-                              (Se mantendrá pendiente en Standby)
-                            </span>
-                          )}
+                            <Eye className="w-3 h-3 text-primary" />
+                            <span>Ver</span>
+                          </Button>
                         </div>
-                      </div>
-                    </Card>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </div>
+              </TableBody>
+            </Table>
+          </div>
+        )}
 
-              <div className="space-y-1.5">
-                <Label className="text-xs uppercase tracking-wider">
-                  Notas de Despacho (Opcional)
-                </Label>
-                <Input
-                  type="text"
-                  value={dispatchNotes}
-                  onChange={(e) => setDispatchNotes(e.target.value)}
-                  placeholder="N° de acta de entrega o nombre de quien recibe..."
-                  className="text-xs"
-                />
-              </div>
-            </div>
+        {/* Paginación */}
+        {filteredRequests.length > 0 && (
+          <TablePagination
+            currentPage={currentPage}
+            totalPages={Math.ceil(totalItems / pageSize) || 1}
+            totalItems={totalItems}
+            pageSize={pageSize}
+            onPageChange={(page) => {
+              startTransition(() => {
+                setCurrentPage(page);
+              });
+            }}
+            onPageSizeChange={(newSize) => {
+              startTransition(() => {
+                setPageSize(newSize);
+                setCurrentPage(1);
+              });
+            }}
+          />
+        )}
+      </Card>
 
-            <DialogFooter className="p-4 border-t border-border bg-muted/20 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <p className="text-[11px] text-muted-foreground">
-                Puede realizar despachos parciales. Si cancela o cierra, la
-                solicitud permanece aprobada en espera (Standby).
-              </p>
-              <div className="flex items-center gap-2 self-end sm:self-auto">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCloseDispatchModal}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant="success"
-                  disabled={dispatching}
-                  className="gap-2"
-                >
-                  {dispatching && (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  )}
-                  {dispatching ? "Despachando..." : "Confirmar y Despachar"}
-                </Button>
-              </div>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal: Rechazo (Solo Almacén) con shadcn Dialog */}
+      {/* ========================================================
+          MODAL DE RECHAZO DE PEDIDO
+         ======================================================== */}
       <Dialog
-        open={!!requestToReject && isWarehouseStaff}
+        open={Boolean(requestToReject)}
         onOpenChange={(open) => {
-          if (!open) setRequestToReject(null);
+          if (!open) {
+            setRequestToReject(null);
+            setRejectReason("");
+          }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
-              <AlertTriangle className="w-5 h-5 text-destructive" />
-              Rechazar requisición #{requestToReject?.requestNumber}
+            <DialogTitle className="text-base font-bold text-destructive flex items-center gap-2">
+              <Ban className="w-4 h-4" />
+              Rechazar Pedido #{requestToReject?.requestNumber}
             </DialogTitle>
+            <DialogDescription className="text-xs">
+              Indique el motivo de rechazo institucional para notificar al solicitante.
+            </DialogDescription>
           </DialogHeader>
 
-          <Alert variant="destructive">
-            <XCircle className="w-4 h-4" />
-            <AlertDescription>
-              Indique el motivo de rechazo técnico o administrativo.
-            </AlertDescription>
-          </Alert>
-
-          <div className="space-y-2">
+          <div className="space-y-2 py-2">
+            <Label htmlFor="rejectReason" className="text-xs font-semibold text-foreground">
+              Motivo de rechazo <span className="text-destructive">*</span>
+            </Label>
             <Textarea
-              rows={4}
+              id="rejectReason"
+              rows={3}
+              placeholder="Indique la causa del rechazo (mínimo 5 caracteres)..."
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="Indique el motivo técnico o administrativo..."
-              className="text-xs"
-              autoFocus
+              className="text-xs resize-none"
             />
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-0">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setRequestToReject(null)}
+              onClick={() => {
+                setRequestToReject(null);
+                setRejectReason("");
+              }}
+              disabled={rejecting}
             >
               Cancelar
             </Button>
@@ -1262,10 +940,19 @@ function RequestsContent() {
               size="sm"
               onClick={() => void handleReject()}
               disabled={rejecting || rejectReason.trim().length < 5}
-              className="gap-2"
+              className="gap-1.5"
             >
-              {rejecting && <Loader2 className="w-4 h-4 animate-spin" />}
-              {rejecting ? "Rechazando..." : "Confirmar Rechazo"}
+              {rejecting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Rechazando...</span>
+                </>
+              ) : (
+                <>
+                  <Ban className="w-3.5 h-3.5" />
+                  <span>Confirmar Rechazo</span>
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1274,19 +961,17 @@ function RequestsContent() {
   );
 }
 
-export default function InternalRequestsPage() {
+export default function RequestsPage() {
   return (
     <Suspense
       fallback={
-        <div className="h-[70vh] flex flex-col items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary mb-2" />
-          <span className="text-xs text-muted-foreground font-medium">
-            Cargando módulo de solicitudes...
-          </span>
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Cargando pedidos...</p>
         </div>
       }
     >
-      <RequestsContent />
+      <RequestsIndexContent />
     </Suspense>
   );
 }

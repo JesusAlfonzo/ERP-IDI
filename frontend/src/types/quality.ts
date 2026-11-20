@@ -15,6 +15,10 @@ export interface QuarantineBatch {
   expirationDate: string | null;
   status: "EN_CUARENTENA" | "DEFECTUOSO" | "DISPONIBLE" | "AGOTADO" | "VENCIDO";
   createdAt: string;
+  purchaseOrder?: {
+    id: number;
+    orderNumber: string;
+  } | null;
   location?: {
     id: number;
     name: string;

@@ -186,6 +186,24 @@ export class RequestService {
             },
           },
         },
+        dispatchedMovement: {
+          include: {
+            createdBy: {
+              select: { id: true, fullName: true, username: true },
+            },
+            items: {
+              include: {
+                batch: {
+                  include: {
+                    product: {
+                      include: { baseUnit: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -222,9 +240,18 @@ export class RequestService {
         },
         dispatchedMovement: {
           include: {
+            createdBy: {
+              select: { id: true, fullName: true, username: true },
+            },
             items: {
               include: {
-                batch: true,
+                batch: {
+                  include: {
+                    product: {
+                      include: { baseUnit: true },
+                    },
+                  },
+                },
               },
             },
           },
@@ -777,7 +804,22 @@ export class RequestService {
             },
           },
           dispatchedMovement: {
-            include: { items: true },
+            include: {
+              createdBy: {
+                select: { id: true, fullName: true, username: true },
+              },
+              items: {
+                include: {
+                  batch: {
+                    include: {
+                      product: {
+                        include: { baseUnit: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
           user: {
             select: {

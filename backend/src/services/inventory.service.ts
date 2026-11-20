@@ -153,7 +153,7 @@ export class InventoryService {
     const limit = Math.min(Math.max(filter?.limit ?? 30, 1), 100);
     const page = Math.max(filter?.page ?? 1, 1);
 
-    return prisma.stockBatch.findMany({
+    const batches = await prisma.stockBatch.findMany({
       where: {
         ...(filter?.productId !== undefined
           ? { productId: filter.productId }
@@ -187,6 +187,33 @@ export class InventoryService {
           },
         },
         location: true,
+        movementItems: {
+          take: 5,
+          include: {
+            stockMovement: {
+              select: {
+                orderId: true,
+                order: {
+                  select: {
+                    id: true,
+                    orderNumber: true,
+                  },
+                },
+              },
+            },
+            orderItem: {
+              select: {
+                orderId: true,
+                order: {
+                  select: {
+                    id: true,
+                    orderNumber: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       orderBy: [
         { expirationDate: 'asc' }, // FIFO: primero los más próximos a expirar
@@ -194,6 +221,30 @@ export class InventoryService {
       ],
       skip: (page - 1) * limit,
       take: limit,
+    });
+
+    return batches.map((batch) => {
+      let order: { id: bigint; orderNumber: string } | null = null;
+      for (const mi of batch.movementItems || []) {
+        if (mi.stockMovement?.order) {
+          order = mi.stockMovement.order;
+          break;
+        }
+        if (mi.orderItem?.order) {
+          order = mi.orderItem.order;
+          break;
+        }
+      }
+
+      return {
+        ...batch,
+        purchaseOrder: order
+          ? {
+              id: order.id,
+              orderNumber: order.orderNumber,
+            }
+          : null,
+      };
     });
   }
 
@@ -323,6 +374,28 @@ export class InventoryService {
           },
           originLocation: true,
           destinationLocation: true,
+          requests: {
+            select: {
+              id: true,
+              requestNumber: true,
+              departmentSection: true,
+              status: true,
+              department: {
+                select: {
+                  id: true,
+                  name: true,
+                  code: true,
+                },
+              },
+              user: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  username: true,
+                },
+              },
+            },
+          },
           items: {
             include: {
               batch: {
@@ -370,6 +443,28 @@ export class InventoryService {
         },
         originLocation: true,
         destinationLocation: true,
+        requests: {
+          select: {
+            id: true,
+            requestNumber: true,
+            departmentSection: true,
+            status: true,
+            department: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+              },
+            },
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                username: true,
+              },
+            },
+          },
+        },
         order: {
           include: {
             supplier: true,

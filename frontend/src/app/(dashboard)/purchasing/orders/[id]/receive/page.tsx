@@ -232,27 +232,34 @@ export default function ReceiveOrderPage() {
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Encabezado */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 border-b border-border pb-4">
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon"
           asChild
-          className="cursor-pointer"
+          className="h-9 w-9 cursor-pointer"
         >
           <Link
             href={`/purchasing/orders/${orderId}`}
-            title="Volver al detalle de la orden"
+            title="Volver a la orden"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-5 h-5" />
           </Link>
         </Button>
+        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 flex items-center justify-center shrink-0 shadow-2xs">
+          <PackageCheck className="w-5 h-5" />
+        </div>
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <PackageCheck className="w-6 h-6 text-emerald-600" />
-            Recepción de Mercancía
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Ingreso de lotes físicos y verificación de conformidad (Vía Verde / Ámbar)
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+              Recepción de Mercancía
+            </h1>
+            <Badge variant="outline" className="text-[11px] font-mono bg-muted/20">
+              Orden #{order.orderNumber || order.id}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Ingreso de lotes a inventario y control de cuarentena técnica
           </p>
         </div>
       </div>
@@ -271,32 +278,32 @@ export default function ReceiveOrderPage() {
       )}
 
       {/* Tarjeta Informativa de la Orden */}
-      <Card className="shadow-xs">
-        <CardContent className="p-5 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <span className="text-[10px] text-muted-foreground uppercase font-semibold">
-              Orden de Compra
+      <Card className="border-border shadow-2xs">
+        <CardContent className="p-4 flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              N° Orden
             </span>
-            <div className="text-lg font-bold font-mono text-slate-800">
+            <div className="text-base font-bold font-mono text-foreground">
               {order.orderNumber || `#${order.id}`}
             </div>
           </div>
 
-          <div>
-            <span className="text-[10px] text-muted-foreground uppercase font-semibold">
-              Proveedor Comercial
+          <div className="space-y-0.5">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              Proveedor
             </span>
-            <div className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+            <div className="text-sm font-semibold text-foreground flex items-center gap-1.5">
               <Building2 className="w-4 h-4 text-muted-foreground" />
               {order.supplier?.name || "Proveedor General"}
             </div>
           </div>
 
-          <div>
-            <span className="text-[10px] text-muted-foreground uppercase font-semibold">
-              Monto Acordado
+          <div className="space-y-0.5">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              Total Compra
             </span>
-            <div className="text-sm font-bold font-mono text-slate-800">
+            <div className="text-sm font-bold font-mono text-foreground">
               {getCurrencySymbol(order.currency)}{" "}
               {displayTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
             </div>
@@ -326,29 +333,29 @@ export default function ReceiveOrderPage() {
         </Card>
       ) : (
         <form onSubmit={handleSubmitReception} className="space-y-6">
-          <Card className="shadow-xs">
-            <CardContent className="p-5 space-y-1.5">
-              <Label className="text-xs font-semibold uppercase tracking-wider">
-                N° Guía de Despacho / Factura / Observaciones (Opcional)
+          <Card className="border-border shadow-2xs">
+            <CardContent className="p-4 space-y-1.5">
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Guía de Entrega / Factura / Observaciones (Opcional)
               </Label>
               <Input
                 type="text"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Ej: Guía de traslado 00492 / Cadena de frío preservada"
-                className="w-full sm:w-96 font-mono text-xs"
+                placeholder="Ej. Guía de traslado 00492 / Cadena de frío preservada"
+                className="w-full sm:w-96 text-xs"
               />
             </CardContent>
           </Card>
 
-          <Card className="shadow-xs overflow-hidden">
-            <CardHeader className="px-5 py-3.5 border-b border-border bg-muted/30 flex flex-row items-center justify-between">
-              <CardTitle className="text-xs font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                <Package className="w-4 h-4 text-muted-foreground" />
-                Renglones Pendientes por Recibir
+          <Card className="border-border shadow-2xs overflow-hidden">
+            <CardHeader className="px-5 py-3.5 border-b border-border bg-muted/20 flex flex-row items-center justify-between">
+              <CardTitle className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
+                <Package className="w-4 h-4 text-primary" />
+                Renglones Pendientes
               </CardTitle>
               <span className="text-[11px] text-muted-foreground">
-                Modelo de Inspección: <b className="text-emerald-700">Vía Verde (Disponible) / Vía Ámbar (Cuarentena)</b>
+                Inspección: <b className="text-emerald-600">Vía Verde (Disponible)</b> / <b className="text-amber-600">Vía Ámbar (Cuarentena)</b>
               </span>
             </CardHeader>
 

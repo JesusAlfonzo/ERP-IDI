@@ -19,6 +19,7 @@ export interface MovementFilterOptions {
   productId?: bigint | undefined;
   search?: string | undefined;
   type?: StockMovementType | undefined;
+  types?: StockMovementType[] | undefined;
   startDate?: Date | undefined;
   endDate?: Date | undefined;
 }
@@ -374,6 +375,8 @@ export class StockAdjustmentService {
 
     if (filters?.type) {
       whereClause.type = filters.type;
+    } else if (filters?.types && filters.types.length > 0) {
+      whereClause.type = { in: filters.types };
     }
 
     if (filters?.startDate || filters?.endDate) {
@@ -382,54 +385,49 @@ export class StockAdjustmentService {
       if (filters.endDate) whereClause.createdAt.lte = filters.endDate;
     }
 
-    if (filters?.batchId) {
-      whereClause.items = {
-        some: { batchId: filters.batchId },
+    if (filters?.search) {
+      const searchTerms = {
+        contains: filters.search,
+        mode: 'insensitive' as const,
       };
-    }
-
-    if (filters?.productId || filters?.search) {
-      whereClause.items = {
-        some: {
-          ...(filters.batchId ? { batchId: filters.batchId } : {}),
-          ...(filters.productId
-            ? { batch: { productId: filters.productId } }
-            : {}),
-          ...(filters.search
-            ? {
-                batch: {
-                  ...(filters.productId
-                    ? { productId: filters.productId }
-                    : {}),
-                  OR: [
-                    {
-                      lotNumber: {
-                        contains: filters.search,
-                        mode: 'insensitive',
-                      },
-                    },
-                    {
-                      product: {
-                        name: {
-                          contains: filters.search,
-                          mode: 'insensitive',
-                        },
-                      },
-                    },
-                    {
-                      product: {
-                        sku: {
-                          contains: filters.search,
-                          mode: 'insensitive',
-                        },
-                      },
-                    },
-                  ],
-                },
-              }
-            : {}),
+      whereClause.OR = [
+        { referenceNumber: searchTerms },
+        { notes: searchTerms },
+        {
+          items: {
+            some: {
+              ...(filters.batchId ? { batchId: filters.batchId } : {}),
+              ...(filters.productId
+                ? { batch: { productId: filters.productId } }
+                : {}),
+              batch: {
+                OR: [
+                  { lotNumber: searchTerms },
+                  { product: { name: searchTerms } },
+                  { product: { sku: searchTerms } },
+                ],
+              },
+            },
+          },
         },
-      };
+      ];
+    } else {
+      if (filters?.batchId) {
+        whereClause.items = {
+          some: {
+            batchId: filters.batchId,
+            ...(filters.productId
+              ? { batch: { productId: filters.productId } }
+              : {}),
+          },
+        };
+      } else if (filters?.productId) {
+        whereClause.items = {
+          some: {
+            batch: { productId: filters.productId },
+          },
+        };
+      }
     }
 
     const [totalItems, movements] = await prisma.$transaction([
@@ -447,12 +445,16 @@ export class StockAdjustmentService {
             include: {
               batch: {
                 include: {
+                  location: {
+                    select: { id: true, name: true, type: true },
+                  },
                   product: {
                     select: {
                       id: true,
                       name: true,
                       sku: true,
                       baseUnit: { select: { abbreviation: true } },
+                      category: { select: { id: true, name: true } },
                     },
                   },
                 },

@@ -25,6 +25,7 @@ import exportRoutes from './routes/export.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import bankAccountRoutes from './routes/bank-account.routes.js';
 import directPaymentRoutes from './routes/direct-payment.routes.js';
+import treasuryRoutes from './routes/treasury.routes.js';
 import researchRoutes from './routes/research.routes.js';
 import fridgeAuditRoutes from './routes/fridge-audit.routes.js';
 
@@ -72,6 +73,7 @@ app.use('/api/orders', purchaseFinanceRoutes);
 app.use('/api/purchase-requisitions', purchaseRequisitionRoutes);
 app.use('/api/financial/bank-accounts', bankAccountRoutes);
 app.use('/api/financial/direct-payments', directPaymentRoutes);
+app.use('/api/treasury', treasuryRoutes);
 
 // Inventario, Ajustes y Maestros
 app.use('/api/inventory', stockAdjustmentRoutes);

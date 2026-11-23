@@ -78,12 +78,13 @@ export class BankAccountService {
   }
 
   static async deleteAccount(id: number) {
-    // Verificar si tiene pagos vinculados
-    const linkedPaymentsCount = await prisma.orderPayment.count({
-      where: { sourceAccountId: id },
-    });
+    // Verificar si tiene pagos vinculados (legados o tesorería unificada)
+    const [linkedPaymentsCount, linkedTreasuryLinesCount] = await Promise.all([
+      prisma.orderPayment.count({ where: { sourceAccountId: id } }),
+      prisma.treasuryPaymentLine.count({ where: { sourceAccountId: id } }),
+    ]);
 
-    if (linkedPaymentsCount > 0) {
+    if (linkedPaymentsCount > 0 || linkedTreasuryLinesCount > 0) {
       // Soft-delete para preservar integridad referencial de auditoría contable
       return prisma.bankAccount.update({
         where: { id },

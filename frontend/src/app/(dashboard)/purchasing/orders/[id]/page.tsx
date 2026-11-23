@@ -1,27 +1,25 @@
 "use client";
 
-import React, { useEffect, useState, useTransition } from "react";
+import React, { useEffect, useState, useTransition, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { PurchasingClientService } from "@/services/purchasing.service";
-import {
-  BankAccountService,
-  type BankAccountItem,
-} from "@/services/bank-account.service";
+import { TreasuryService } from "@/services/treasury.service";
 import { CurrencyService } from "@/services/currency.service";
 import { getCurrencySymbol, normalizeCurrencyCode } from "@/utils/currency";
 import { toast } from "@/utils/toast";
-import type { PurchaseOrder, SupplierPayment } from "@/types/purchasing";
-import {
-  PrintableDocument,
-  DocumentHeader,
-  DocumentMetadataGrid,
-  DocumentSignatures,
-  DocumentFooter,
-} from "@/components/common/PrintableDocument";
+import type {
+  PurchaseOrder,
+  PurchaseOrderStatus,
+  SupplierPayment,
+} from "@/types/purchasing";
 import { DownloadPdfButton } from "@/components/purchasing/DownloadPdfButton";
+import { usePagination } from "@/hooks/use-pagination";
+import { TablePagination } from "@/components/common/TablePagination";
+import { cn } from "@/lib/utils";
 import {
   FileText,
+  FileCheck2,
   ArrowLeft,
   Building2,
   Boxes,
@@ -29,33 +27,110 @@ import {
   Receipt,
   Loader2,
   ExternalLink,
-  Coins,
   CreditCard,
-  CheckCircle2,
   AlertCircle,
-  Landmark,
   Send,
   Edit3,
-  Clock,
   X,
-  Plus,
   Mail,
   MessageCircle,
+  Search,
+  StickyNote,
+  ShoppingCart,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+
+const STATUS_BADGES: Record<
+  PurchaseOrderStatus,
+  {
+    label: string;
+    variant: "secondary" | "info" | "warning" | "purple" | "success" | "destructive";
+    className: string;
+  }
+> = {
+  BORRADOR: {
+    label: "Borrador",
+    variant: "secondary",
+    className:
+      "bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/20",
+  },
+  ENVIADA: {
+    label: "Enviada",
+    variant: "info",
+    className:
+      "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20",
+  },
+  PENDIENTE: {
+    label: "Pendiente",
+    variant: "warning",
+    className:
+      "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
+  },
+  APROBADA: {
+    label: "Aprobada",
+    variant: "info",
+    className:
+      "bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/20",
+  },
+  EN_PROCESO: {
+    label: "En Tránsito",
+    variant: "purple",
+    className:
+      "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20",
+  },
+  PARCIAL: {
+    label: "Parcial",
+    variant: "warning",
+    className:
+      "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
+  },
+  COMPLETADA: {
+    label: "Completada",
+    variant: "success",
+    className:
+      "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20",
+  },
+  RECIBIDO: {
+    label: "Recibida",
+    variant: "success",
+    className:
+      "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20",
+  },
+  CANCELADA: {
+    label: "Cancelada",
+    variant: "destructive",
+    className:
+      "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20",
+  },
+  CANCELADO: {
+    label: "Cancelada",
+    variant: "destructive",
+    className:
+      "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20",
+  },
+};
 
 export default function OrderDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const orderId = params?.id as string;
+  const rawId = params?.id;
+  const orderId = Array.isArray(rawId) ? rawId[0] : (rawId as string);
 
   const [order, setOrder] = useState<PurchaseOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [, startTransition] = useTransition();
 
-  const [bankAccounts, setBankAccounts] = useState<BankAccountItem[]>([]);
   const [bcvRates, setBcvRates] = useState<{
     USD: number;
     EUR: number;
@@ -66,30 +141,10 @@ export default function OrderDetailPage() {
     VED: 1.0,
   });
 
-  // Modal de Pago
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [submittingPayment, setSubmittingPayment] = useState(false);
+  // Buscador de insumos
+  const [itemSearch, setItemSearch] = useState("");
   const [sendingOrder, setSendingOrder] = useState(false);
-
-  // Formulario de Pago
-  const [paymentMethod, setPaymentMethod] = useState<
-    "TRANSFERENCIA" | "PAGO_MOVIL" | "EFECTIVO" | "ZELLE"
-  >("TRANSFERENCIA");
-  const [sourceAccountId, setSourceAccountId] = useState<string>("");
-  const [destinationAccount, setDestinationAccount] = useState<string>("");
-  const [referenceNumber, setReferenceNumber] = useState<string>("");
-  const [paymentDate, setPaymentDate] = useState<string>(() =>
-    new Date().toISOString().split("T")[0]
-  );
-  const [transactionCurrency, setTransactionCurrency] = useState<
-    "USD" | "VED" | "EUR"
-  >("USD");
-  const [amountPaid, setAmountPaid] = useState<string>("");
-  const [paymentExchangeRate, setPaymentExchangeRate] = useState<string>("");
-  const [loadingAccounts, setLoadingAccounts] = useState<boolean>(false);
-  const [reviewedBy, setReviewedBy] = useState<string>("");
-  const [authorizedBy, setAuthorizedBy] = useState<string>("");
-  const [approvedBy, setApprovedBy] = useState<string>("");
+  const [creatingPaymentOrder, setCreatingPaymentOrder] = useState(false);
 
   useEffect(() => {
     if (!orderId) return;
@@ -98,13 +153,11 @@ export default function OrderDetailPage() {
       startTransition(() => {
         void (async () => {
           try {
-            const [orderData, accountsData, ratesData] = await Promise.all([
+            const [orderData, ratesData] = await Promise.all([
               PurchasingClientService.getOrderById(orderId),
-              BankAccountService.getBankAccounts(true).catch(() => []),
               CurrencyService.getCurrentRates().catch(() => null),
             ]);
             setOrder(orderData);
-            setBankAccounts(accountsData);
             if (ratesData) {
               setBcvRates({
                 USD: Number(ratesData.USD || ratesData.rates?.USD || 75.0),
@@ -138,41 +191,32 @@ export default function OrderDetailPage() {
     };
   }, [orderId]);
 
-  // Carga asíncrona de cuentas bancarias activas al abrir el modal de pago
+  // Filtro y paginación de insumos
+  const filteredItems = useMemo(() => {
+    const list = order?.items || [];
+    if (!itemSearch.trim()) return list;
+    const q = itemSearch.toLowerCase().trim();
+    return list.filter(
+      (it) =>
+        (it.product?.name || "").toLowerCase().includes(q) ||
+        (it.product?.sku || "").toLowerCase().includes(q) ||
+        (it.unit?.name || "").toLowerCase().includes(q) ||
+        (it.unit?.abbreviation || "").toLowerCase().includes(q)
+    );
+  }, [order, itemSearch]);
+
+  const itemsPagination = usePagination(filteredItems, { initialPageSize: 10 });
+  const { resetPage } = itemsPagination;
+
   useEffect(() => {
-    if (!showPaymentModal) return;
-    let ignore = false;
-    void (async () => {
-      try {
-        const data = await BankAccountService.getBankAccounts(true);
-        if (!ignore) {
-          const activeAccounts = (data || []).filter((acc) => acc.isActive);
-          setBankAccounts(activeAccounts);
-          if (activeAccounts.length > 0 && !sourceAccountId) {
-            const match =
-              activeAccounts.find((a) => a.currency === transactionCurrency) ||
-              activeAccounts[0];
-            setSourceAccountId(String(match.id));
-          }
-        }
-      } catch (err) {
-        console.error("Error cargando cuentas bancarias:", err);
-      } finally {
-        if (!ignore) {
-          setLoadingAccounts(false);
-        }
-      }
-    })();
-    return () => {
-      ignore = true;
-    };
-  }, [showPaymentModal, transactionCurrency, sourceAccountId]);
+    resetPage();
+  }, [itemSearch, resetPage]);
 
   if (loading) {
     return (
-      <div className="h-[70vh] flex flex-col items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-2" />
-        <span className="text-xs text-slate-500 font-medium">
+      <div className="h-[60vh] flex flex-col items-center justify-center space-y-3">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="text-xs text-muted-foreground font-medium">
           Cargando orden de compra...
         </span>
       </div>
@@ -181,24 +225,28 @@ export default function OrderDetailPage() {
 
   if (!order) {
     return (
-      <div className="p-8 text-center space-y-4 max-w-md mx-auto">
-        <Card className="shadow-xs p-6 space-y-4">
-          <CardContent className="space-y-4 p-0">
-            <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center mx-auto text-muted-foreground">
-              <FileText className="w-6 h-6" />
-            </div>
-            <h2 className="text-lg font-bold text-slate-900">
+      <div className="max-w-md mx-auto py-12">
+        <Card className="p-6 text-center space-y-4 border-border shadow-2xs">
+          <div className="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 flex items-center justify-center mx-auto">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-foreground">
               Orden de compra no encontrada
             </h2>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => router.push("/purchasing/orders")}
-              className="gap-2 cursor-pointer"
-            >
-              <ArrowLeft className="w-4 h-4" /> Volver al listado
-            </Button>
-          </CardContent>
+            <p className="text-xs text-muted-foreground">
+              No se pudo cargar la orden solicitada o no existe.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/purchasing/orders")}
+            className="gap-1.5 text-xs cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Volver a Órdenes
+          </Button>
         </Card>
       </div>
     );
@@ -212,18 +260,30 @@ export default function OrderDetailPage() {
     order.status !== "CANCELADA" &&
     order.status !== "CANCELADO";
 
+  const statusBadge = STATUS_BADGES[order.status] || {
+    label: order.status,
+    variant: "secondary" as const,
+    className: "",
+  };
+
   const handleSendOrder = async () => {
-    if (!order) return;
-    if (!confirm(`¿Desea formalizar y marcar la Orden de Compra #${order.orderNumber || order.id} como ENVIADA al proveedor? Una vez enviada, los renglones y precios quedan bloqueados para habilitar la recepción física.`)) {
+    if (
+      !confirm(
+        `¿Desea formalizar y marcar la Orden de Compra #${order.orderNumber || order.id} como ENVIADA al proveedor? Una vez enviada, los insumos y precios quedan bloqueados para habilitar la recepción.`
+      )
+    ) {
       return;
     }
     setSendingOrder(true);
     try {
-      const updated = await PurchasingClientService.sendOrder(order.id);
-      setOrder(updated);
-      toast.success(`Orden #${order.orderNumber || order.id} enviada al proveedor exitosamente.`);
+      await PurchasingClientService.sendOrder(order.id);
+      const refreshed = await PurchasingClientService.getOrderById(order.id);
+      setOrder(refreshed);
+      toast.success(`Orden #${order.orderNumber || order.id} enviada al proveedor.`);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Error al enviar la orden al proveedor.");
+      toast.error(
+        err instanceof Error ? err.message : "Error al enviar la orden al proveedor."
+      );
     } finally {
       setSendingOrder(false);
     }
@@ -233,7 +293,6 @@ export default function OrderDetailPage() {
   const symbol = getCurrencySymbol(order.currency);
   const rate = Number(order.exchangeRate || 0);
 
-  // Subtotales calculados o persistidos
   const fallbackTaxable =
     order.items?.reduce((acc, it) => {
       return !it.isExempt
@@ -276,42 +335,35 @@ export default function OrderDetailPage() {
         ? Number(order.totalAmountUsd)
         : Number(order.total || 0);
 
-  const totalAmountBs =
+  const effectiveBcvRate =
+    currCode === "EUR"
+      ? rate > 0
+        ? rate
+        : bcvRates.EUR || 81.5
+      : rate > 0
+        ? rate
+        : bcvRates.USD || 75.0;
+
+  const totalOrderBs =
     order.totalAmountBs != null
       ? Number(order.totalAmountBs)
       : currCode === "VED"
         ? totalAmount
-        : rate > 0
-          ? Math.round(totalAmount * rate * 100) / 100
-          : null;
+        : Math.round(totalAmount * effectiveBcvRate * 100) / 100;
 
-  // Tasa de cambio oficial aplicable según la moneda de la orden
-  const effectiveBcvRate =
-    currCode === "EUR"
-      ? (rate > 0 ? rate : bcvRates.EUR || 81.5)
-      : (rate > 0 ? rate : bcvRates.USD || 75.0);
-
-  // Contravalor total en USD de la orden
   const orderTotalUsd = Number(
     order.totalAmountUsd != null && Number(order.totalAmountUsd) > 0
       ? order.totalAmountUsd
       : currCode === "VED"
-        ? (Number(order.totalAmountBs) > 0 ? Number(order.totalAmountBs) : totalAmount) / (rate > 0 ? rate : bcvRates.USD || 75.0)
+        ? (Number(order.totalAmountBs) > 0 ? Number(order.totalAmountBs) : totalAmount) /
+          (rate > 0 ? rate : bcvRates.USD || 75.0)
         : currCode === "EUR"
           ? (totalAmount * (rate > 0 ? rate : bcvRates.EUR)) / (bcvRates.USD || 75.0)
           : order.total || totalAmount
   );
 
-  const totalOrderBs =
-    totalAmountBs != null
-      ? totalAmountBs
-      : currCode === "VED"
-        ? totalAmount
-        : Math.round(totalAmount * effectiveBcvRate * 100) / 100;
-
   const payments = (order.payments ?? []) as SupplierPayment[];
 
-  // Acumulado pagado en USD
   const totalPaidUsd = payments.reduce((acc, p) => {
     const pAmortized = Number(p.amortizedAmountUsd || 0);
     if (pAmortized > 0) return acc + pAmortized;
@@ -332,204 +384,42 @@ export default function OrderDetailPage() {
     Math.round((orderTotalUsd - totalPaidUsd) * 100) / 100
   );
 
-  const remainingDebtBs = Math.round(remainingDebtUsd * (bcvRates.USD || 75.0) * 100) / 100;
-  const remainingDebtEur = bcvRates.EUR > 0 ? Math.round((remainingDebtBs / bcvRates.EUR) * 100) / 100 : 0;
+  const paidPercent =
+    orderTotalUsd > 0
+      ? Math.min(100, Math.round((totalPaidUsd / orderTotalUsd) * 100))
+      : 0;
 
   const isFullyPaid =
     order.paymentStatus === "PAGADO" ||
     (orderTotalUsd > 0 && remainingDebtUsd <= 0.009);
 
   const canPay =
+    !isDraft &&
     order.status !== "CANCELADA" &&
     order.status !== "CANCELADO" &&
     !isFullyPaid;
 
-  const totalPaidBs = Math.round(totalPaidUsd * (bcvRates.USD || 75.0) * 100) / 100;
+  const activePaymentOrder =
+    order.paymentOrders?.find(
+      (po) => po.status !== "ANULADA" && po.status !== "RECHAZADA"
+    ) ||
+    order.paymentOrders?.[0] ||
+    null;
 
-  // Cálculos del Modal de Pago
-  const parsedAmountPaid = parseFloat(amountPaid) || 0;
-  const parsedAppliedRate =
-    parseFloat(paymentExchangeRate) ||
-    (transactionCurrency === "VED"
-      ? rate > 0
-        ? rate
-        : bcvRates.USD
-      : transactionCurrency === "EUR"
-        ? bcvRates.EUR
-        : 1.0);
-
-  let dynamicAmortizedUsd = 0;
-  if (transactionCurrency === "VED") {
-    dynamicAmortizedUsd =
-      parsedAppliedRate > 0 ? parsedAmountPaid / parsedAppliedRate : 0;
-  } else if (transactionCurrency === "EUR") {
-    const rateEur = parsedAppliedRate > 0 ? parsedAppliedRate : bcvRates.EUR;
-    const bcvUsd = bcvRates.USD > 0 ? bcvRates.USD : 75.0;
-    dynamicAmortizedUsd = (parsedAmountPaid * rateEur) / bcvUsd;
-  } else {
-    dynamicAmortizedUsd = parsedAmountPaid;
-  }
-  dynamicAmortizedUsd = Math.round(dynamicAmortizedUsd * 100) / 100;
-
-  const isOverpaying = dynamicAmortizedUsd > remainingDebtUsd + 0.05;
-  const overpayAmount = Math.max(
-    0,
-    Math.round((dynamicAmortizedUsd - remainingDebtUsd) * 100) / 100
-  );
-
-  const handleOpenPaymentModal = () => {
-    const defaultCurr: "USD" | "VED" | "EUR" =
-      currCode === "VED" ? "VED" : currCode === "EUR" ? "EUR" : "USD";
-    setPaymentMethod("TRANSFERENCIA");
-    setTransactionCurrency(defaultCurr);
-    setPaymentDate(new Date().toISOString().split("T")[0]);
-    setReferenceNumber("");
-    setDestinationAccount("");
-    setAmountPaid("");
-    setReviewedBy("");
-    setAuthorizedBy("");
-    setApprovedBy("");
-
-    const initialRate =
-      defaultCurr === "VED"
-        ? rate > 0
-          ? rate
-          : bcvRates.USD
-        : defaultCurr === "EUR"
-          ? bcvRates.EUR
-          : 1.0;
-    setPaymentExchangeRate(initialRate > 0 ? initialRate.toFixed(2) : "75.00");
-
-    if (bankAccounts.length > 0) {
-      const match =
-        bankAccounts.find((a) => a.currency === defaultCurr) || bankAccounts[0];
-      setSourceAccountId(match ? String(match.id) : "");
-    } else {
-      setSourceAccountId("");
-    }
-
-    setLoadingAccounts(true);
-    setShowPaymentModal(true);
-  };
-
-  const handleCurrencyChange = (newCurrency: "USD" | "VED" | "EUR") => {
-    setTransactionCurrency(newCurrency);
-    if (newCurrency === "VED") {
-      const effectiveR = rate > 0 ? rate : bcvRates.USD;
-      setPaymentExchangeRate(effectiveR.toFixed(2));
-    } else if (newCurrency === "EUR") {
-      setPaymentExchangeRate(bcvRates.EUR.toFixed(2));
-    } else {
-      setPaymentExchangeRate("1.00");
-    }
-
-    if (bankAccounts.length > 0) {
-      const matchingAccount = bankAccounts.find(
-        (a) => a.currency === newCurrency
-      );
-      if (matchingAccount) {
-        setSourceAccountId(String(matchingAccount.id));
-      }
-    }
-  };
-
-  const handleFillRemainingDebt = (overrideCurr?: "USD" | "VED" | "EUR") => {
-    if (remainingDebtUsd <= 0) return;
-    const targetCurr = overrideCurr || transactionCurrency;
-    if (overrideCurr && overrideCurr !== transactionCurrency) {
-      handleCurrencyChange(overrideCurr);
-    }
-    const rateToUse =
-      (overrideCurr || transactionCurrency) === "VED"
-        ? (parseFloat(paymentExchangeRate) || (rate > 0 ? rate : bcvRates.USD))
-        : parsedAppliedRate;
-
-    if (targetCurr === "USD") {
-      setAmountPaid(remainingDebtUsd.toFixed(2));
-    } else if (targetCurr === "VED") {
-      const neededBs =
-        Math.round(remainingDebtUsd * rateToUse * 100) / 100;
-      setAmountPaid(neededBs.toFixed(2));
-    } else if (targetCurr === "EUR") {
-      const bcvUsd = bcvRates.USD > 0 ? bcvRates.USD : 75.0;
-      const rateEur = rateToUse > 0 ? rateToUse : bcvRates.EUR;
-      const neededEur =
-        rateEur > 0
-          ? Math.round(((remainingDebtUsd * bcvUsd) / rateEur) * 100) / 100
-          : remainingDebtUsd;
-      setAmountPaid(neededEur.toFixed(2));
-    }
-  };
-
-  const handleRegisterPayment = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleGeneratePaymentOrder = async () => {
     if (!order) return;
-
-    if (parsedAmountPaid <= 0) {
-      toast.error("El monto del pago debe ser mayor a 0.");
-      return;
-    }
-
-    if (!referenceNumber.trim()) {
-      toast.error("El número de comprobante o referencia es obligatorio.");
-      return;
-    }
-
-    if (
-      (paymentMethod === "TRANSFERENCIA" || paymentMethod === "PAGO_MOVIL") &&
-      !sourceAccountId
-    ) {
-      toast.error("Debe seleccionar una cuenta bancaria institucional de origen.");
-      return;
-    }
-
-    if (isOverpaying) {
-      toast.error(
-        `El monto amortizado ($${dynamicAmortizedUsd.toFixed(2)} USD) supera el saldo pendiente ($${remainingDebtUsd.toFixed(2)} USD).`
-      );
-      return;
-    }
-
-    setSubmittingPayment(true);
+    setCreatingPaymentOrder(true);
     try {
-      const payload = {
-        method: paymentMethod,
-        sourceAccountId:
-          (paymentMethod === "TRANSFERENCIA" ||
-            paymentMethod === "PAGO_MOVIL") &&
-          sourceAccountId
-            ? Number(sourceAccountId)
-            : null,
-        destinationAccount: null,
-        referenceNumber: referenceNumber.trim(),
-        amountPaid: parsedAmountPaid,
-        transactionCurrency,
-        exchangeRate: transactionCurrency === "USD" ? 1.0 : parsedAppliedRate,
-        paymentDate: paymentDate
-          ? new Date(paymentDate).toISOString()
-          : new Date().toISOString(),
-        reviewedBy: reviewedBy.trim() || null,
-        authorizedBy: authorizedBy.trim() || null,
-        approvedBy: approvedBy.trim() || null,
-      };
-
-      await BankAccountService.registerOrderPayment(order.id, payload);
-      toast.success("Pago asentado y amortizado exitosamente.");
-
-      // Refrescar orden y datos financieros
-      const refreshedOrder = await PurchasingClientService.getOrderById(
-        order.id
+      const created = await TreasuryService.createPaymentOrder({
+        sourceType: "PURCHASE_ORDER",
+        purchaseOrderId: order.id,
+      });
+      toast.success(
+        `Orden de Pago ${created.paymentOrderNumber} generada en Tesorería.`
       );
-      setOrder(refreshedOrder);
-
-      setShowPaymentModal(false);
-
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("idi:exchange-rate-updated"));
-      }
+      router.push(`/purchasing/debts/${created.id}`);
     } catch (err: unknown) {
-      console.error("Error al registrar pago", err);
-      let message = "Error al procesar el pago de la orden";
+      let message = "No se pudo generar la Orden de Pago.";
       if (err && typeof err === "object" && "response" in err) {
         const resErr = err as { response?: { data?: { message?: string } } };
         if (resErr.response?.data?.message) {
@@ -540,186 +430,26 @@ export default function OrderDetailPage() {
       }
       toast.error(message);
     } finally {
-      setSubmittingPayment(false);
+      setCreatingPaymentOrder(false);
     }
-  };
-
-  const getPaymentStatusBadge = (status?: string) => {
-    switch (status) {
-      case "PAGADO":
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            PAGADO (Solvente)
-          </span>
-        );
-      case "PAGADO_PARCIAL":
-      case "PARCIAL":
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300">
-            <Clock className="w-3.5 h-3.5 text-blue-600" />
-            PAGO PARCIAL (Con Saldo)
-          </span>
-        );
-      case "PENDIENTE":
-      default:
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
-            <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-            PENDIENTE DE PAGO
-          </span>
-        );
-    }
-  };
-
-  const getPaymentMethodBadge = (method?: string, pMethod?: string) => {
-    const m = (method || pMethod || "TRANSFERENCIA").toUpperCase();
-    if (m.includes("PAGO_MOVIL")) {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-          Pago Móvil
-        </span>
-      );
-    }
-    if (m.includes("EFECTIVO")) {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-          Efectivo
-        </span>
-      );
-    }
-    if (m.includes("ZELLE")) {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-          Zelle
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-        Transferencia
-      </span>
-    );
-  };
-
-  const renderSourceAccount = (p: SupplierPayment) => {
-    if (p.sourceAccount) {
-      return (
-        <div className="flex flex-col">
-          <span className="font-semibold text-slate-800">
-            {p.sourceAccount.bankName}
-          </span>
-          <span className="text-[10px] text-slate-500 font-mono">
-            {p.sourceAccount.type} &bull; ••••
-            {p.sourceAccount.accountNumber
-              ? p.sourceAccount.accountNumber.slice(-4)
-              : "S/N"}
-          </span>
-        </div>
-      );
-    }
-    if (p.bankName) {
-      return <span className="text-slate-700 font-medium">{p.bankName}</span>;
-    }
-    const m = (p.method || p.paymentMethod || "").toUpperCase();
-    if (m.includes("EFECTIVO")) {
-      return <span className="text-slate-500 italic">Caja / Efectivo</span>;
-    }
-    if (m.includes("ZELLE")) {
-      return <span className="text-slate-500 italic">Zelle Directo</span>;
-    }
-    return <span className="text-slate-400">---</span>;
-  };
-
-  const renderDestinationAccount = (p: SupplierPayment) => {
-    if (p.destinationAccount) {
-      return (
-        <span className="font-mono text-slate-700">{p.destinationAccount}</span>
-      );
-    }
-    return <span className="text-slate-400 italic">No especificada</span>;
-  };
-
-  const renderOriginalAmount = (p: SupplierPayment) => {
-    const pCurr = p.transactionCurrency || (p.sourceAccount?.currency ?? "USD");
-    const pAmount = Number(p.amountPaid ?? p.amount ?? 0);
-    const pSymbol = pCurr === "VED" ? "Bs." : pCurr === "EUR" ? "€" : "$";
-    return (
-      <span className="font-mono font-semibold text-slate-900">
-        {pSymbol}{" "}
-        {pAmount.toLocaleString("es-VE", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}
-      </span>
-    );
-  };
-
-  const renderExchangeRate = (p: SupplierPayment) => {
-    const pCurr = p.transactionCurrency || "USD";
-    if (pCurr === "USD") {
-      return (
-        <span className="text-slate-400 font-mono text-[11px]">1.00 (Base)</span>
-      );
-    }
-    const pRate = Number(p.exchangeRate || 0);
-    if (pRate > 0) {
-      return (
-        <span className="font-mono text-[11px] text-slate-700 font-semibold">
-          {pRate.toFixed(2)} Bs./{pCurr === "EUR" ? "€" : "$"}
-        </span>
-      );
-    }
-    return <span className="text-slate-400 font-mono text-[11px]">---</span>;
-  };
-
-  const renderAmortizedUsd = (p: SupplierPayment) => {
-    const amortized = Number(p.amortizedAmountUsd || 0);
-    if (amortized > 0) {
-      return (
-        <span className="font-mono font-bold text-emerald-700">
-          ${" "}
-          {amortized.toLocaleString("es-VE", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}{" "}
-          USD
-        </span>
-      );
-    }
-    const pAmount = Number(p.amountPaid ?? p.amount ?? 0);
-    return (
-      <span className="font-mono font-bold text-slate-700">
-        ${" "}
-        {pAmount.toLocaleString("es-VE", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}{" "}
-        USD
-      </span>
-    );
   };
 
   const handleSendEmail = () => {
-    if (!order) return;
     const recipient = order.supplier?.email || "";
     const subject = encodeURIComponent(
       `Orden de Compra #${order.orderNumber} - Instituto de Inmunología Clínica`
     );
     const body = encodeURIComponent(
       `Estimado(a) ${order.supplier?.name || "Proveedor"},\n\n` +
-      `Le hacemos llegar la Orden de Compra #${order.orderNumber} emitida por el Instituto de Inmunología Clínica (RIF J-30710739-1) por un valor total de ${symbol} ${Number(order.total).toFixed(2)} (${order.currency}).\n\n` +
-      `Cantidad de renglones solicitados: ${order.items?.length || 0}.\n\n` +
-      `Agradecemos confirmar recepción y los tiempos estimados de entrega.\n\n` +
-      `Atentamente,\n` +
-      `Departamento de Compras y Suministros\n` +
-      `Instituto de Inmunología Clínica · ERP-IDI`
+        `Le hacemos llegar la Orden de Compra #${order.orderNumber} emitida por el Instituto de Inmunología Clínica (RIF J-30710739-1) por un valor total de ${symbol} ${totalAmount.toFixed(2)} (${currCode}).\n\n` +
+        `Cantidad de insumos solicitados: ${order.items?.length || 0}.\n\n` +
+        `Agradecemos confirmar recepción y los tiempos estimados de entrega.\n\n` +
+        `Atentamente,\nDepartamento de Compras y Suministros\nInstituto de Inmunología Clínica · ERP-IDI`
     );
     window.location.href = `mailto:${recipient}?subject=${subject}&body=${body}`;
   };
 
   const handleSendWhatsApp = () => {
-    if (!order) return;
     const rawPhone = order.supplier?.phone || "";
     let cleanPhone = rawPhone.replace(/\D/g, "");
     if (!cleanPhone) {
@@ -738,89 +468,159 @@ export default function OrderDetailPage() {
 
     const message = encodeURIComponent(
       `*INSTITUTO DE INMUNOLOGÍA CLÍNICA* (RIF J-30710739-1)\n` +
-      `*ORDEN DE COMPRA:* ${order.orderNumber}\n` +
-      `*Proveedor:* ${order.supplier?.name || "Proveedor"}\n` +
-      `*Monto Total:* ${symbol} ${Number(order.total).toFixed(2)} (${order.currency})\n` +
-      `*Renglones:* ${order.items?.length || 0}\n\n` +
-      `Estimado proveedor, le notificamos la emisión de la orden de compra adjunta. Agradecemos confirmar recepción y disponibilidad para entrega.\n\n` +
-      `_Departamento de Compras y Suministros_`
+        `*ORDEN DE COMPRA:* ${order.orderNumber}\n` +
+        `*Proveedor:* ${order.supplier?.name || "Proveedor"}\n` +
+        `*Monto Total:* ${symbol} ${totalAmount.toFixed(2)} (${currCode})\n` +
+        `*Insumos:* ${order.items?.length || 0}\n\n` +
+        `Estimado proveedor, le notificamos la emisión de la orden de compra adjunta. Agradecemos confirmar recepción y disponibilidad para entrega.\n\n` +
+        `_Departamento de Compras y Suministros_`
     );
 
     window.open(`https://wa.me/${cleanPhone}?text=${message}`, "_blank");
   };
 
+  const getPaymentMethodLabel = (method?: string, pMethod?: string) => {
+    const m = (method || pMethod || "TRANSFERENCIA").toUpperCase();
+    if (m.includes("PAGO_MOVIL")) return "Pago Móvil";
+    if (m.includes("EFECTIVO")) return "Efectivo";
+    if (m.includes("ZELLE")) return "Zelle";
+    return "Transferencia";
+  };
+
+  const totalItemsCount = order.items?.length || 0;
+  const linkedRequisitionId = order.requisition?.id ?? order.requisitionId ?? null;
+  const linkedRequisitionNumber =
+    order.requisition?.requisitionNumber ||
+    (linkedRequisitionId ? `#${linkedRequisitionId}` : null);
+
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-6xl mx-auto print:p-0 print:m-0 print:max-w-none">
-      {/* Encabezado de Acciones (Oculto en Impresión) */}
-      <div className="no-print print:hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-border">
-        <div className="flex items-center gap-3">
+    <div className="space-y-5 pb-12">
+      {/* ========================================================
+          NIVEL 1: ENCABEZADO SOBRIO Y ACCIONES PRINCIPALES
+         ======================================================== */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
+        <div className="flex items-start sm:items-center gap-3">
           <Button
             type="button"
             variant="outline"
             size="icon"
             onClick={() => router.push("/purchasing/orders")}
-            className="cursor-pointer"
-            title="Regresar al listado"
+            className="h-9 w-9 shrink-0 cursor-pointer"
+            title="Volver a Órdenes de Compra"
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="indigo" className="font-mono text-xs font-bold">
-                {order.orderNumber || `#${order.id}`}
-              </Badge>
-              <Badge
-                variant={
-                  order.status === "COMPLETADA" || order.status === "RECIBIDO"
-                    ? "success"
-                    : order.status === "PARCIAL" || order.status === "EN_PROCESO" || order.status === "APROBADA"
-                      ? "info"
-                      : order.status === "CANCELADA" || order.status === "CANCELADO"
-                        ? "destructive"
-                        : "warning"
-                }
-                className="text-[11px] font-bold"
-              >
-                {order.status}
-              </Badge>
-              {isFullyPaid ? (
-                <Badge variant="success">Solvente</Badge>
-              ) : (
-                <Badge variant="rose">
-                  Saldo: {currCode === "VED" ? `Bs. ${remainingDebtBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${remainingDebtUsd.toFixed(2)} USD`}
-                </Badge>
-              )}
-              {order.requisition && (
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                <ShoppingCart className="w-6 h-6 text-primary" />
+                Orden #{order.orderNumber || order.id}
+              </h1>
+              {linkedRequisitionId && (
                 <Link
-                  href="/purchasing/requisitions"
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
-                  title="Ver preorden de compra"
+                  href={`/purchasing/requisitions/${linkedRequisitionId}`}
+                  title="Ver detalle de la preorden de origen"
+                  className="inline-flex items-center"
                 >
-                  <FileText className="w-3 h-3" />
-                  Preorden: {order.requisition.requisitionNumber}
-                  <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
+                  <Badge
+                    variant="outline"
+                    className="text-xs font-mono gap-1 hover:border-primary/50 hover:text-primary transition-colors cursor-pointer"
+                  >
+                    <FileText className="w-3 h-3" />
+                    <span>Preorden {linkedRequisitionNumber}</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </Badge>
                 </Link>
               )}
+              {activePaymentOrder && (
+                <Link
+                  href={`/purchasing/debts/${activePaymentOrder.id}`}
+                  title="Ir a la Orden de Pago en Tesorería"
+                  className="inline-flex items-center"
+                >
+                  <Badge
+                    variant="outline"
+                    className="text-xs font-mono gap-1 hover:border-primary/50 hover:text-primary transition-colors cursor-pointer"
+                  >
+                    <FileCheck2 className="w-3 h-3" />
+                    <span>{activePaymentOrder.paymentOrderNumber}</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </Badge>
+                </Link>
+              )}
+              <Badge
+                variant={statusBadge.variant}
+                className={cn("text-xs", statusBadge.className)}
+              >
+                {statusBadge.label}
+              </Badge>
+              <Badge
+                variant={isFullyPaid ? "success" : "outline"}
+                className={cn(
+                  "text-xs",
+                  isFullyPaid
+                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20"
+                    : "text-muted-foreground"
+                )}
+              >
+                {isFullyPaid
+                  ? "Solvente"
+                  : paidPercent > 0
+                    ? `Pagado ${paidPercent}%`
+                    : "Pago Pendiente"}
+              </Badge>
             </div>
-            <h1 className="text-xl font-bold text-foreground mt-1">
-              Orden de Compra Institucional
-            </h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {order.supplier?.name || "Proveedor sin asignar"}
+              {(order.supplier?.rifOrId || order.supplier?.rif) &&
+                ` · ${order.supplier?.rifOrId || order.supplier?.rif}`}
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleSendEmail}
+            className="h-9 gap-1.5 text-xs cursor-pointer shadow-2xs"
+            title="Enviar orden por Correo Electrónico"
+          >
+            <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+            <span>Correo</span>
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleSendWhatsApp}
+            className="h-9 gap-1.5 text-xs cursor-pointer shadow-2xs"
+            title="Enviar orden por WhatsApp"
+          >
+            <MessageCircle className="w-3.5 h-3.5 text-muted-foreground" />
+            <span>WhatsApp</span>
+          </Button>
+
+          <DownloadPdfButton
+            order={order}
+            effectiveBcvRate={effectiveBcvRate}
+            symbol={symbol}
+            currCode={currCode}
+          />
+
           {isDraft && (
             <>
               <Button
-                type="button"
                 variant="outline"
                 size="sm"
                 asChild
-                className="gap-1.5 cursor-pointer shadow-xs border-indigo-300 text-indigo-700 bg-indigo-50/50 hover:bg-indigo-100"
+                className="h-9 gap-1.5 text-xs font-semibold cursor-pointer shadow-2xs"
               >
                 <Link href={`/purchasing/orders/${order.id}/edit`}>
                   <Edit3 className="w-3.5 h-3.5" />
-                  Editar Borrador
+                  <span>Editar</span>
                 </Link>
               </Button>
               <Button
@@ -828,1145 +628,515 @@ export default function OrderDetailPage() {
                 size="sm"
                 onClick={handleSendOrder}
                 disabled={sendingOrder}
-                className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer"
-                title="Marcar orden como enviada para habilitar recepción"
+                className="h-9 gap-1.5 text-xs font-bold cursor-pointer shadow-2xs"
               >
                 {sendingOrder ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <Send className="w-3.5 h-3.5" />
                 )}
-                {sendingOrder ? "Enviando..." : "Marcar como Enviada"}
+                <span>{sendingOrder ? "Enviando..." : "Enviar Orden"}</span>
               </Button>
             </>
           )}
-          {canPay && (
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleOpenPaymentModal}
-              className="gap-1.5 cursor-pointer shadow-xs"
-            >
-              <CreditCard className="w-3.5 h-3.5" />
-              Registrar Pago
-            </Button>
-          )}
+
           {canReceive && (
             <Button
               type="button"
               size="sm"
-              onClick={() =>
-                router.push(`/purchasing/orders/${order.id}/receive`)
-              }
-              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer"
+              onClick={() => router.push(`/purchasing/orders/${order.id}/receive`)}
+              className="h-9 gap-1.5 text-xs font-bold cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs"
             >
               <Truck className="w-3.5 h-3.5" />
-              Recibir Mercancía
+              <span>Recibir Mercancía</span>
             </Button>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleSendEmail}
-            className="no-print print:hidden gap-1.5 shadow-2xs cursor-pointer"
-            title="Enviar orden por Correo Electrónico"
-          >
-            <Mail className="w-3.5 h-3.5 text-blue-600" />
-            <span>Correo</span>
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleSendWhatsApp}
-            className="no-print print:hidden gap-1.5 shadow-2xs cursor-pointer"
-            title="Enviar detalles por WhatsApp al proveedor"
-          >
-            <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-            <span>WhatsApp</span>
-          </Button>
-          <DownloadPdfButton
-            order={order}
-            effectiveBcvRate={effectiveBcvRate}
-            symbol={symbol}
-            currCode={currCode}
-            className="no-print print:hidden"
-          />
         </div>
       </div>
 
-      {/* Banner Informativo de Borrador */}
+      {/* Aviso discreto si es Borrador */}
       {isDraft && (
-        <div className="no-print print:hidden p-4 rounded-xl border border-indigo-200 bg-indigo-50/60 dark:bg-indigo-950/20 text-indigo-950 dark:text-indigo-200 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-          <div className="text-xs space-y-1">
-            <p className="font-bold">Orden en Estado Borrador</p>
-            <p className="text-indigo-800 dark:text-indigo-300">
-              Esta orden aún no ha sido formalizada frente al proveedor. Puede modificar el proveedor, la moneda pactada, cantidades y precios haciendo clic en <strong>&quot;Editar Borrador&quot;</strong>. Para habilitar la recepción física de mercancía en almacén, haga clic en <strong>&quot;Marcar como Enviada&quot;</strong>.
+        <div className="px-4 py-3 rounded-xl border border-border bg-muted/30 text-xs text-muted-foreground flex items-center gap-2.5">
+          <AlertCircle className="w-4 h-4 text-primary shrink-0" />
+          <span>
+            Esta orden está en <strong className="text-foreground">Borrador</strong>. Puede editar proveedor, cantidades o precios antes de hacer clic en <strong className="text-foreground">Enviar Orden</strong> para habilitar la recepción.
+          </span>
+        </div>
+      )}
+
+      {/* ========================================================
+          NIVEL 2: RESUMEN DE PRIMER CONOCIMIENTO
+         ======================================================== */}
+      <Card className="p-5 border-border shadow-2xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {/* Preorden / Origen (Columna 1 — misma posición que Orden en Recepción) */}
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5 text-primary" />
+              Preorden de Origen
+            </span>
+            {linkedRequisitionId ? (
+              <Link
+                href={`/purchasing/requisitions/${linkedRequisitionId}`}
+                className="inline-flex items-center gap-1.5 text-sm font-bold font-mono text-primary hover:underline"
+                title="Ir al detalle de la preorden de compra"
+              >
+                <span>{linkedRequisitionNumber}</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </Link>
+            ) : (
+              <p className="text-sm font-bold text-foreground leading-snug">
+                Compra directa
+              </p>
+            )}
+            <p className="text-[11px] text-muted-foreground font-mono">
+              {order.createdAt
+                ? new Date(order.createdAt).toLocaleDateString("es-VE", {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  })
+                : "-"}
+            </p>
+          </div>
+
+          {/* Proveedor */}
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5 text-primary" />
+              Proveedor
+            </span>
+            <p className="text-sm font-bold text-foreground leading-snug">
+              {order.supplier?.name || "Sin asignar"}
+            </p>
+            <p className="text-[11px] text-muted-foreground font-mono">
+              {order.supplier?.rifOrId || order.supplier?.rif || "RIF N/A"}
+            </p>
+          </div>
+
+          {/* Total Pactado */}
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <Receipt className="w-3.5 h-3.5 text-primary" />
+              Total ({currCode})
+            </span>
+            <p className="text-sm font-bold font-mono text-foreground leading-snug">
+              {symbol}{" "}
+              {totalAmount.toLocaleString("es-VE", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </p>
+            <p className="text-[11px] text-muted-foreground font-mono">
+              {currCode !== "VED"
+                ? `Bs. ${totalOrderBs.toLocaleString("es-VE", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })} · Tasa ${effectiveBcvRate.toFixed(2)}`
+                : "Moneda Nacional"}
+            </p>
+          </div>
+
+          {/* Estado de Pago */}
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <CreditCard className="w-3.5 h-3.5 text-primary" />
+              Liquidación
+            </span>
+            <p
+              className={cn(
+                "text-sm font-bold font-mono leading-snug",
+                isFullyPaid
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-foreground"
+              )}
+            >
+              {isFullyPaid
+                ? "Pagada (100%)"
+                : `Saldo: $${remainingDebtUsd.toFixed(2)} USD`}
+            </p>
+            <p className="text-[11px] text-muted-foreground font-mono">
+              Pagado: ${totalPaidUsd.toFixed(2)} USD ({paidPercent}%)
             </p>
           </div>
         </div>
-      )}
+      </Card>
 
-      {/* Resumen Superior en Pantalla */}
-      <div className="no-print print:hidden grid grid-cols-1 md:grid-cols-4 gap-4">
-        {/* Proveedor */}
-        <div className="p-4 bg-card text-card-foreground border border-border rounded-xl shadow-xs space-y-2">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-            <Building2 className="w-4 h-4 text-blue-600" />
-            Proveedor Adjudicado
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-foreground">
-              {order.supplier?.name ?? "Sin proveedor"}
-            </h3>
-            <span className="font-mono text-xs text-muted-foreground block">
-              RIF: {order.supplier?.rifOrId || order.supplier?.rif || "N/A"}
-            </span>
-          </div>
-        </div>
-
-        {/* Importe en Moneda de la Orden */}
-        <div className="p-4 bg-card text-card-foreground border border-border rounded-xl shadow-xs space-y-2">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-            <Receipt className="w-4 h-4 text-emerald-600" />
-            Total Factura ({currCode})
-          </div>
-          <div className="text-2xl font-bold font-mono text-foreground">
-            {symbol}{" "}
-            {totalAmount.toLocaleString("es-VE", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </div>
-          <span className="text-[11px] text-muted-foreground block font-mono">
-            Moneda: {currCode} ({symbol})
-          </span>
-        </div>
-
-        {/* Tasa BCV y Conversión Bs. */}
-        <div className="p-4 bg-card text-card-foreground border border-border rounded-xl shadow-xs space-y-2">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-            <Coins className="w-4 h-4 text-amber-600" />
-            {currCode === "VED"
-              ? "Total Moneda Nacional"
-              : "Tasa BCV y Total Bs."}
-          </div>
-          <div className="text-base font-bold font-mono text-foreground">
-            {totalAmountBs != null
-              ? `Bs. ${totalAmountBs.toLocaleString("es-VE", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}`
-              : "N/A"}
-          </div>
-          <div className="flex items-center gap-1 text-[11px] text-muted-foreground font-mono">
-            <span>Tasa BCV:</span>
-            <span className="font-bold text-foreground/80">
-              {currCode === "VED"
-                ? "1.00 (Moneda Base)"
-                : rate > 0
-                  ? `${rate.toFixed(2)} Bs./${currCode === "EUR" ? "€" : "$"}`
-                  : "No fijada"}
-            </span>
-          </div>
-        </div>
-
-        {/* Control */}
-        <div className="p-4 bg-card text-card-foreground border border-border rounded-xl shadow-xs space-y-2">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-            <Boxes className="w-4 h-4 text-purple-600" />
-            Información y Control
-          </div>
-          <div className="space-y-1 text-xs">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Fecha:</span>
-              <span className="font-mono text-foreground/80">
-                {order.createdAt
-                  ? new Date(order.createdAt).toLocaleDateString()
-                  : "-"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Renglones:</span>
-              <span className="font-semibold text-foreground">
-                {order.items?.length ?? 0}
-              </span>
-            </div>
-            {order.requisition?.departmentSection && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Dpto.:</span>
-                <span className="font-semibold text-foreground truncate max-w-[120px]">
-                  {order.requisition.departmentSection}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Panel de Resumen Financiero y Estado de Pagos en Pantalla */}
-      <div className="no-print print:hidden bg-card text-card-foreground border border-border rounded-xl p-5 shadow-xs">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-border">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-              <Landmark className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-sm font-bold text-foreground">
-                Resumen Financiero y Estado de Liquidación
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Monitoreo multi-moneda de pagos realizados, amortización de deuda y saldo pendiente
-              </p>
-            </div>
-          </div>
+      {/* ========================================================
+          NIVEL 3: INSUMOS DE LA ORDEN (CON PAGINACIÓN Y TOTALES)
+         ======================================================== */}
+      <Card className="overflow-hidden border-border shadow-2xs">
+        <div className="p-4 border-b border-border bg-muted/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            {getPaymentStatusBadge(order.paymentStatus)}
-            {canPay && (
-              <button
-                type="button"
-                onClick={handleOpenPaymentModal}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors cursor-pointer"
-              >
-                <CreditCard className="w-3.5 h-3.5" />
-                Registrar Pago
-              </button>
-            )}
+            <Boxes className="w-4 h-4 text-primary" />
+            <CardTitle className="text-sm font-bold text-foreground">
+              Insumos de la Orden ({totalItemsCount})
+            </CardTitle>
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-          {/* Total Orden */}
-          <div className="p-3.5 rounded-lg bg-muted/40 border border-border space-y-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground block">
-              Total Orden {currCode !== "USD" && `(${currCode})`}
-            </span>
-            <div className="text-xl font-bold font-mono text-foreground">
-              {currCode === "EUR"
-                ? `€ ${totalAmount.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`
-                : `$ ${orderTotalUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
-            </div>
-            <div className="text-xs font-mono text-muted-foreground flex flex-col gap-0.5">
-              <span>Equiv. Bs. {totalOrderBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              {currCode === "EUR" && (
-                <span>Contravalor: $ {orderTotalUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
+          {totalItemsCount > 5 && (
+            <div className="relative w-full sm:w-72">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="text"
+                value={itemSearch}
+                onChange={(e) => setItemSearch(e.target.value)}
+                placeholder="Filtrar insumo, SKU o presentación..."
+                className="pl-8 pr-8 h-8 text-xs bg-background"
+              />
+              {itemSearch && (
+                <button
+                  type="button"
+                  onClick={() => setItemSearch("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               )}
             </div>
-          </div>
-
-          {/* Total Amortizado / Pagado */}
-          <div className="p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 space-y-1">
-            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-              <span>Total Pagado / Amortizado</span>
-              <span className="font-mono text-[10px] bg-emerald-500/20 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-300 font-bold">
-                {orderTotalUsd > 0
-                  ? Math.min(
-                      100,
-                      Math.round((totalPaidUsd / orderTotalUsd) * 100)
-                    )
-                  : 0}
-                %
-              </span>
-            </div>
-            <div className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
-              $ {totalPaidUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-            </div>
-            <span className="text-xs font-mono text-emerald-600/80 dark:text-emerald-400/80 block">
-              Equiv. Bs. {totalPaidBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-          </div>
-
-          {/* Saldo Pendiente */}
-          <div
-            className={`p-3.5 rounded-lg border space-y-1 ${
-              remainingDebtUsd > 0
-                ? "bg-amber-500/10 border-amber-500/20"
-                : "bg-muted/40 border-border"
-            }`}
-          >
-            <span
-              className={`text-[11px] font-semibold uppercase tracking-wider block ${
-                remainingDebtUsd > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
-              }`}
-            >
-              Saldo Pendiente por Pagar
-            </span>
-            <div
-              className={`text-xl font-bold font-mono ${
-                remainingDebtUsd > 0 ? "text-amber-600 dark:text-amber-400" : "text-foreground"
-              }`}
-            >
-              {currCode === "EUR" && remainingDebtEur > 0
-                ? `€ ${remainingDebtEur.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`
-                : `$ ${remainingDebtUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
-            </div>
-            <div className={`text-xs font-mono flex flex-col gap-0.5 ${
-              remainingDebtUsd > 0 ? "text-amber-600/80 dark:text-amber-400/80" : "text-muted-foreground"
-            }`}>
-              <span>Equiv. Bs. {remainingDebtBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              {currCode === "EUR" && (
-                <span>Contravalor: $ {remainingDebtUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* COMPROBANTE OFICIAL DE ORDEN DE COMPRA SENIAT (IMPRIMIBLE) */}
-      <PrintableDocument>
-        <DocumentHeader
-          title="ORDEN DE COMPRA INSTITUCIONAL"
-          subtitle="Proforma Fiscal SENIAT · Instituto de Inmunología Clínica IDI"
-          documentNumber={order.orderNumber || `#${order.id}`}
-          badge="PROFORMA SENIAT"
-          status={{
-            label: order.status,
-            className: "bg-slate-100 text-slate-800 border-slate-300",
-          }}
-          date={
-            order.createdAt
-              ? new Date(order.createdAt).toLocaleDateString("es-VE")
-              : undefined
-          }
-        />
-
-        {/* Datos de Emisión vs Datos del Proveedor Adjudicado */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 break-inside-avoid">
-          {/* Emisor (Comprador Institucional) */}
-          <div className="p-3.5 rounded-lg border border-slate-300 print:border-black bg-slate-50/50 print:bg-white space-y-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 print:text-black block border-b border-slate-200 print:border-black pb-1">
-              Datos de Emisión (Comprador Institucional)
-            </span>
-            <div className="text-xs font-bold text-slate-900 print:text-black">
-              INMUNOLOGIA ASOCIACION CIVIL
-            </div>
-            <div className="font-mono text-xs font-bold text-slate-700 print:text-black">
-              RIF: J-30710739-1
-            </div>
-            <div className="text-[11px] text-slate-600 print:text-slate-700">
-              Dirección: Instituto de Inmunología Clínica, Caracas, Venezuela
-            </div>
-            <div className="text-[11px] text-slate-600 print:text-slate-700">
-              Contacto: compras@idi.org.ve · administracion@idi.org.ve
-            </div>
-            {order.requisition?.departmentSection && (
-              <div className="text-[11px] text-slate-600 print:text-slate-700">
-                Área Solicitante:{" "}
-                <span className="font-semibold">
-                  {order.requisition.departmentSection}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Proveedor Adjudicado */}
-          <div className="p-3.5 rounded-lg border border-slate-300 print:border-black bg-slate-50/50 print:bg-white space-y-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 print:text-black block border-b border-slate-200 print:border-black pb-1">
-              Datos del Proveedor Adjudicado
-            </span>
-            <div className="text-xs font-bold text-slate-900 print:text-black">
-              {order.supplier?.name ?? "Proveedor no asignado"}
-            </div>
-            <div className="font-mono text-xs font-bold text-slate-700 print:text-black">
-              RIF: {order.supplier?.rifOrId || order.supplier?.rif || "N/A"}
-            </div>
-            <div className="text-[11px] text-slate-600 print:text-slate-700">
-              Teléfono: {order.supplier?.phone || "No registrado"}
-            </div>
-            <div className="text-[11px] text-slate-600 print:text-slate-700">
-              Contacto / Email:{" "}
-              {order.supplier?.contactName ||
-                order.supplier?.email ||
-                "No registrado"}
-            </div>
-            {order.supplier?.address && (
-              <div className="text-[11px] text-slate-600 print:text-slate-700">
-                Dirección: {order.supplier.address}
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
-        {/* Metadatos de la Orden */}
-        <DocumentMetadataGrid
-          columns={4}
-          items={[
-            {
-              label: "N° Orden de Compra",
-              value: (
-                <span className="font-mono font-bold">
-                  {order.orderNumber || `#${order.id}`}
-                </span>
-              ),
-            },
-            {
-              label: "Fecha de Emisión",
-              value: order.createdAt
-                ? new Date(order.createdAt).toLocaleDateString("es-VE")
-                : "-",
-            },
-            {
-              label: "Referencia Preorden",
-              value: order.requisition?.requisitionNumber || "N/A",
-            },
-            {
-              label: "Moneda / Condición",
-              value: `${currCode} (${symbol}) • ${order.paymentStatus || "PENDIENTE"}`,
-            },
-          ]}
-        />
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/30">
+              <TableHead className="py-2.5 px-4 text-xs font-semibold w-12">#</TableHead>
+              <TableHead className="py-2.5 px-4 text-xs font-semibold">Insumo / Reactivo</TableHead>
+              <TableHead className="py-2.5 px-4 text-xs font-semibold text-center">Presentación</TableHead>
+              <TableHead className="py-2.5 px-4 text-xs font-semibold text-right">Cantidad</TableHead>
+              <TableHead className="py-2.5 px-4 text-xs font-semibold text-right">Precio Unit. ({symbol})</TableHead>
+              <TableHead className="py-2.5 px-4 text-xs font-semibold text-right">Total ({symbol})</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredItems.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center text-xs text-muted-foreground">
+                  No se encontraron insumos que coincidan con &ldquo;{itemSearch}&rdquo;.
+                </TableCell>
+              </TableRow>
+            ) : (
+              itemsPagination.paginatedItems.map((item, idx) => {
+                const rowNumber =
+                  (itemsPagination.currentPage - 1) * itemsPagination.pageSize + idx + 1;
+                const lineTotal =
+                  Number(item.quantityOrdered) * Number(item.unitPrice);
+                const presentationLabel =
+                  item.unit?.name ||
+                  item.unit?.abbreviation ||
+                  item.product?.baseUnit?.name ||
+                  item.product?.baseUnit?.abbreviation ||
+                  item.product?.unitOfMeasure ||
+                  "Unidad";
 
-        {/* Tabla de Renglones de la Orden */}
-        <div className="space-y-2">
-          <div className="flex justify-between items-center pb-1">
-            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider print:text-black">
-              Renglones de la Orden de Compra ({order.items?.length ?? 0})
-            </h3>
-            <span className="text-[10px] text-slate-500 font-mono print:text-black">
-              Valores en moneda {currCode} ({symbol})
-            </span>
-          </div>
-
-          <div className="overflow-x-auto border border-slate-300 rounded-lg print:border-black print:rounded-none">
-            <table className="min-w-full text-xs text-left border-collapse">
-              <thead className="bg-slate-100 text-slate-700 border-b border-slate-300 print:bg-slate-200 print:text-black print:border-black font-bold text-[11px]">
-                <tr>
-                  <th className="py-2 px-2.5 text-center border-r border-slate-300 print:border-black w-24">
-                    SKU
-                  </th>
-                  <th className="py-2 px-3 border-r border-slate-300 print:border-black">
-                    Descripción / Insumo
-                  </th>
-                  <th className="py-2 px-2.5 text-center border-r border-slate-300 print:border-black">
-                    Unidad / Empaque
-                  </th>
-                  <th className="py-2 px-2 text-center border-r border-slate-300 print:border-black">
-                    Factor
-                  </th>
-                  <th className="py-2 px-2.5 text-right border-r border-slate-300 print:border-black">
-                    Cantidad
-                  </th>
-                  <th className="py-2 px-2.5 text-right border-r border-slate-300 print:border-black">
-                    Precio Unit. ({symbol})
-                  </th>
-                  <th className="py-2 px-2.5 text-center border-r border-slate-300 print:border-black">
-                    Exento
-                  </th>
-                  <th className="py-2 px-3 text-right">
-                    Total Renglón ({symbol})
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 print:divide-black">
-                {order.items?.map((item) => {
-                  const lineTotal =
-                    Number(item.quantityOrdered) * Number(item.unitPrice);
-                  const unitText =
-                    item.unit?.abbreviation ||
-                    item.product?.baseUnit?.abbreviation ||
-                    item.product?.unitOfMeasure ||
-                    "UND";
-                  const factor = Number(item.multiplier || 1);
-                  const baseUnit =
-                    item.product?.baseUnit?.abbreviation ||
-                    item.product?.unitOfMeasure ||
-                    "UND";
-                  const factorText =
-                    factor > 1
-                      ? `1 ${unitText} = ${factor} ${baseUnit}`
-                      : "1:1";
-
-                  return (
-                    <tr
-                      key={String(item.id)}
-                      className="break-inside-avoid hover:bg-slate-50/70"
-                    >
-                      <td className="py-2 px-2.5 text-center font-mono font-bold text-slate-800 print:text-black border-r border-slate-200 print:border-black">
-                        {item.product?.sku ?? "---"}
-                      </td>
-                      <td className="py-2 px-3 border-r border-slate-200 print:border-black">
-                        <div className="font-bold text-slate-900 print:text-black">
-                          {item.product?.name}
-                        </div>
-                      </td>
-                      <td className="py-2 px-2.5 text-center text-slate-700 print:text-black border-r border-slate-200 print:border-black uppercase font-semibold">
-                        {unitText}
-                      </td>
-                      <td className="py-2 px-2 text-center font-mono text-[10px] text-slate-600 print:text-black border-r border-slate-200 print:border-black">
-                        {factorText}
-                      </td>
-                      <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-900 print:text-black border-r border-slate-200 print:border-black whitespace-nowrap">
-                        <span>
-                          {Number(item.quantityOrdered)}{" "}
-                          <span className="font-normal font-sans text-[11px] text-slate-500 print:text-black">
-                            {unitText}
-                          </span>
-                        </span>
-                        {factor > 1 && (
-                          <span className="block text-[10px] font-sans font-normal text-blue-700 print:text-slate-600">
-                            ≈ {Number(item.quantityOrdered) * factor} {baseUnit}
+                return (
+                  <TableRow
+                    key={String(item.id)}
+                    className="hover:bg-muted/40 transition-colors text-xs"
+                  >
+                    <TableCell className="py-2.5 px-4 font-mono text-muted-foreground">
+                      {rowNumber}
+                    </TableCell>
+                    <TableCell className="py-2.5 px-4">
+                      <div className="font-semibold text-foreground">
+                        {item.product?.name || "Insumo"}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        {item.product?.sku && (
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            SKU: {item.product.sku}
                           </span>
                         )}
-                      </td>
-                      <td className="py-2 px-2.5 text-right font-mono font-medium text-slate-800 print:text-black border-r border-slate-200 print:border-black">
-                        {symbol} {Number(item.unitPrice).toFixed(2)}
-                      </td>
-                      <td className="py-2 px-2.5 text-center border-r border-slate-200 print:border-black">
-                        {item.isExempt ? (
-                          <span className="font-bold text-emerald-700 print:text-black text-[11px]">
-                            Sí
-                          </span>
-                        ) : (
-                          <span className="text-slate-600 print:text-black text-[11px]">
-                            No (16%)
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono font-bold text-slate-900 print:text-black">
-                        {symbol} {lineTotal.toFixed(2)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] px-1.5 py-0 font-normal"
+                        >
+                          {item.isExempt ? "Exento IVA" : "IVA 16%"}
+                        </Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-2.5 px-4 text-center font-medium text-muted-foreground">
+                      {presentationLabel}
+                    </TableCell>
+                    <TableCell className="py-2.5 px-4 text-right font-mono font-bold text-foreground">
+                      {Number(item.quantityOrdered)}
+                    </TableCell>
+                    <TableCell className="py-2.5 px-4 text-right font-mono text-muted-foreground">
+                      {symbol} {Number(item.unitPrice).toFixed(2)}
+                    </TableCell>
+                    <TableCell className="py-2.5 px-4 text-right font-mono font-bold text-foreground">
+                      {symbol} {lineTotal.toFixed(2)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
 
-        {/* Cuadro de Liquidación Fiscal SENIAT */}
-        <div className="border border-slate-300 print:border-black rounded-lg p-4 bg-slate-50/50 print:bg-white break-inside-avoid space-y-3">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-2 border-b border-slate-200 print:border-black gap-2">
-            <div>
-              <h4 className="text-xs font-bold text-slate-900 print:text-black uppercase tracking-wider">
-                Liquidación y Fiscalidad SENIAT (Venezuela)
-              </h4>
-              <p className="text-[10px] text-slate-500 print:text-black">
-                Cálculo conforme a la Ley del Impuesto al Valor Agregado (IVA 16%) y Providencias Administrativas SENIAT
-              </p>
-            </div>
-            <div className="text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-800 border border-slate-300 print:border-black print:bg-white print:text-black">
+        {filteredItems.length > itemsPagination.pageSize && (
+          <TablePagination
+            currentPage={itemsPagination.currentPage}
+            totalPages={itemsPagination.totalPages}
+            pageSize={itemsPagination.pageSize}
+            totalItems={itemsPagination.totalItems}
+            onPageChange={itemsPagination.onPageChange}
+            onPageSizeChange={itemsPagination.onPageSizeChange}
+            pageSizeOptions={[10, 25, 50]}
+            entityName="insumos"
+          />
+        )}
+
+        {/* Desglose Fiscal SENIAT compacto */}
+        <div className="p-4 border-t border-border bg-muted/20 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div className="text-[11px] text-muted-foreground space-y-0.5">
+            <p className="font-semibold text-foreground">Liquidación Fiscal SENIAT</p>
+            <p>
               {currCode === "VED"
-                ? "Tasa oficial BCV: 1.00 (Moneda Base Nacional)"
-                : `Tasa oficial BCV: ${effectiveBcvRate.toFixed(2)} Bs./${currCode === "EUR" ? "€" : "$"}`}
-            </div>
+                ? "Operación en Moneda Nacional (Bs.)"
+                : `Tasa oficial BCV aplicada: ${effectiveBcvRate.toFixed(2)} Bs./${currCode === "EUR" ? "€" : "$"}`}
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Moneda de la Orden */}
-            <div className="space-y-1.5 text-xs bg-white print:bg-transparent p-3 rounded border border-slate-200 print:border-black">
-              <span className="block font-bold text-slate-700 print:text-black border-b border-slate-100 print:border-black pb-1 uppercase text-[10px]">
-                Totales en Moneda de la Orden ({currCode})
+          <div className="w-full sm:w-72 space-y-1 text-xs">
+            <div className="flex justify-between text-muted-foreground">
+              <span>Base Gravable (16%):</span>
+              <span className="font-mono font-medium text-foreground">
+                {symbol} {taxableAmount.toFixed(2)}
               </span>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-600 print:text-black">Base Imponible Gravable (16%):</span>
-                <span className="font-mono font-semibold text-slate-900 print:text-black">
-                  {symbol} {taxableAmount.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-600 print:text-black">Subtotal Exento de IVA:</span>
-                <span className="font-mono font-semibold text-slate-900 print:text-black">
-                  {symbol} {exemptAmount.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-600 print:text-black">Impuesto al Valor Agregado (IVA 16%):</span>
-                <span className="font-mono font-semibold text-slate-900 print:text-black">
-                  {symbol} {taxAmount.toFixed(2)}
-                </span>
-              </div>
-              <div className="pt-1.5 border-t border-slate-200 print:border-black flex justify-between items-center text-sm font-bold">
-                <span className="text-slate-900 print:text-black">Total en Divisa ({symbol}):</span>
-                <span className="font-mono text-blue-900 print:text-black">
-                  {symbol} {totalAmount.toFixed(2)}
-                </span>
-              </div>
             </div>
-
-            {/* Equivalente en Bolívares */}
-            <div className="space-y-1.5 text-xs bg-white print:bg-transparent p-3 rounded border border-slate-200 print:border-black">
-              <span className="block font-bold text-slate-700 print:text-black border-b border-slate-100 print:border-black pb-1 uppercase text-[10px]">
-                Liquidación Oficial en Bolívares (Bs.)
+            <div className="flex justify-between text-muted-foreground">
+              <span>Subtotal Exento:</span>
+              <span className="font-mono font-medium text-foreground">
+                {symbol} {exemptAmount.toFixed(2)}
               </span>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-600 print:text-black">Base Gravable en Bs.:</span>
-                <span className="font-mono font-semibold text-slate-900 print:text-black">
-                  Bs. {(taxableAmount * (currCode === "VED" ? 1 : effectiveBcvRate)).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-600 print:text-black">Subtotal Exento en Bs.:</span>
-                <span className="font-mono font-semibold text-slate-900 print:text-black">
-                  Bs. {(exemptAmount * (currCode === "VED" ? 1 : effectiveBcvRate)).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-600 print:text-black">IVA 16% en Bs.:</span>
-                <span className="font-mono font-semibold text-slate-900 print:text-black">
-                  Bs. {(taxAmount * (currCode === "VED" ? 1 : effectiveBcvRate)).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="pt-1.5 border-t border-slate-200 print:border-black flex justify-between items-center text-sm font-bold">
-                <span className="text-slate-900 print:text-black">Total en Bolívares (Bs.):</span>
-                <span className="font-mono text-emerald-800 print:text-black">
-                  Bs. {totalOrderBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="text-[10px] text-slate-400 print:text-slate-600 italic text-right pt-0.5">
-                Tasa oficial BCV: {effectiveBcvRate.toFixed(2)} Bs./divisa
-              </div>
             </div>
-          </div>
-        </div>
-
-        {/* Sección de 3 Firmas */}
-        <DocumentSignatures
-          signatures={[
-            {
-              role: "Elaborado por (Compras)",
-              name: "Coordinación de Compras",
-              department: "Unidad de Procura y Gestión de Proveedores",
-              stampText: "Firma y Sello Compras",
-            },
-            {
-              role: "Revisado por (Administración)",
-              name: "Administración y Finanzas",
-              department: "Control Presupuestario y Fiscal",
-              stampText: "Firma y Sello Administración",
-            },
-            {
-              role: "Aprobado por (Dirección)",
-              name: "Dirección General IDI",
-              department: "Instituto de Inmunología Clínica",
-              stampText: "Firma y Sello Dirección",
-            },
-          ]}
-        />
-
-        {/* Pie del Documento */}
-        <DocumentFooter
-          notes={order.notes || "Esta Orden de Compra constituye un compromiso formal de adquisición y entrega sujeta a inspección física, control de calidad y liquidación de factura legal SENIAT."}
-          institutionText="INMUNOLOGIA ASOCIACION CIVIL · RIF: J-30710739-1"
-          systemSignature={`ERP-IDI v2.0 · Orden ${order.orderNumber || `#${order.id}`}`}
-        />
-      </PrintableDocument>
-
-      {/* Historial de Pagos y Amortizaciones */}
-      <div className="no-print print:hidden bg-card text-card-foreground border border-border rounded-xl overflow-hidden shadow-xs">
-        <div className="p-4 border-b border-border bg-muted/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-          <div className="flex items-center gap-2">
-            <CreditCard className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <div>
-              <h3 className="text-sm font-bold text-foreground">
-                Historial de Pagos y Amortizaciones
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Transacciones registradas, cuentas asociadas y deducción del saldo deudor
-              </p>
+            <div className="flex justify-between text-muted-foreground">
+              <span>IVA (16%):</span>
+              <span className="font-mono font-medium text-foreground">
+                {symbol} {taxAmount.toFixed(2)}
+              </span>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-mono font-medium px-2.5 py-1 rounded-md bg-muted text-foreground border border-border">
-              {payments.length}{" "}
-              {payments.length === 1 ? "pago registrado" : "pagos registrados"}
-            </span>
-            {canPay && (
-              <button
-                type="button"
-                onClick={handleOpenPaymentModal}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Registrar Pago
-              </button>
+            <div className="border-t border-border pt-1.5 flex justify-between font-bold text-sm text-foreground">
+              <span>Total ({currCode}):</span>
+              <span className="font-mono text-primary">
+                {symbol} {totalAmount.toFixed(2)}
+              </span>
+            </div>
+            {currCode !== "VED" && (
+              <div className="flex justify-between text-[11px] text-muted-foreground font-mono">
+                <span>Equivalente Bs.:</span>
+                <span className="font-semibold text-foreground">
+                  Bs.{" "}
+                  {totalOrderBs.toLocaleString("es-VE", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </span>
+              </div>
             )}
           </div>
+        </div>
+      </Card>
+
+      {/* ========================================================
+          NIVEL 4: PAGOS REGISTRADOS
+         ======================================================== */}
+      <Card className="overflow-hidden border-border shadow-2xs">
+        <div className="p-4 border-b border-border bg-muted/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <CreditCard className="w-4 h-4 text-primary" />
+            <CardTitle className="text-sm font-bold text-foreground">
+              Pagos Registrados ({payments.length})
+            </CardTitle>
+          </div>
+
+          {activePaymentOrder ? (
+            <Button
+              asChild
+              size="sm"
+              variant={isFullyPaid ? "outline" : "default"}
+              className={cn(
+                "h-8 gap-1.5 text-xs font-semibold cursor-pointer",
+                !isFullyPaid &&
+                  "bg-emerald-600 hover:bg-emerald-700 text-white"
+              )}
+            >
+              <Link href={`/purchasing/debts/${activePaymentOrder.id}`}>
+                <FileCheck2 className="w-3.5 h-3.5" />
+                <span>
+                  Ir a Orden de Pago ({activePaymentOrder.paymentOrderNumber})
+                </span>
+                <ExternalLink className="w-3 h-3" />
+              </Link>
+            </Button>
+          ) : (
+            canPay && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={creatingPaymentOrder}
+                onClick={() => void handleGeneratePaymentOrder()}
+                className="h-8 gap-1.5 text-xs font-semibold cursor-pointer"
+              >
+                {creatingPaymentOrder ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <FileCheck2 className="w-3.5 h-3.5" />
+                )}
+                <span>Generar Orden de Pago</span>
+              </Button>
+            )
+          )}
         </div>
 
         {payments.length === 0 ? (
-          <div className="p-8 text-center space-y-3">
-            <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center mx-auto text-muted-foreground">
-              <CreditCard className="w-6 h-6" />
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-sm font-bold text-foreground">
-                No se han registrado pagos para esta orden
-              </h4>
-              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                Utilice el botón &quot;Registrar Pago&quot; para asentar
-                transferencias, pagos móviles, Zelle o desembolsos en efectivo.
-              </p>
-            </div>
-            {canPay && (
-              <button
-                type="button"
-                onClick={handleOpenPaymentModal}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                Registrar Primer Pago
-              </button>
-            )}
+          <div className="p-6 text-center text-xs text-muted-foreground">
+            No se han registrado pagos para esta orden.
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-border text-xs">
-              <thead className="bg-muted/60 text-muted-foreground">
-                <tr>
-                  <th className="py-3 px-4 text-left">Fecha</th>
-                  <th className="py-3 px-4 text-left">Método</th>
-                  <th className="py-3 px-4 text-left">Cuenta de Origen</th>
-                  <th className="py-3 px-4 text-left">
-                    Cuenta Destino / Proveedor
-                  </th>
-                  <th className="py-3 px-4 text-left">N° Referencia</th>
-                  <th className="py-3 px-4 text-right">Monto Pagado</th>
-                  <th className="py-3 px-4 text-center">Tasa Aplicada</th>
-                  <th className="py-3 px-4 text-right">Amortizado (USD)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {payments.map((p, idx) => (
-                  <tr
-                    key={`${p.id || "pay"}-${idx}`}
-                    className="hover:bg-muted/40 transition-colors"
-                  >
-                    <td className="py-3 px-4 font-mono text-foreground/90 whitespace-nowrap">
-                      {p.paymentDate
-                        ? new Date(p.paymentDate).toLocaleDateString("es-VE")
-                        : p.createdAt
-                          ? new Date(p.createdAt).toLocaleDateString("es-VE")
-                          : "-"}
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      {getPaymentMethodBadge(p.method, p.paymentMethod)}
-                    </td>
-                    <td className="py-3 px-4">{renderSourceAccount(p)}</td>
-                    <td className="py-3 px-4">
-                      {renderDestinationAccount(p)}
-                    </td>
-                    <td className="py-3 px-4 font-mono font-medium text-foreground">
-                      <div>{p.referenceNumber || p.reference || "S/R"}</div>
-                      {(p.reviewedBy || p.authorizedBy || p.approvedBy) && (
-                        <div className="text-[10px] text-muted-foreground font-sans mt-0.5 space-y-0.5">
-                          {p.reviewedBy && (
-                            <div>
-                              Rev:{" "}
-                              <span className="font-semibold text-foreground/90">
-                                {p.reviewedBy}
-                              </span>
-                            </div>
-                          )}
-                          {p.authorizedBy && (
-                            <div>
-                              Aut:{" "}
-                              <span className="font-semibold text-foreground/90">
-                                {p.authorizedBy}
-                              </span>
-                            </div>
-                          )}
-                          {p.approvedBy && (
-                            <div>
-                              Apr:{" "}
-                              <span className="font-semibold text-foreground/90">
-                                {p.approvedBy}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      {renderOriginalAmount(p)}
-                    </td>
-                    <td className="py-3 px-4 text-center whitespace-nowrap">
-                      {renderExchangeRate(p)}
-                    </td>
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      {renderAmortizedUsd(p)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30">
+                  <TableHead className="py-2.5 px-4 text-xs font-semibold">Fecha</TableHead>
+                  <TableHead className="py-2.5 px-4 text-xs font-semibold">Método</TableHead>
+                  <TableHead className="py-2.5 px-4 text-xs font-semibold">Cuenta Origen</TableHead>
+                  <TableHead className="py-2.5 px-4 text-xs font-semibold">Referencia</TableHead>
+                  <TableHead className="py-2.5 px-4 text-xs font-semibold text-right">Monto</TableHead>
+                  <TableHead className="py-2.5 px-4 text-xs font-semibold text-center">Tasa</TableHead>
+                  <TableHead className="py-2.5 px-4 text-xs font-semibold text-right">Amortizado (USD)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {payments.map((p, idx) => {
+                  const pCurr = p.transactionCurrency || p.sourceAccount?.currency || "USD";
+                  const pAmount = Number(p.amountPaid ?? p.amount ?? 0);
+                  const pSymbol = pCurr === "VED" ? "Bs." : pCurr === "EUR" ? "€" : "$";
+                  const pRate = Number(p.exchangeRate || 0);
+                  const amortized = Number(p.amortizedAmountUsd || pAmount);
+
+                  return (
+                    <TableRow
+                      key={`${p.id || "pay"}-${idx}`}
+                      className="hover:bg-muted/40 transition-colors text-xs"
+                    >
+                      <TableCell className="py-2.5 px-4 font-mono text-muted-foreground whitespace-nowrap">
+                        {p.paymentDate
+                          ? new Date(p.paymentDate).toLocaleDateString("es-VE")
+                          : p.createdAt
+                            ? new Date(p.createdAt).toLocaleDateString("es-VE")
+                            : "-"}
+                      </TableCell>
+                      <TableCell className="py-2.5 px-4 whitespace-nowrap">
+                        <Badge variant="outline" className="text-[11px] font-medium">
+                          {getPaymentMethodLabel(p.method, p.paymentMethod)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="py-2.5 px-4">
+                        {p.sourceAccount ? (
+                          <div>
+                            <span className="font-semibold text-foreground block">
+                              {p.sourceAccount.bankName}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground font-mono">
+                              ••••
+                              {p.sourceAccount.accountNumber
+                                ? p.sourceAccount.accountNumber.slice(-4)
+                                : "S/N"}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            {p.bankName || "-"}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-2.5 px-4 font-mono text-foreground">
+                        {p.referenceNumber || p.reference || "S/R"}
+                      </TableCell>
+                      <TableCell className="py-2.5 px-4 text-right font-mono font-semibold text-foreground whitespace-nowrap">
+                        {pSymbol}{" "}
+                        {pAmount.toLocaleString("es-VE", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </TableCell>
+                      <TableCell className="py-2.5 px-4 text-center font-mono text-[11px] text-muted-foreground whitespace-nowrap">
+                        {pCurr === "USD"
+                          ? "1.00"
+                          : pRate > 0
+                            ? `${pRate.toFixed(2)}`
+                            : "-"}
+                      </TableCell>
+                      <TableCell className="py-2.5 px-4 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                        ${" "}
+                        {amortized.toLocaleString("es-VE", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
         )}
-      </div>
+      </Card>
 
-      {/* Modal Dinámico de Registro de Pago */}
-      {showPaymentModal && (
-        <div className="no-print print:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-card text-card-foreground rounded-xl max-w-3xl md:max-w-4xl w-[95vw] p-5 sm:p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto border border-border">
-            <div className="flex items-center justify-between pb-3 border-b border-border">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                  <CreditCard className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-foreground">
-                    Registrar Pago de Orden
-                  </h3>
-                  <p className="text-xs text-muted-foreground font-mono">
-                    Orden {order.orderNumber || `#${order.id}`} &bull; {order.supplier?.name}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPaymentModal(false)}
-                className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-muted transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Banner Informativo Saldo Pendiente */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-muted/40 rounded-xl border border-border">
-              <div className="p-3 bg-emerald-500/10 border border-emerald-500/25 rounded-lg flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-emerald-800 dark:text-emerald-300 block">
-                    Total Pendiente en Bolívares
-                  </span>
-                  <span className="text-xl font-black font-mono text-emerald-900 dark:text-emerald-200">
-                    Bs. {remainingDebtBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <Badge variant="success" className="font-mono text-xs">Bs.</Badge>
-              </div>
-              <div className="p-3 bg-blue-500/10 border border-blue-500/25 rounded-lg flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-blue-800 dark:text-blue-300 block">
-                    Saldo Restante en Dólares
-                  </span>
-                  <span className="text-xl font-black font-mono text-blue-950 dark:text-blue-200">
-                    $ {remainingDebtUsd.toFixed(2)} USD
-                  </span>
-                </div>
-                <Badge variant="indigo" className="font-mono text-xs">USD</Badge>
-              </div>
-            </div>
-
-            <form onSubmit={handleRegisterPayment} className="space-y-4">
-              {/* Método de Pago */}
-              <div>
-                <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1">
-                  Método de Pago *
-                </label>
-                <select
-                  value={paymentMethod}
-                  onChange={(e) =>
-                    setPaymentMethod(
-                      e.target.value as
-                        | "TRANSFERENCIA"
-                        | "PAGO_MOVIL"
-                        | "EFECTIVO"
-                        | "ZELLE"
-                    )
-                  }
-                  className="w-full text-sm border border-input rounded-lg p-2.5 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background"
-                >
-                  <option value="TRANSFERENCIA">Transferencia Bancaria</option>
-                  <option value="PAGO_MOVIL">Pago Móvil Interbancario</option>
-                  <option value="EFECTIVO">Efectivo (Dólares / Bolívares)</option>
-                  <option value="ZELLE">Zelle (USD)</option>
-                </select>
-              </div>
-
-              {/* Campos condicionales para TRANSFERENCIA y PAGO_MOVIL */}
-              {(paymentMethod === "TRANSFERENCIA" ||
-                paymentMethod === "PAGO_MOVIL") && (
-                <>
-                  <div>
-                    <label
-                      htmlFor="sourceAccountId"
-                      className="block text-xs font-semibold text-muted-foreground uppercase mb-1"
-                    >
-                      Cuenta Bancaria Origen *
-                    </label>
-                    <select
-                      id="sourceAccountId"
-                      required
-                      value={sourceAccountId}
-                      onChange={(e) => setSourceAccountId(e.target.value)}
-                      className="w-full text-sm border border-input rounded-lg p-2.5 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background font-mono"
-                    >
-                      <option value="">
-                        {loadingAccounts
-                          ? "Cargando cuentas bancarias activas..."
-                          : "-- Seleccionar Cuenta Bancaria Origen * --"}
-                      </option>
-                      {bankAccounts
-                        .filter((acc) => acc.isActive)
-                        .map((acc) => (
-                          <option key={acc.id} value={acc.id}>
-                            {acc.bankName} - {acc.accountNumber || "S/N"} (
-                            {acc.type} - {acc.currency})
-                          </option>
-                        ))}
-                    </select>
-                    {bankAccounts.filter((acc) => acc.isActive).length === 0 &&
-                      !loadingAccounts && (
-                        <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
-                          No hay cuentas bancarias activas registradas. Puede
-                          crear cuentas en{" "}
-                          <Link
-                            href="/inventory/settings"
-                            className="font-bold underline text-amber-700 dark:text-amber-300"
-                          >
-                            Configuración &gt; Cuentas Institucionales
-                          </Link>
-                          .
-                        </p>
-                      )}
-                  </div>
-                </>
-              )}
-
-              {/* N° Referencia y Fecha de Pago */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1">
-                    {paymentMethod === "EFECTIVO"
-                      ? "N° Recibo / Comprobante *"
-                      : paymentMethod === "ZELLE"
-                        ? "Referencia Zelle / Titular *"
-                        : "N° de Referencia *"}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={referenceNumber}
-                    onChange={(e) => setReferenceNumber(e.target.value)}
-                    placeholder="Ej. 98765432, ZL-88219"
-                    className="w-full text-sm border border-input rounded-lg p-2.5 focus:ring-2 focus:ring-ring outline-none font-mono text-foreground bg-background"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1">
-                    Fecha de Pago *
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={paymentDate}
-                    onChange={(e) => setPaymentDate(e.target.value)}
-                    className="w-full text-sm border border-input rounded-lg p-2.5 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background"
-                  />
-                </div>
-              </div>
-
-              {/* Moneda y Monto Pagado */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1">
-                    Moneda del Pago *
-                  </label>
-                  <select
-                    value={transactionCurrency}
-                    onChange={(e) =>
-                      handleCurrencyChange(
-                        e.target.value as "USD" | "VED" | "EUR"
-                      )
-                    }
-                    className="w-full text-sm border border-input rounded-lg p-2.5 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background"
-                  >
-                    <option value="USD">USD ($)</option>
-                    <option value="VED">VED (Bs.)</option>
-                    <option value="EUR">EUR (€)</option>
-                  </select>
-                </div>
-                <div className="sm:col-span-2">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-1">
-                    <label className="block text-xs font-semibold text-muted-foreground uppercase">
-                      Monto Pagado (
-                      {transactionCurrency === "VED"
-                        ? "Bs."
-                        : transactionCurrency === "EUR"
-                          ? "€"
-                          : "$"}
-                      ) *
-                    </label>
-                    {remainingDebtUsd > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => handleFillRemainingDebt(transactionCurrency)}
-                        className="text-xs text-primary hover:underline font-bold cursor-pointer"
-                      >
-                        Pagar saldo total ({transactionCurrency === "VED" ? `Bs. ${(remainingDebtUsd * parsedAppliedRate).toFixed(2)}` : transactionCurrency === "EUR" ? `€ ${((remainingDebtUsd * (bcvRates.USD || 75.0)) / (parsedAppliedRate || 1)).toFixed(2)}` : `$ ${remainingDebtUsd.toFixed(2)}`})
-                      </button>
-                    )}
-                  </div>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    required
-                    value={amountPaid}
-                    onChange={(e) => setAmountPaid(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full text-sm border border-input rounded-lg p-2.5 focus:ring-2 focus:ring-ring outline-none font-mono font-bold text-foreground bg-background"
-                  />
-                </div>
-              </div>
-
-              {/* Tasa de Cambio (Visible si es VED o EUR) */}
-              {(transactionCurrency === "VED" ||
-                transactionCurrency === "EUR") && (
-                <div className="p-3 bg-muted/40 border border-border rounded-lg space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="block text-xs font-semibold text-foreground">
-                      Tasa de Cambio a aplicar (Bs./
-                      {transactionCurrency === "EUR" ? "€" : "$"})
-                    </label>
-                    <span className="text-[10px] text-muted-foreground font-mono">
-                      BCV Oficial:{" "}
-                      {transactionCurrency === "VED"
-                        ? bcvRates.USD.toFixed(2)
-                        : bcvRates.EUR.toFixed(2)}{" "}
-                      Bs.
-                    </span>
-                  </div>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    min="0.0001"
-                    value={paymentExchangeRate}
-                    onChange={(e) => setPaymentExchangeRate(e.target.value)}
-                    className="w-full text-sm border border-input rounded-lg p-2 focus:ring-2 focus:ring-ring outline-none font-mono text-foreground bg-background"
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Precargada con la tasa BCV del día, editable si se acuerda
-                    una tasa contractual específica.
-                  </p>
-                </div>
-              )}
-
-              {/* Indicador Reactivo de Amortización */}
-              <div className="p-3.5 rounded-lg bg-muted/40 border border-border space-y-2">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-muted-foreground block text-[10px] uppercase font-semibold">
-                      Equivalente amortizado en USD:
-                    </span>
-                    <span className="font-mono text-sm font-bold text-blue-600 dark:text-blue-400">
-                      $ {dynamicAmortizedUsd.toFixed(2)} USD
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block text-[10px] uppercase font-semibold">
-                      Equivalente en Bolívares (Bs.):
-                    </span>
-                    <span className="font-mono text-sm font-bold text-emerald-700 dark:text-emerald-300">
-                      Bs. {(dynamicAmortizedUsd * parsedAppliedRate).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex justify-between items-center text-[11px] text-muted-foreground pt-1.5 border-t border-border font-mono">
-                  <span>Deuda restante proyectada:</span>
-                  <span className="font-bold text-foreground">
-                    $ {Math.max(0, Math.round((remainingDebtUsd - dynamicAmortizedUsd) * 100) / 100).toFixed(2)} USD (≈ Bs. {Math.max(0, Math.round((remainingDebtBs - (dynamicAmortizedUsd * parsedAppliedRate)) * 100) / 100).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
-                  </span>
-                </div>
-              </div>
-
-              {/* Alerta de Sobrepago */}
-              {isOverpaying && (
-                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 flex items-start gap-2 text-destructive text-xs">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-destructive" />
-                  <div>
-                    <span className="font-bold block">
-                      El monto amortizado excede la deuda restante
-                    </span>
-                    <span>
-                      Está intentando amortizar $ {dynamicAmortizedUsd.toFixed(2)}{" "}
-                      USD, lo cual sobrepasa la deuda en ${" "}
-                      {overpayAmount.toFixed(2)} USD. Ajuste el monto o haga clic
-                      en &quot;Pagar saldo total&quot;.
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Firmas de Autorización */}
-              <div className="border-t border-border pt-3 space-y-2">
-                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
-                  Firmas de Autorización del Pago
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
-                      Revisado por
-                    </label>
-                    <input
-                      type="text"
-                      value={reviewedBy}
-                      onChange={(e) => setReviewedBy(e.target.value)}
-                      placeholder="Ej. Lic. Ana Pérez"
-                      className="w-full text-xs border border-input rounded-lg p-2 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
-                      Autorizado por
-                    </label>
-                    <input
-                      type="text"
-                      value={authorizedBy}
-                      onChange={(e) => setAuthorizedBy(e.target.value)}
-                      placeholder="Ej. Dr. Roberto Silva"
-                      className="w-full text-xs border border-input rounded-lg p-2 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
-                      Aprobado por
-                    </label>
-                    <input
-                      type="text"
-                      value={approvedBy}
-                      onChange={(e) => setApprovedBy(e.target.value)}
-                      placeholder="Ej. Dra. Carmen Díaz"
-                      className="w-full text-xs border border-input rounded-lg p-2 focus:ring-2 focus:ring-ring outline-none text-foreground bg-background"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Botones de Acción */}
-              <div className="flex justify-end gap-3 pt-3 border-t border-border">
-                <button
-                  type="button"
-                  onClick={() => setShowPaymentModal(false)}
-                  className="px-4 py-2 border border-input rounded-lg text-muted-foreground hover:bg-muted text-xs font-semibold cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={
-                    submittingPayment ||
-                    isOverpaying ||
-                    !amountPaid ||
-                    Number(amountPaid) <= 0 ||
-                    !referenceNumber.trim() ||
-                    ((paymentMethod === "TRANSFERENCIA" ||
-                      paymentMethod === "PAGO_MOVIL") &&
-                      !sourceAccountId)
-                  }
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-2 cursor-pointer shadow-xs transition-colors"
-                >
-                  {submittingPayment && (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  )}
-                  Confirmar y Asentar Pago
-                </button>
-              </div>
-            </form>
+      {/* ========================================================
+          NIVEL 5: DETALLES SECUNDARIOS (OBSERVACIONES Y PROVEEDOR)
+         ======================================================== */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="p-4 border-border/80 bg-muted/10 shadow-none space-y-2">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <StickyNote className="w-3.5 h-3.5" />
+            <span className="text-xs font-semibold uppercase tracking-wider">
+              Observaciones y Condiciones
+            </span>
           </div>
-        </div>
-      )}
+          {order.notes ? (
+            <p className="text-xs text-foreground whitespace-pre-line leading-relaxed">
+              {order.notes}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground italic">
+              Sin observaciones registradas.
+            </p>
+          )}
+        </Card>
+
+        <Card className="p-4 border-border/80 bg-muted/10 shadow-none space-y-2">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Building2 className="w-3.5 h-3.5" />
+            <span className="text-xs font-semibold uppercase tracking-wider">
+              Contacto del Proveedor
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-[11px] pt-1">
+            <div>
+              <span className="text-muted-foreground block">Teléfono</span>
+              <span className="font-mono text-foreground">
+                {order.supplier?.phone || "No registrado"}
+              </span>
+            </div>
+            <div>
+              <span className="text-muted-foreground block">Correo</span>
+              <span className="font-mono text-foreground">
+                {order.supplier?.email || "No registrado"}
+              </span>
+            </div>
+            {order.supplier?.address && (
+              <div className="sm:col-span-2">
+                <span className="text-muted-foreground block">Dirección</span>
+                <span className="text-foreground">{order.supplier.address}</span>
+              </div>
+            )}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

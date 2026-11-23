@@ -40,6 +40,37 @@ enum PurchaseRequisitionStatus {
   CANCELADA
 }
 
+enum ServiceOrderStatus {
+  BORRADOR
+  EN_APROBACION
+  APROBADA
+  RECHAZADA
+  ORDEN_PAGO
+  PAGADA
+  CANCELADA
+}
+
+enum PaymentOrderSourceType {
+  PURCHASE_ORDER
+  SERVICE_ORDER
+}
+
+enum PaymentOrderStatus {
+  BORRADOR
+  PENDIENTE_APROBACION
+  APROBADA
+  RECHAZADA
+  PAGADA_PARCIALMENTE
+  PAGADA
+  ANULADA
+}
+
+enum TreasuryPaymentStatus {
+  BORRADOR
+  CONFIRMADO
+  ANULADO
+}
+
 enum PaymentStatus {
   PENDIENTE
   PAGADO_PARCIAL
@@ -275,9 +306,18 @@ model User {
   registeredPayments      OrderPayment[]
   reportedIncidents       BatchIncident[]    @relation("ReportedIncidents")
   resolvedIncidents       BatchIncident[]    @relation("ResolvedIncidents")
-  purchaseRequisitions    PurchaseRequisition[] @relation("UserPurchaseRequisitions")
-  directPayments          DirectPayment[]
-  labAreas                UserLabArea[]
+  purchaseRequisitions             PurchaseRequisition[] @relation("UserPurchaseRequisitions")
+  directPayments                   DirectPayment[]       @relation("DirectPaymentRegisteredBy")
+  approvedDirectPayments           DirectPayment[]       @relation("DirectPaymentApprovedBy")
+  rejectedDirectPayments           DirectPayment[]       @relation("DirectPaymentRejectedBy")
+  paymentOrderIssuedDirectPayments DirectPayment[]       @relation("DirectPaymentOrderIssuedBy")
+  createdPaymentOrders             PaymentOrder[]        @relation("PaymentOrderCreatedBy")
+  approvedPaymentOrders            PaymentOrder[]        @relation("PaymentOrderApprovedBy")
+  rejectedPaymentOrders            PaymentOrder[]        @relation("PaymentOrderRejectedBy")
+  createdTreasuryPayments          TreasuryPayment[]     @relation("TreasuryPaymentCreatedBy")
+  confirmedTreasuryPayments        TreasuryPayment[]     @relation("TreasuryPaymentConfirmedBy")
+  bankAccountMovements             BankAccountMovement[] @relation("BankAccountMovementCreatedBy")
+  labAreas                         UserLabArea[]
   labRequestsCreated      LabInternalRequest[]     @relation("LabRequestsRequested")
   labRequestsReviewed     LabInternalRequest[]     @relation("LabRequestsReviewed")
   weeklyRunsExecuted      LabWeeklyRun[]           @relation("UserWeeklyRuns")
@@ -376,6 +416,7 @@ model CurrencyExchange {
 
   currency  Currency @relation(fields: [currencyId], references: [id])
   createdBy User     @relation(fields: [createdById], references: [id])
+  treasuryPaymentLines TreasuryPaymentLine[]
 
   @@map("currency_exchanges")
 }
@@ -395,6 +436,7 @@ model Department {
 
   requests             Request[]
   purchaseRequisitions PurchaseRequisition[]
+  directPayments       DirectPayment[]
 
   @@map("departments")
 }
@@ -441,7 +483,9 @@ model Supplier {
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at")
 
-  orders Order[]
+  orders         Order[]
+  directPayments DirectPayment[]
+  paymentOrders  PaymentOrder[]
 
   @@map("suppliers")
 }
@@ -562,6 +606,7 @@ model Order {
   payments       OrderPayment[]
   invoices       OrderInvoice[]
   stockMovements StockMovement[]
+  paymentOrders  PaymentOrder[]
 
   @@map("orders")
 }
@@ -601,8 +646,10 @@ model BankAccount {
   createdAt     DateTime       @default(now()) @map("created_at")
   updatedAt     DateTime       @updatedAt @map("updated_at")
 
-  payments       OrderPayment[]
-  directPayments DirectPayment[]
+  payments             OrderPayment[]
+  directPayments       DirectPayment[]
+  treasuryPaymentLines TreasuryPaymentLine[]
+  accountMovements     BankAccountMovement[]
 
   @@map("bank_accounts")
 }
@@ -639,30 +686,168 @@ model OrderPayment {
 }
 
 model DirectPayment {
-  id                  BigInt        @id @default(autoincrement())
-  concept             String
-  beneficiary         String
-  method              String        @default("TRANSFERENCIA")
-  sourceAccountId     Int?          @map("source_account_id")
-  destinationAccount  String?       @map("destination_account")
-  referenceNumber     String?       @map("reference_number")
-  paymentDate         DateTime      @default(now()) @map("payment_date")
-  amountPaid          Decimal       @map("amount_paid") @db.Decimal(18, 2)
-  transactionCurrency String        @default("USD") @map("transaction_currency")
-  exchangeRate        Decimal       @default(1.0000) @map("exchange_rate") @db.Decimal(18, 4)
-  equivalentAmountUsd Decimal       @default(0.00) @map("equivalent_amount_usd") @db.Decimal(18, 2)
-  notes               String?
-  receiptImageUrl     String?       @map("receipt_image_url")
-  reviewedBy          String?       @map("reviewed_by")
-  authorizedBy        String?       @map("authorized_by")
-  approvedBy          String?       @map("approved_by")
-  registeredById      Int           @map("registered_by_id")
-  createdAt           DateTime      @default(now()) @map("created_at")
+  id                     BigInt             @id @default(autoincrement())
+  serviceOrderNumber     String?            @unique @map("service_order_number")
+  paymentOrderNumber     String?            @unique @map("payment_order_number")
+  status                 ServiceOrderStatus @default(PAGADA)
+  concept                String
+  beneficiary            String
+  supplierId             Int?               @map("supplier_id")
+  departmentId           Int?               @map("department_id")
+  estimatedDate          DateTime?          @map("estimated_date")
+  supportUrl             String?            @map("support_url")
+  method                 String             @default("TRANSFERENCIA")
+  sourceAccountId        Int?               @map("source_account_id")
+  destinationAccount     String?            @map("destination_account")
+  referenceNumber        String?            @map("reference_number")
+  paymentDate            DateTime           @default(now()) @map("payment_date")
+  amountPaid             Decimal            @map("amount_paid") @db.Decimal(18, 2)
+  transactionCurrency    String             @default("USD") @map("transaction_currency")
+  exchangeRate           Decimal            @default(1.0000) @map("exchange_rate") @db.Decimal(18, 4)
+  equivalentAmountUsd    Decimal            @default(0.00) @map("equivalent_amount_usd") @db.Decimal(18, 2)
+  notes                  String?            @db.Text
+  receiptImageUrl        String?            @map("receipt_image_url")
+  reviewedBy             String?            @map("reviewed_by")
+  authorizedBy           String?            @map("authorized_by")
+  approvedBy             String?            @map("approved_by")
+  approvedByUserId       Int?               @map("approved_by_user_id")
+  approvedAt             DateTime?          @map("approved_at")
+  approvalNotes          String?            @db.Text @map("approval_notes")
+  rejectedByUserId       Int?               @map("rejected_by_user_id")
+  rejectedAt             DateTime?          @map("rejected_at")
+  rejectionReason        String?            @db.Text @map("rejection_reason")
+  paymentOrderIssuedAt   DateTime?          @map("payment_order_issued_at")
+  paymentOrderIssuedById Int?               @map("payment_order_issued_by_id")
+  paymentOrderNotes      String?            @db.Text @map("payment_order_notes")
+  registeredById         Int                @map("registered_by_id")
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @default(now()) @updatedAt @map("updated_at")
 
-  sourceAccount BankAccount? @relation(fields: [sourceAccountId], references: [id])
-  registeredBy  User         @relation(fields: [registeredById], references: [id])
+  supplier             Supplier?    @relation(fields: [supplierId], references: [id])
+  department           Department?  @relation(fields: [departmentId], references: [id])
+  sourceAccount        BankAccount? @relation(fields: [sourceAccountId], references: [id])
+  registeredBy         User         @relation("DirectPaymentRegisteredBy", fields: [registeredById], references: [id])
+  approvedByUser       User?          @relation("DirectPaymentApprovedBy", fields: [approvedByUserId], references: [id])
+  rejectedByUser       User?          @relation("DirectPaymentRejectedBy", fields: [rejectedByUserId], references: [id])
+  paymentOrderIssuedBy User?          @relation("DirectPaymentOrderIssuedBy", fields: [paymentOrderIssuedById], references: [id])
+  paymentOrders        PaymentOrder[]
 
+  @@index([status])
   @@map("direct_payments")
+}
+
+model PaymentOrder {
+  id                 BigInt                 @id @default(autoincrement())
+  paymentOrderNumber String                 @unique @map("payment_order_number")
+  sourceType         PaymentOrderSourceType @map("source_type")
+  purchaseOrderId    BigInt?                @map("purchase_order_id")
+  serviceOrderId     BigInt?                @map("service_order_id")
+  supplierId         Int?                   @map("supplier_id")
+  beneficiaryName    String                 @map("beneficiary_name")
+  concept            String                 @db.Text
+  debtCurrency       String                 @default("USD") @map("debt_currency")
+  totalDebtAmount    Decimal                @map("total_debt_amount") @db.Decimal(18, 2)
+  paidAmount         Decimal                @default(0.00) @map("paid_amount") @db.Decimal(18, 2)
+  remainingBalance   Decimal                @map("remaining_balance") @db.Decimal(18, 2)
+  status             PaymentOrderStatus     @default(PENDIENTE_APROBACION)
+  notes              String?                @db.Text
+  createdById        Int                    @map("created_by_id")
+  approvedById       Int?                   @map("approved_by_id")
+  approvedAt         DateTime?              @map("approved_at")
+  approvalNotes      String?                @db.Text @map("approval_notes")
+  rejectedById       Int?                   @map("rejected_by_id")
+  rejectedAt         DateTime?              @map("rejected_at")
+  rejectionReason    String?                @db.Text @map("rejection_reason")
+  createdAt          DateTime               @default(now()) @map("created_at")
+  updatedAt          DateTime               @updatedAt @map("updated_at")
+
+  purchaseOrder Order?            @relation(fields: [purchaseOrderId], references: [id])
+  serviceOrder  DirectPayment?    @relation(fields: [serviceOrderId], references: [id])
+  supplier      Supplier?         @relation(fields: [supplierId], references: [id])
+  createdBy     User              @relation("PaymentOrderCreatedBy", fields: [createdById], references: [id])
+  approvedBy    User?             @relation("PaymentOrderApprovedBy", fields: [approvedById], references: [id])
+  rejectedBy    User?             @relation("PaymentOrderRejectedBy", fields: [rejectedById], references: [id])
+  payments      TreasuryPayment[]
+
+  @@index([status])
+  @@index([sourceType])
+  @@index([purchaseOrderId])
+  @@index([serviceOrderId])
+  @@index([supplierId])
+  @@map("payment_orders")
+}
+
+model TreasuryPayment {
+  id                              BigInt                @id @default(autoincrement())
+  paymentNumber                   String                @unique @map("payment_number")
+  paymentOrderId                  BigInt                @map("payment_order_id")
+  paymentDate                     DateTime              @map("payment_date") @db.Date
+  status                          TreasuryPaymentStatus @default(BORRADOR)
+  totalEquivalentInDebtCurrency   Decimal               @map("total_equivalent_in_debt_currency") @db.Decimal(18, 2)
+  notes                           String?               @db.Text
+  createdById                     Int                   @map("created_by_id")
+  confirmedById                   Int?                  @map("confirmed_by_id")
+  confirmedAt                     DateTime?             @map("confirmed_at")
+  createdAt                       DateTime              @default(now()) @map("created_at")
+  updatedAt                       DateTime              @updatedAt @map("updated_at")
+
+  paymentOrder PaymentOrder          @relation(fields: [paymentOrderId], references: [id], onDelete: Cascade)
+  createdBy    User                  @relation("TreasuryPaymentCreatedBy", fields: [createdById], references: [id])
+  confirmedBy  User?                 @relation("TreasuryPaymentConfirmedBy", fields: [confirmedById], references: [id])
+  lines        TreasuryPaymentLine[]
+
+  @@index([paymentOrderId])
+  @@index([status])
+  @@index([paymentDate])
+  @@map("treasury_payments")
+}
+
+model TreasuryPaymentLine {
+  id                   BigInt   @id @default(autoincrement())
+  paymentId            BigInt   @map("payment_id")
+  sourceAccountId      Int      @map("source_account_id")
+  paymentMethod        String   @default("TRANSFERENCIA") @map("payment_method")
+  currency             String
+  amountPaid           Decimal  @map("amount_paid") @db.Decimal(18, 2)
+  exchangeRateId       BigInt?  @map("exchange_rate_id")
+  exchangeRateValue    Decimal  @default(1.0000) @map("exchange_rate_value") @db.Decimal(18, 4)
+  equivalentDebtAmount Decimal  @map("equivalent_debt_amount") @db.Decimal(18, 2)
+  referenceNumber      String?  @map("reference_number")
+  receiptUrl           String?  @map("receipt_url")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  payment         TreasuryPayment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  sourceAccount   BankAccount          @relation(fields: [sourceAccountId], references: [id])
+  exchangeRate    CurrencyExchange?    @relation(fields: [exchangeRateId], references: [id])
+  accountMovement BankAccountMovement?
+
+  @@index([paymentId])
+  @@index([sourceAccountId])
+  @@map("treasury_payment_lines")
+}
+
+model BankAccountMovement {
+  id                   BigInt   @id @default(autoincrement())
+  bankAccountId        Int      @map("bank_account_id")
+  paymentLineId        BigInt?  @unique @map("payment_line_id")
+  movementDate         DateTime @map("movement_date") @db.Date
+  type                 String   @default("EGRESO")
+  currency             String
+  amount               Decimal  @db.Decimal(18, 2)
+  exchangeRateValue    Decimal  @default(1.0000) @map("exchange_rate_value") @db.Decimal(18, 4)
+  equivalentDebtAmount Decimal  @map("equivalent_debt_amount") @db.Decimal(18, 2)
+  referenceNumber      String?  @map("reference_number")
+  description          String   @db.Text
+  createdById          Int      @map("created_by_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  bankAccount BankAccount          @relation(fields: [bankAccountId], references: [id])
+  paymentLine TreasuryPaymentLine? @relation(fields: [paymentLineId], references: [id], onDelete: SetNull)
+  createdBy   User                 @relation("BankAccountMovementCreatedBy", fields: [createdById], references: [id])
+
+  @@index([bankAccountId])
+  @@index([movementDate])
+  @@map("bank_account_movements")
 }
 
 model OrderInvoice {

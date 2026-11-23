@@ -1,26 +1,21 @@
 "use client";
 
-import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { useState, useEffect, useCallback, useMemo, type FormEvent } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { InventoryClientService } from "@/services/inventory.service";
 import { AuthService } from "@/services/auth.service";
-import { getCurrencySymbol } from "@/utils/currency";
 import type { PurchaseOrder, PurchaseOrderItem } from "@/types/purchasing";
 import type { Location } from "@/types/inventory";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import {
   PackageCheck,
   ArrowLeft,
@@ -29,7 +24,12 @@ import {
   AlertTriangle,
   CheckCircle2,
   Loader2,
-  Package,
+  Boxes,
+  FileText,
+  ShieldCheck,
+  ShieldAlert,
+  ExternalLink,
+  X,
 } from "lucide-react";
 
 interface ReceptionRow {
@@ -51,7 +51,8 @@ interface ReceptionRow {
 export default function ReceiveOrderPage() {
   const router = useRouter();
   const params = useParams();
-  const orderId = Number(params?.id);
+  const rawId = params?.id;
+  const orderId = Number(Array.isArray(rawId) ? rawId[0] : rawId);
 
   const [order, setOrder] = useState<PurchaseOrder | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -65,6 +66,7 @@ export default function ReceiveOrderPage() {
   } | null>(null);
 
   const loadOrderAndCatalogs = useCallback(async () => {
+    if (!orderId) return;
     setLoading(true);
     try {
       const [orderData, locs] = await Promise.all([
@@ -94,7 +96,7 @@ export default function ReceiveOrderPage() {
               item.unit?.abbreviation ||
               item.product?.baseUnit?.abbreviation ||
               item.product?.unitOfMeasure ||
-              "und",
+              "UND",
             multiplier: mult,
             orderedQuantity: ordered,
             pendingQuantity: pending,
@@ -110,6 +112,7 @@ export default function ReceiveOrderPage() {
       setItemsData(rows);
     } catch (err: unknown) {
       console.error("Error al cargar orden", err);
+      setOrder(null);
     } finally {
       setLoading(false);
     }
@@ -124,7 +127,7 @@ export default function ReceiveOrderPage() {
     const init = async () => {
       if (isMounted) await loadOrderAndCatalogs();
     };
-    init();
+    void init();
     return () => {
       isMounted = false;
     };
@@ -133,7 +136,7 @@ export default function ReceiveOrderPage() {
   const handleRowChange = (
     index: number,
     field: keyof ReceptionRow,
-    value: string | number | boolean,
+    value: string | number | boolean
   ) => {
     setItemsData((prev) => {
       const updated = [...prev];
@@ -142,12 +145,27 @@ export default function ReceiveOrderPage() {
     });
   };
 
-  const calculatedTotal = (order?.items || []).reduce(
-    (acc, curr) =>
-      acc + (Number(curr.quantityOrdered) || 0) * (Number(curr.unitPrice) || 0),
-    0,
-  );
-  const displayTotal = Number(order?.totalAmount) || calculatedTotal;
+  const handleSetAllConforming = (conforming: boolean) => {
+    setItemsData((prev) =>
+      prev.map((row) => ({ ...row, isConforming: conforming }))
+    );
+  };
+
+  const receptionSummary = useMemo(() => {
+    const totalPendingRows = itemsData.length;
+    const totalUnitsToReceive = itemsData.reduce(
+      (acc, r) => acc + (Number(r.receivedQuantity) || 0),
+      0
+    );
+    const conformingCount = itemsData.filter((r) => r.isConforming).length;
+    const quarantineCount = totalPendingRows - conformingCount;
+    return {
+      totalPendingRows,
+      totalUnitsToReceive,
+      conformingCount,
+      quarantineCount,
+    };
+  }, [itemsData]);
 
   const handleSubmitReception = async (e: FormEvent) => {
     e.preventDefault();
@@ -158,7 +176,7 @@ export default function ReceiveOrderPage() {
         !it.lotNumber.trim() ||
         Number(it.receivedQuantity) <= 0 ||
         Number(it.receivedQuantity) > it.pendingQuantity ||
-        !it.expirationDate,
+        !it.expirationDate
     );
 
     if (hasInvalidRow) {
@@ -190,8 +208,8 @@ export default function ReceiveOrderPage() {
         status: "success",
         message:
           quarantineCount > 0
-            ? `Mercancía recibida e inventario actualizado. ${quarantineCount} lote(s) ingresaron a Cuarentena/Revisión Técnica y los restantes a Stock Disponible.`
-            : "Mercancía recibida e inventario actualizado. Todos los lotes ingresaron como Disponibles (Vía Verde).",
+            ? `Mercancía recibida e inventario actualizado. ${quarantineCount} lote(s) ingresaron a Cuarentena y los restantes a Stock Disponible.`
+            : "Mercancía recibida e inventario actualizado. Todos los lotes ingresaron como Disponibles.",
       });
 
       setTimeout(() => {
@@ -212,10 +230,10 @@ export default function ReceiveOrderPage() {
 
   if (loading) {
     return (
-      <div className="h-96 flex items-center justify-center text-muted-foreground">
-        <Loader2 className="w-6 h-6 animate-spin mr-2 text-primary" />
-        <span className="text-sm font-medium">
-          Consultando orden de compra y almacenes...
+      <div className="h-[60vh] flex flex-col items-center justify-center space-y-3">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="text-xs text-muted-foreground font-medium">
+          Cargando orden de compra y ubicaciones...
         </span>
       </div>
     );
@@ -223,309 +241,499 @@ export default function ReceiveOrderPage() {
 
   if (!order) {
     return (
-      <div className="p-8 text-center text-muted-foreground">
-        Orden no encontrada o no disponible para recepción.
+      <div className="max-w-md mx-auto py-12">
+        <Card className="p-6 text-center space-y-4 border-border shadow-2xs">
+          <div className="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-foreground">
+              Orden no encontrada
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              La orden solicitada no existe o no está disponible para recepción.
+            </p>
+          </div>
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs cursor-pointer"
+          >
+            <Link href="/purchasing/orders">
+              <ArrowLeft className="w-3.5 h-3.5" /> Volver a Órdenes
+            </Link>
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  const isBlocked =
+    order.status === "BORRADOR" ||
+    order.status === "CANCELADA" ||
+    order.status === "CANCELADO";
+
+  if (isBlocked) {
+    return (
+      <div className="max-w-lg mx-auto py-12">
+        <Card className="p-6 text-center space-y-4 border-amber-500/30 shadow-2xs">
+          <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-foreground">
+              Orden #{order.orderNumber} no habilitada para recepción
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Estado actual: <strong className="text-foreground">{order.status}</strong>. La orden debe ser enviada al proveedor antes de registrar entradas en almacén.
+            </p>
+          </div>
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs cursor-pointer"
+          >
+            <Link href={`/purchasing/orders/${orderId}`}>
+              <ArrowLeft className="w-3.5 h-3.5" /> Ver Detalle de la Orden
+            </Link>
+          </Button>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Encabezado */}
-      <div className="flex items-center gap-3 border-b border-border pb-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          asChild
-          className="h-9 w-9 cursor-pointer"
-        >
-          <Link
-            href={`/purchasing/orders/${orderId}`}
-            title="Volver a la orden"
+    <div className="space-y-6 pb-12">
+      {/* ========================================================
+          ENCABEZADO ESTANDARIZADO
+         ======================================================== */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
+        <div className="flex items-start sm:items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            asChild
+            className="h-9 w-9 shrink-0 cursor-pointer"
           >
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-        </Button>
-        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 flex items-center justify-center shrink-0 shadow-2xs">
-          <PackageCheck className="w-5 h-5" />
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Recepción de Mercancía
-            </h1>
-            <Badge variant="outline" className="text-[11px] font-mono bg-muted/20">
-              Orden #{order.orderNumber || order.id}
-            </Badge>
+            <Link
+              href={`/purchasing/orders/${orderId}`}
+              title="Volver a la orden"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Link>
+          </Button>
+          <div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                <PackageCheck className="w-6 h-6 text-primary" />
+                Recepción de Mercancía
+              </h1>
+              <Link
+                href={`/purchasing/orders/${orderId}`}
+                title="Ver detalle de la orden de compra"
+                className="inline-flex items-center"
+              >
+                <Badge
+                  variant="outline"
+                  className="text-xs font-mono gap-1 hover:border-primary/50 hover:text-primary transition-colors cursor-pointer"
+                >
+                  <span>Orden #{order.orderNumber || order.id}</span>
+                  <ExternalLink className="w-3 h-3" />
+                </Badge>
+              </Link>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Registro de lotes, fechas de vencimiento y destino de inventario
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Ingreso de lotes a inventario y control de cuarentena técnica
-          </p>
         </div>
+
+        {itemsData.length > 0 && (
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="h-9 text-xs cursor-pointer"
+            >
+              <Link href={`/purchasing/orders/${orderId}`}>Cancelar</Link>
+            </Button>
+            <Button
+              form="receive-form"
+              type="submit"
+              disabled={submitting}
+              size="sm"
+              className="h-9 gap-1.5 text-xs font-bold cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs"
+            >
+              {submitting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <PackageCheck className="w-4 h-4" />
+              )}
+              <span>{submitting ? "Procesando..." : "Confirmar Recepción"}</span>
+            </Button>
+          </div>
+        )}
       </div>
 
       {feedback && (
-        <Alert variant={feedback.status === "success" ? "default" : "destructive"}>
+        <Alert
+          variant={feedback.status === "success" ? "success" : "destructive"}
+          className="animate-in fade-in duration-200"
+        >
           {feedback.status === "success" ? (
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            <CheckCircle2 className="w-4 h-4" />
           ) : (
-            <AlertTriangle className="h-4 w-4" />
+            <AlertTriangle className="w-4 h-4" />
           )}
-          <AlertDescription className="text-xs font-medium">
-            {feedback.message}
+          <AlertTitle>
+            {feedback.status === "success" ? "Recepción Registrada" : "Error"}
+          </AlertTitle>
+          <AlertDescription className="flex items-center justify-between text-xs">
+            <span>{feedback.message}</span>
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              className="opacity-70 hover:opacity-100 cursor-pointer ml-3"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </AlertDescription>
         </Alert>
       )}
 
-      {/* Tarjeta Informativa de la Orden */}
-      <Card className="border-border shadow-2xs">
-        <CardContent className="p-4 flex flex-wrap items-center justify-between gap-4">
-          <div className="space-y-0.5">
-            <span className="text-[11px] font-medium text-muted-foreground">
-              N° Orden
+      {/* ========================================================
+          RESUMEN DE PRIMER CONOCIMIENTO
+         ======================================================== */}
+      <Card className="p-5 border-border shadow-2xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5 text-primary" />
+              Orden de Compra
             </span>
-            <div className="text-base font-bold font-mono text-foreground">
-              {order.orderNumber || `#${order.id}`}
-            </div>
+            <Link
+              href={`/purchasing/orders/${orderId}`}
+              className="inline-flex items-center gap-1.5 text-sm font-bold font-mono text-primary hover:underline"
+              title="Ir al detalle de la orden de compra"
+            >
+              <span>{order.orderNumber || `#${order.id}`}</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </Link>
+            <p className="text-[11px] text-muted-foreground">
+              {order.createdAt
+                ? new Date(order.createdAt).toLocaleDateString("es-VE")
+                : "-"}
+            </p>
           </div>
 
-          <div className="space-y-0.5">
-            <span className="text-[11px] font-medium text-muted-foreground">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5 text-primary" />
               Proveedor
             </span>
-            <div className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-              <Building2 className="w-4 h-4 text-muted-foreground" />
+            <p className="text-sm font-bold text-foreground leading-snug">
               {order.supplier?.name || "Proveedor General"}
-            </div>
+            </p>
+            <p className="text-[11px] text-muted-foreground font-mono">
+              {order.supplier?.rifOrId || order.supplier?.rif || "RIF N/A"}
+            </p>
           </div>
 
-          <div className="space-y-0.5">
-            <span className="text-[11px] font-medium text-muted-foreground">
-              Total Compra
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <Boxes className="w-3.5 h-3.5 text-primary" />
+              Pendientes
             </span>
-            <div className="text-sm font-bold font-mono text-foreground">
-              {getCurrencySymbol(order.currency)}{" "}
-              {displayTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            <p className="text-sm font-bold font-mono text-foreground">
+              {receptionSummary.totalPendingRows}{" "}
+              <span className="font-sans font-normal text-xs text-muted-foreground">
+                {receptionSummary.totalPendingRows === 1 ? "insumo" : "insumos"}
+              </span>
+            </p>
+            <p className="text-[11px] text-muted-foreground font-mono">
+              {receptionSummary.totalUnitsToReceive} unidades a recibir
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+              Destino de Lotes
+            </span>
+            <div className="flex items-center gap-2 pt-0.5 flex-wrap">
+              <Badge
+                variant="success"
+                className="text-[11px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 font-mono"
+              >
+                {receptionSummary.conformingCount} Disponible
+              </Badge>
+              {receptionSummary.quarantineCount > 0 && (
+                <Badge
+                  variant="warning"
+                  className="text-[11px] bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20 font-mono"
+                >
+                  {receptionSummary.quarantineCount} Cuarentena
+                </Badge>
+              )}
             </div>
           </div>
-        </CardContent>
+        </div>
       </Card>
 
       {itemsData.length === 0 ? (
-        <Card className="p-8 text-center space-y-3 shadow-xs">
-          <CardContent className="space-y-3 p-0">
-            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
-            <h3 className="text-base font-bold text-slate-800">
-              Orden Completada
-            </h3>
-            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-              Todos los renglones de esta orden ya han sido recibidos en su
-              totalidad en el inventario.
-            </p>
-            <div className="pt-2">
-              <Button asChild size="sm">
-                <Link href={`/purchasing/orders/${orderId}`}>
-                  Regresar al Detalle
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
+        <Card className="p-8 text-center space-y-3 border-border shadow-2xs">
+          <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto">
+            <CheckCircle2 className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-bold text-foreground">
+            Orden Completada
+          </h3>
+          <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+            Todos los insumos de esta orden ya fueron recibidos en su totalidad en el inventario.
+          </p>
+          <div className="pt-2">
+            <Button asChild size="sm" variant="outline" className="cursor-pointer">
+              <Link href={`/purchasing/orders/${orderId}`}>
+                Volver al Detalle
+              </Link>
+            </Button>
+          </div>
         </Card>
       ) : (
-        <form onSubmit={handleSubmitReception} className="space-y-6">
-          <Card className="border-border shadow-2xs">
-            <CardContent className="p-4 space-y-1.5">
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Guía de Entrega / Factura / Observaciones (Opcional)
+        <form id="receive-form" onSubmit={handleSubmitReception} className="space-y-6">
+          {/* ========================================================
+              SECCIÓN 1: GUÍA DE ENTREGA Y OBSERVACIONES
+             ======================================================== */}
+          <Card className="p-5 border-border shadow-2xs space-y-3">
+            <div className="flex items-center gap-2 pb-2 border-b border-border">
+              <FileText className="w-4 h-4 text-primary" />
+              <CardTitle className="text-sm font-bold text-foreground">
+                1. Guía de Entrega y Observaciones
+              </CardTitle>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase font-semibold">
+                Referencia de Guía / Factura / Observaciones (Opcional)
               </Label>
               <Input
                 type="text"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Ej. Guía de traslado 00492 / Cadena de frío preservada"
-                className="w-full sm:w-96 text-xs"
+                placeholder="Ej. Guía de traslado 00492 · Cadena de frío preservada"
+                className="text-xs h-9"
               />
-            </CardContent>
+            </div>
           </Card>
 
-          <Card className="border-border shadow-2xs overflow-hidden">
-            <CardHeader className="px-5 py-3.5 border-b border-border bg-muted/20 flex flex-row items-center justify-between">
-              <CardTitle className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
-                <Package className="w-4 h-4 text-primary" />
-                Renglones Pendientes
-              </CardTitle>
-              <span className="text-[11px] text-muted-foreground">
-                Inspección: <b className="text-emerald-600">Vía Verde (Disponible)</b> / <b className="text-amber-600">Vía Ámbar (Cuarentena)</b>
-              </span>
-            </CardHeader>
+          {/* ========================================================
+              SECCIÓN 2: INSUMOS PENDIENTES POR RECIBIR
+             ======================================================== */}
+          <Card className="p-5 border-border shadow-2xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-border">
+              <div className="flex items-center gap-2">
+                <Boxes className="w-4 h-4 text-primary" />
+                <CardTitle className="text-sm font-bold text-foreground">
+                  2. Insumos Pendientes ({itemsData.length})
+                </CardTitle>
+              </div>
 
-            <CardContent className="p-5 space-y-4 divide-y divide-border">
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleSetAllConforming(true)}
+                  className="text-[11px] h-7 cursor-pointer"
+                >
+                  Todos Disponibles
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleSetAllConforming(false)}
+                  className="text-[11px] h-7 cursor-pointer"
+                >
+                  Todos a Cuarentena
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
               {itemsData.map((row, idx) => {
                 const baseEquivalent = row.receivedQuantity * row.multiplier;
+                const checkboxId = `conforming-${row.orderItemId || idx}`;
+
                 return (
-                  <div
+                  <Card
                     key={row.orderItemId || idx}
-                    className="pt-4 first:pt-0 grid grid-cols-1 md:grid-cols-12 gap-3 items-center"
+                    className="p-4 bg-muted/20 border-border shadow-none space-y-3"
                   >
-                    <div className="md:col-span-3">
-                      <div className="font-semibold text-xs text-slate-800">
-                        {row.productName}
-                      </div>
-                      <div className="font-mono text-[10px] text-muted-foreground">
-                        SKU: {row.sku}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        Pendiente:{" "}
-                        <b className="text-primary">
-                          {row.pendingQuantity} / {row.orderedQuantity}{" "}
-                          {row.unitOfMeasure}
-                        </b>
-                      </div>
-                      {row.multiplier > 1 && (
-                        <div className="text-[10px] text-primary font-medium">
-                          Factor: x{row.multiplier} (= {baseEquivalent} base)
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                      <div className="md:col-span-3 space-y-0.5 self-center">
+                        <div className="font-semibold text-xs text-foreground">
+                          {row.productName}
                         </div>
-                      )}
-                    </div>
+                        <div className="font-mono text-[10px] text-muted-foreground">
+                          SKU: {row.sku}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          Pendiente:{" "}
+                          <strong className="font-mono text-primary">
+                            {row.pendingQuantity} / {row.orderedQuantity} {row.unitOfMeasure}
+                          </strong>
+                        </div>
+                        {row.multiplier > 1 && (
+                          <div className="text-[10px] text-muted-foreground font-mono">
+                            Factor x{row.multiplier} (≈ {baseEquivalent} base)
+                          </div>
+                        )}
+                      </div>
 
-                    <div className="md:col-span-2 space-y-1">
-                      <Label className="text-[10px] font-semibold text-muted-foreground uppercase">
-                        Cant. a Recibir
-                      </Label>
-                      <Input
-                        type="number"
-                        step="any"
-                        min="1"
-                        max={row.pendingQuantity}
-                        value={row.receivedQuantity}
-                        onChange={(e) =>
-                          handleRowChange(
-                            idx,
-                            "receivedQuantity",
-                            Number(e.target.value),
-                          )
-                        }
-                        className="h-8 text-xs font-semibold"
-                        required
-                      />
-                    </div>
-
-                    <div className="md:col-span-2 space-y-1">
-                      <Label className="text-[10px] font-semibold text-muted-foreground uppercase">
-                        Lote Fabricante *
-                      </Label>
-                      <Input
-                        type="text"
-                        value={row.lotNumber}
-                        onChange={(e) =>
-                          handleRowChange(idx, "lotNumber", e.target.value)
-                        }
-                        placeholder="LOTE-2026-X"
-                        className="h-8 text-xs font-mono uppercase"
-                        required
-                      />
-                    </div>
-
-                    <div className="md:col-span-2 space-y-1">
-                      <Label className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground uppercase">
-                        <Calendar className="w-3 h-3" /> Vencimiento *
-                      </Label>
-                      <Input
-                        type="date"
-                        value={row.expirationDate}
-                        onChange={(e) =>
-                          handleRowChange(idx, "expirationDate", e.target.value)
-                        }
-                        className="h-8 text-xs"
-                        required
-                      />
-                    </div>
-
-                    <div className="md:col-span-3 space-y-1">
-                      <Label className="text-[10px] font-semibold text-muted-foreground uppercase">
-                        Ubicación Física
-                      </Label>
-                      <select
-                        value={row.locationId}
-                        onChange={(e) =>
-                          handleRowChange(
-                            idx,
-                            "locationId",
-                            Number(e.target.value),
-                          )
-                        }
-                        className="w-full bg-background border border-input rounded-md px-2.5 py-1.5 text-xs text-foreground focus:ring-2 focus:ring-ring"
-                      >
-                        {locations.map((loc) => (
-                          <option key={loc.id} value={loc.id}>
-                            {loc.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Control de Conformidad: Vía Verde vs Vía Ámbar */}
-                    <div className="md:col-span-12 mt-2 pt-2.5 border-t border-border flex flex-wrap items-center justify-between gap-3">
-                      <div
-                        className="inline-flex items-center gap-2 cursor-pointer select-none"
-                        onClick={() =>
-                          handleRowChange(
-                            idx,
-                            "isConforming",
-                            !row.isConforming,
-                          )
-                        }
-                      >
-                        <Checkbox
-                          checked={row.isConforming}
-                          onCheckedChange={(checked) =>
+                      <div className="md:col-span-2 space-y-1">
+                        <Label className="text-[11px] font-medium">
+                          Cantidad *
+                        </Label>
+                        <Input
+                          type="number"
+                          step="any"
+                          min="1"
+                          max={row.pendingQuantity}
+                          value={row.receivedQuantity}
+                          onChange={(e) =>
                             handleRowChange(
                               idx,
-                              "isConforming",
-                              Boolean(checked),
+                              "receivedQuantity",
+                              Number(e.target.value)
                             )
                           }
-                          className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                          className="h-9 text-xs font-mono font-bold"
+                          required
                         />
-                        <span className="text-xs font-semibold text-slate-700">
-                          Ingreso Conforme (Pasa directo a Disponible)
-                        </span>
                       </div>
 
-                      {row.isConforming ? (
-                        <Badge variant="outline" className="gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          Vía Verde: Lote DISPONIBLE
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="gap-1.5 bg-amber-50 text-amber-800 border-amber-300">
-                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                          Irá a Cuarentena / Revisión Técnica
-                        </Badge>
-                      )}
+                      <div className="md:col-span-2 space-y-1">
+                        <Label className="text-[11px] font-medium">
+                          Lote *
+                        </Label>
+                        <Input
+                          type="text"
+                          value={row.lotNumber}
+                          onChange={(e) =>
+                            handleRowChange(idx, "lotNumber", e.target.value)
+                          }
+                          placeholder="LOTE-2026-X"
+                          className="h-9 text-xs font-mono uppercase"
+                          required
+                        />
+                      </div>
+
+                      <div className="md:col-span-2 space-y-1">
+                        <Label className="flex items-center gap-1 text-[11px] font-medium">
+                          <Calendar className="w-3 h-3 text-muted-foreground" />
+                          Vencimiento *
+                        </Label>
+                        <Input
+                          type="date"
+                          value={row.expirationDate}
+                          onChange={(e) =>
+                            handleRowChange(idx, "expirationDate", e.target.value)
+                          }
+                          className="h-9 text-xs"
+                          required
+                        />
+                      </div>
+
+                      <div className="md:col-span-3 space-y-1">
+                        <Label className="text-[11px] font-medium">
+                          Ubicación *
+                        </Label>
+                        <select
+                          value={row.locationId}
+                          onChange={(e) =>
+                            handleRowChange(
+                              idx,
+                              "locationId",
+                              Number(e.target.value)
+                            )
+                          }
+                          className="w-full h-9 bg-background border border-input rounded-lg px-2.5 text-xs text-foreground focus:ring-2 focus:ring-ring cursor-pointer"
+                        >
+                          {locations.map((loc) => (
+                            <option key={loc.id} value={loc.id}>
+                              {loc.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
-                  </div>
+
+                    {/* Control de Conformidad */}
+                    <div className="pt-2.5 border-t border-border/70 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id={checkboxId}
+                          checked={row.isConforming}
+                          onCheckedChange={(checked) =>
+                            handleRowChange(idx, "isConforming", Boolean(checked))
+                          }
+                        />
+                        <Label
+                          htmlFor={checkboxId}
+                          className="text-xs font-medium text-foreground cursor-pointer select-none"
+                        >
+                          Ingreso Conforme (pasa directo a stock disponible)
+                        </Label>
+                      </div>
+
+                      <Badge
+                        variant={row.isConforming ? "success" : "warning"}
+                        className={cn(
+                          "gap-1.5 text-[11px]",
+                          row.isConforming
+                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20"
+                            : "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20"
+                        )}
+                      >
+                        {row.isConforming ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                            Disponible
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                            Cuarentena / Revisión Técnica
+                          </>
+                        )}
+                      </Badge>
+                    </div>
+                  </Card>
                 );
               })}
-            </CardContent>
+            </div>
           </Card>
 
-          <div className="flex justify-end gap-3 pt-2">
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/purchasing/orders/${orderId}`}>
-                Cancelar
-              </Link>
+          {/* Barra Inferior de Acción */}
+          <div className="flex items-center justify-between gap-4 pt-2">
+            <Button asChild variant="outline" className="cursor-pointer">
+              <Link href={`/purchasing/orders/${orderId}`}>Cancelar</Link>
             </Button>
             <Button
               type="submit"
               disabled={submitting}
-              size="sm"
-              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+              className="gap-2 cursor-pointer shadow-xs px-6"
             >
-              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              {submitting
-                ? "Procesando entrada..."
-                : "Confirmar Recepción de Mercancía"}
+              {submitting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <PackageCheck className="w-4 h-4" />
+              )}
+              {submitting ? "Procesando entrada..." : "Confirmar Recepción"}
             </Button>
           </div>
         </form>

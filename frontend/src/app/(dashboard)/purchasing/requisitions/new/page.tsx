@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, type FormEvent } from "react";
+import React, { useState, useEffect, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { InventoryClientService } from "@/services/inventory.service";
 import {
@@ -24,21 +23,22 @@ import {
   HelpCircle,
   AlertCircle,
   CheckCircle2,
+  FileCheck2,
+  X,
 } from "lucide-react";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Alert } from "@/components/ui/alert";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { toast } from "@/utils/toast";
 
 interface FormItem {
   productId: number;
   unitId: number;
   quantityRequested: number;
-  estimatedPrice?: number;
 }
 
 export default function NewRequisitionPage() {
@@ -48,7 +48,9 @@ export default function NewRequisitionPage() {
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
-  const [justificationConcepts, setJustificationConcepts] = useState<JustificationConceptItem[]>([]);
+  const [justificationConcepts, setJustificationConcepts] = useState<
+    JustificationConceptItem[]
+  >([]);
   const [loadingInitial, setLoadingInitial] = useState(true);
 
   // Estados del formulario
@@ -74,7 +76,9 @@ export default function NewRequisitionPage() {
           InventoryMasterService.getDepartments(true).catch(() => []),
           InventoryClientService.getCategories().catch(() => []),
           InventoryClientService.getProducts().catch(() => []),
-          InventoryMasterService.getJustificationConcepts(undefined, true).catch(() => []),
+          InventoryMasterService.getJustificationConcepts(undefined, true).catch(
+            () => []
+          ),
         ]);
         if (!ignore) {
           setDepartments(deps);
@@ -128,40 +132,9 @@ export default function NewRequisitionPage() {
     });
   };
 
-  const handleEstimatedPriceChange = (index: number, price: number) => {
-    setFormItems((prev) => {
-      const updated = [...prev];
-      if (updated[index]) {
-        updated[index] = { ...updated[index], estimatedPrice: price };
-      }
-      return updated;
-    });
-  };
-
-  // Cálculo total estimado
-  const totalEstimatedUsd = useMemo(() => {
-    return formItems.reduce((acc, it) => {
-      const price = Number(it.estimatedPrice) || 0;
-      const qty = Number(it.quantityRequested) || 0;
-      return acc + price * qty;
-    }, 0);
-  }, [formItems]);
-
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setFeedback(null);
-
-    const hasInvalid = formItems.some(
-      (it) => !it.productId || !it.unitId || it.quantityRequested <= 0
-    );
-    if (hasInvalid || !justification.trim()) {
-      setFeedback({
-        status: "error",
-        message: "Complete todos los renglones, unidades y la justificación requerida.",
-      });
-      toast.error("Verifique los renglones y la justificación.");
-      return;
-    }
 
     if (!selectedDepartmentId) {
       setFeedback({
@@ -169,6 +142,19 @@ export default function NewRequisitionPage() {
         message: "Debe seleccionar un departamento solicitante.",
       });
       toast.error("Seleccione un departamento solicitante.");
+      return;
+    }
+
+    const hasInvalid = formItems.some(
+      (it) => !it.productId || !it.unitId || it.quantityRequested <= 0
+    );
+    if (hasInvalid || !justification.trim()) {
+      setFeedback({
+        status: "error",
+        message:
+          "Complete todos los insumos, presentaciones, cantidades y la justificación requerida.",
+      });
+      toast.error("Verifique los insumos y la justificación.");
       return;
     }
 
@@ -183,11 +169,12 @@ export default function NewRequisitionPage() {
       });
 
       toast.success(
-        `Preorden de compra #${result.requisitionNumber || result.id} creada en estado Borrador.`
+        `Preorden #${result.requisitionNumber || result.id} creada en estado Borrador.`
       );
-      router.push("/purchasing/requisitions");
+      router.push(`/purchasing/requisitions/${result.id}`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Error al crear la preorden.";
+      const msg =
+        err instanceof Error ? err.message : "Error al crear la preorden.";
       setFeedback({
         status: "error",
         message: msg,
@@ -210,39 +197,37 @@ export default function NewRequisitionPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
-      {/* Cabecera y Navegación */}
+    <div className="space-y-6 pb-12">
+      {/* ========================================================
+          ENCABEZADO ESTANDARIZADO
+         ======================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start sm:items-center gap-3">
           <Button
             type="button"
             variant="outline"
             size="icon"
             onClick={() => router.push("/purchasing/requisitions")}
-            className="cursor-pointer"
-            title="Regresar a Requisiciones"
+            className="h-9 w-9 shrink-0 cursor-pointer"
+            title="Volver a Preórdenes"
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="indigo" className="text-xs font-semibold">
-                Preorden de Compra
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                <FileText className="w-6 h-6 text-primary" />
+                Nueva Preorden
+              </h1>
+              <Badge
+                variant="secondary"
+                className="text-xs bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/20"
+              >
+                Borrador
               </Badge>
-              <Badge variant="outline" className="border-border/60 bg-muted/20 text-xs text-muted-foreground">
-                Estado: Borrador
-              </Badge>
-              {totalEstimatedUsd > 0 && (
-                <Badge variant="success" className="text-xs font-mono">
-                  Est. ${totalEstimatedUsd.toFixed(2)} USD
-                </Badge>
-              )}
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-foreground mt-1">
-              Nueva Preorden de Compra (Requisición)
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              Solicitud de adquisición formal de insumos o reactivos para reposición y compras
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Solicitud de insumos o reactivos para cotización y reposición
             </p>
           </div>
         </div>
@@ -253,7 +238,7 @@ export default function NewRequisitionPage() {
             variant="outline"
             size="sm"
             onClick={() => router.push("/purchasing/requisitions")}
-            className="text-xs cursor-pointer"
+            className="h-9 text-xs cursor-pointer"
           >
             Cancelar
           </Button>
@@ -262,39 +247,60 @@ export default function NewRequisitionPage() {
             type="submit"
             size="sm"
             disabled={submitting}
-            className="text-xs gap-1.5 cursor-pointer shadow-xs"
+            className="h-9 text-xs font-bold gap-1.5 cursor-pointer shadow-2xs"
           >
-            {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {submitting ? "Creando..." : "Crear Preorden"}
+            {submitting ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <FileCheck2 className="w-4 h-4" />
+            )}
+            <span>{submitting ? "Creando..." : "Crear Preorden"}</span>
           </Button>
         </div>
       </div>
 
       {feedback && (
-        <Alert variant={feedback.status === "success" ? "success" : "destructive"}>
+        <Alert
+          variant={feedback.status === "success" ? "success" : "destructive"}
+          className="animate-in fade-in duration-200"
+        >
           {feedback.status === "success" ? (
             <CheckCircle2 className="w-4 h-4" />
           ) : (
             <AlertCircle className="w-4 h-4" />
           )}
-          <span className="text-xs font-medium ml-2">{feedback.message}</span>
+          <AlertTitle>
+            {feedback.status === "success" ? "Operación Exitosa" : "Error"}
+          </AlertTitle>
+          <AlertDescription className="flex items-center justify-between text-xs">
+            <span>{feedback.message}</span>
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              className="opacity-70 hover:opacity-100 cursor-pointer ml-3"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </AlertDescription>
         </Alert>
       )}
 
       <form id="requisition-form" onSubmit={handleSubmit} className="space-y-6">
-        {/* SECCIÓN 1: Departamento Solicitante */}
-        <Card className="p-5 shadow-2xs space-y-4">
+        {/* ========================================================
+            SECCIÓN 1: DEPARTAMENTO SOLICITANTE
+           ======================================================== */}
+        <Card className="p-5 border-border shadow-2xs space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-border">
             <Building2 className="w-4 h-4 text-primary" />
             <CardTitle className="text-sm font-bold text-foreground">
-              1. Departamento y Área Solicitante
+              1. Departamento Solicitante
             </CardTitle>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs uppercase font-semibold">
-                Departamento Solicitante *
+                Departamento *
               </Label>
               <select
                 value={selectedDepartmentId}
@@ -318,97 +324,93 @@ export default function NewRequisitionPage() {
 
             <div className="space-y-1.5">
               <Label className="text-xs uppercase font-semibold">
-                Sección u Operación Específica (Opcional)
+                Sección o Área Específica (Opcional)
               </Label>
               <Input
                 type="text"
                 value={departmentSection}
                 onChange={(e) => setDepartmentSection(e.target.value)}
                 placeholder="Ej: Sala de Muestras / Hematología Especial..."
-                className="text-xs"
+                className="text-xs h-9"
               />
             </div>
           </div>
         </Card>
 
-        {/* SECCIÓN 2: Insumos y Empaques Solicitados */}
-        <Card className="p-5 shadow-2xs space-y-4">
+        {/* ========================================================
+            SECCIÓN 2: INSUMOS SOLICITADOS
+           ======================================================== */}
+        <Card className="p-5 border-border shadow-2xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-border">
             <div className="flex items-center gap-2">
               <Boxes className="w-4 h-4 text-primary" />
               <CardTitle className="text-sm font-bold text-foreground">
-                2. Insumos y Empaques Requeridos ({formItems.length})
+                2. Insumos Solicitados ({formItems.length})
               </CardTitle>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="flex items-center gap-1.5">
-                <Label
-                  htmlFor="filter-cat"
-                  className="text-xs font-medium text-muted-foreground whitespace-nowrap"
-                >
-                  Filtrar categoría:
-                </Label>
-                <select
-                  id="filter-cat"
-                  value={selectedCategoryFilter}
-                  onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                  className="h-8 bg-background border border-input rounded-lg px-2.5 text-xs font-semibold text-foreground focus:ring-2 focus:ring-ring transition-colors cursor-pointer"
-                >
-                  <option value="">Todas las categorías</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                id="filter-cat"
+                value={selectedCategoryFilter}
+                onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                className="h-8 bg-background border border-input rounded-lg px-2.5 text-xs font-medium text-foreground focus:ring-2 focus:ring-ring cursor-pointer"
+                title="Filtrar insumos por categoría"
+              >
+                <option value="">Todas las categorías</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
 
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={handleAddItem}
-                className="gap-1.5 text-xs text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 cursor-pointer"
+                className="h-8 gap-1.5 text-xs text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 cursor-pointer"
               >
-                <Plus className="w-3.5 h-3.5" /> Agregar renglón
+                <Plus className="w-3.5 h-3.5" />
+                <span>Agregar insumo</span>
               </Button>
             </div>
           </div>
 
           <div className="space-y-3">
             {formItems.map((item, idx) => {
-              const selectedProd = catalogProducts.find((p) => p.id === item.productId);
+              const selectedProd = catalogProducts.find(
+                (p) => p.id === item.productId
+              );
               const activeUnit =
                 item.unitId === selectedProd?.purchaseUnitId
-                  ? selectedProd?.purchaseUnit?.abbreviation || selectedProd?.purchaseUnit?.name
-                  : selectedProd?.baseUnit?.abbreviation || selectedProd?.baseUnit?.name || "";
-              const hasConversion =
-                selectedProd?.conversionFactor &&
-                Number(selectedProd.conversionFactor) > 1 &&
-                item.unitId === selectedProd?.purchaseUnitId;
-              const baseQty = hasConversion
-                ? Math.round(Number(item.quantityRequested || 0) * Number(selectedProd.conversionFactor) * 100) / 100
-                : null;
+                  ? selectedProd?.purchaseUnit?.abbreviation ||
+                    selectedProd?.purchaseUnit?.name
+                  : selectedProd?.baseUnit?.abbreviation ||
+                    selectedProd?.baseUnit?.name ||
+                    "";
 
               return (
                 <Card
                   key={idx}
-                  className="p-4 bg-muted/20 border-border hover:border-border/80 transition-colors"
+                  className="p-4 bg-muted/20 border-border hover:border-border/80 transition-colors shadow-none"
                 >
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                     <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-background border border-border text-xs font-mono font-bold text-muted-foreground shrink-0">
                       {idx + 1}
                     </div>
 
-                    {/* Selector de Producto y Empaque */}
+                    {/* Selector de Insumo y Presentación */}
                     <div className="flex-1 min-w-0">
                       <ProductPackagingSelector
                         products={catalogProducts}
                         selectedCategoryId={selectedCategoryFilter}
                         selectedProductId={item.productId}
                         selectedUnitId={item.unitId}
-                        onChange={(pId, uId) => handleProductSelect(idx, pId, uId)}
+                        onChange={(pId, uId) =>
+                          handleProductSelect(idx, pId, uId)
+                        }
                       />
                     </div>
 
@@ -428,39 +430,13 @@ export default function NewRequisitionPage() {
                             Math.max(1, Number(e.target.value))
                           )
                         }
-                        className="font-mono font-bold text-xs"
+                        className="font-mono font-bold text-xs h-9"
                         required
                       />
-                      {hasConversion && baseQty !== null && (
-                        <span className="text-[10px] text-primary font-medium block mt-0.5 truncate">
-                          ≈ {baseQty} {selectedProd?.baseUnit?.abbreviation || "UND"}
-                        </span>
-                      )}
                     </div>
 
-                    {/* Precio Estimado (Opcional) */}
-                    <div className="w-full sm:w-32 shrink-0">
-                      <Label className="text-[11px] mb-1 block">
-                        Precio Est. ($)
-                      </Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0.00"
-                        value={item.estimatedPrice || ""}
-                        onChange={(e) =>
-                          handleEstimatedPriceChange(
-                            idx,
-                            Math.max(0, Number(e.target.value))
-                          )
-                        }
-                        className="font-mono text-xs"
-                      />
-                    </div>
-
-                    {/* Eliminar renglón */}
-                    <div className="sm:self-end mb-0.5 shrink-0">
+                    {/* Eliminar */}
+                    <div className="sm:self-end sm:pb-1 shrink-0">
                       <Button
                         type="button"
                         variant="ghost"
@@ -468,7 +444,7 @@ export default function NewRequisitionPage() {
                         onClick={() => handleRemoveItem(idx)}
                         disabled={formItems.length === 1}
                         className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
-                        title="Eliminar renglón"
+                        title="Eliminar insumo"
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -480,26 +456,29 @@ export default function NewRequisitionPage() {
           </div>
         </Card>
 
-        {/* SECCIÓN 3: Motivo y Justificación con Badges de Protocolo */}
-        <Card className="p-5 shadow-2xs space-y-4">
+        {/* ========================================================
+            SECCIÓN 3: JUSTIFICACIÓN Y OBSERVACIONES
+           ======================================================== */}
+        <Card className="p-5 border-border shadow-2xs space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-border">
             <HelpCircle className="w-4 h-4 text-primary" />
             <CardTitle className="text-sm font-bold text-foreground">
-              3. Justificación y Protocolos de Compra
+              3. Justificación y Observaciones
             </CardTitle>
           </div>
 
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <Label className="text-xs uppercase font-semibold">
-                Motivo y Justificación de la Compra *
+                Motivo y Justificación *
               </Label>
-              <span className="text-[11px] text-muted-foreground">
-                (Haz clic en un badge para asociar la justificación institucional)
-              </span>
+              {justificationConcepts.length > 0 && (
+                <span className="text-[11px] text-muted-foreground">
+                  Selecciona un concepto para asociar la justificación
+                </span>
+              )}
             </div>
 
-            {/* ProtocolBadgeSelector con colores vibrantes y badges de 1 palabra */}
             {justificationConcepts.length > 0 && (
               <ProtocolBadgeSelector
                 concepts={justificationConcepts}
@@ -514,8 +493,7 @@ export default function NewRequisitionPage() {
                     const filtered = justification
                       .split("\n")
                       .filter(
-                        (l) =>
-                          !l.toLowerCase().includes(c.title.toLowerCase())
+                        (l) => !l.toLowerCase().includes(c.title.toLowerCase())
                       )
                       .join("\n")
                       .trim();
@@ -542,7 +520,7 @@ export default function NewRequisitionPage() {
 
           <div className="space-y-1.5 pt-2 border-t border-border">
             <Label className="text-xs uppercase font-semibold">
-              Observaciones / Instrucciones Logísticas Adicionales (Opcional)
+              Observaciones Adicionales (Opcional)
             </Label>
             <Textarea
               rows={2}
@@ -562,7 +540,7 @@ export default function NewRequisitionPage() {
             onClick={() => router.push("/purchasing/requisitions")}
             className="cursor-pointer"
           >
-            Regresar al Listado
+            Volver al Listado
           </Button>
 
           <Button
@@ -570,8 +548,12 @@ export default function NewRequisitionPage() {
             disabled={submitting}
             className="gap-2 cursor-pointer shadow-xs px-6"
           >
-            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            {submitting ? "Creando Preorden..." : "Crear Preorden de Compra"}
+            {submitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileCheck2 className="w-4 h-4" />
+            )}
+            {submitting ? "Creando Preorden..." : "Crear Preorden"}
           </Button>
         </div>
       </form>

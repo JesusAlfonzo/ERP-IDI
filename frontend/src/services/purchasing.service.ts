@@ -311,8 +311,17 @@ export const PurchasingClientService = {
   },
 
   // --- Proveedores y Cartera de Pagos ---
-  getSuppliers: async (): Promise<Supplier[]> => {
-    const res = await apiClient.get<ApiResponse<Supplier[]>>("/suppliers");
+  getSuppliers: async (options?: {
+    search?: string;
+    includeInactive?: boolean;
+  }): Promise<Supplier[]> => {
+    const params = new URLSearchParams();
+    if (options?.search) params.append("search", options.search);
+    if (options?.includeInactive) params.append("includeInactive", "true");
+    const qs = params.toString();
+    const res = await apiClient.get<ApiResponse<Supplier[]>>(
+      `/suppliers${qs ? `?${qs}` : ""}`,
+    );
     return res.data.data || [];
   },
 

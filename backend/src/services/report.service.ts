@@ -620,7 +620,7 @@ export class ReportService {
 
       const directPayments = !filters.supplierId
         ? await prisma.directPayment.findMany({
-            where: directPaymentsWhere,
+            where: { status: 'PAGADA', ...directPaymentsWhere },
             include: {
               sourceAccount: true,
               registeredBy: { select: { fullName: true, username: true } },
@@ -1065,6 +1065,7 @@ export class ReportService {
         }),
         prisma.directPayment.findMany({
           where: {
+            status: 'PAGADA',
             ...(hasDateFilter ? { paymentDate: dateRange } : {}),
           },
           include: {

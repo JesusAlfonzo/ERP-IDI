@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   getCurrentExchangeRates,
+  getExchangeRatesByDate,
   updateExchangeRates,
 } from '../controllers/exchange-rate.controller.js';
 import { authenticateJWT } from '../middlewares/auth.middleware.js';
@@ -15,34 +16,40 @@ const router: Router = Router();
 router.get('/current', getCurrentExchangeRates);
 
 /**
+ * GET /api/exchange-rates/by-date?date=YYYY-MM-DD
+ * Retorna las tasas manuales registradas exactamente para la fecha indicada.
+ */
+router.get('/by-date', getExchangeRatesByDate);
+
+/**
  * POST y PUT /api/exchange-rates
- * Permite a ADMINISTRADOR o COMPRAS registrar o actualizar tasas de cambio.
+ * Permite a ADMINISTRADOR, COMPRAS o ADMINISTRACION registrar o actualizar tasas de cambio.
  */
 router.post(
   '/',
   authenticateJWT,
-  requireRoles(['ADMINISTRADOR', 'COMPRAS']),
+  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ADMINISTRACION']),
   updateExchangeRates
 );
 
 router.put(
   '/',
   authenticateJWT,
-  requireRoles(['ADMINISTRADOR', 'COMPRAS']),
+  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ADMINISTRACION']),
   updateExchangeRates
 );
 
 router.post(
   '/current',
   authenticateJWT,
-  requireRoles(['ADMINISTRADOR', 'COMPRAS']),
+  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ADMINISTRACION']),
   updateExchangeRates
 );
 
 router.put(
   '/current',
   authenticateJWT,
-  requireRoles(['ADMINISTRADOR', 'COMPRAS']),
+  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ADMINISTRACION']),
   updateExchangeRates
 );
 

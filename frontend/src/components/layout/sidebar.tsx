@@ -173,19 +173,19 @@ const NAVIGATION_GROUPS: NavGroup[] = [
   {
     label: "Pagos",
     icon: Wallet,
-    roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
+    roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION", "COORDINADOR"],
     children: [
       {
         label: "Cuentas por Pagar",
         href: "/purchasing/debts",
         icon: FileSpreadsheet,
-        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
+        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION", "COORDINADOR"],
       },
       {
-        label: "Pagos Directos",
+        label: "Órdenes de Servicio",
         href: "/admin/financial/payments",
         icon: Wallet,
-        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
+        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION", "COORDINADOR"],
       },
     ],
   },

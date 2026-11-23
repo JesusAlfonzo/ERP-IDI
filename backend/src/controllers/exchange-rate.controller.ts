@@ -67,6 +67,115 @@ export const getCurrentExchangeRates = async (
 };
 
 /**
+ * Normaliza una fecha YYYY-MM-DD a Date UTC medianoche para coincidencias exactas con @db.Date
+ */
+function parseUtcDateOnly(raw?: string): { dateStr: string; dateObj: Date } {
+  const trimmed = (raw || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return {
+      dateStr: trimmed,
+      dateObj: new Date(`${trimmed}T00:00:00.000Z`),
+    };
+  }
+  const now = new Date();
+  const dateStr = now.toISOString().split('T')[0]!;
+  return {
+    dateStr,
+    dateObj: new Date(`${dateStr}T00:00:00.000Z`),
+  };
+}
+
+/**
+ * GET /api/exchange-rates/by-date?date=YYYY-MM-DD
+ * Retorna las tasas de cambio manuales registradas exactamente para la fecha indicada.
+ * Si no hay tasa para esa fecha, devuelve hasUsdRate/hasEurRate = false junto al último valor referencial.
+ */
+export const getExchangeRatesByDate = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+
+    const rawDate = typeof req.query.date === 'string' ? req.query.date.trim() : '';
+    if (rawDate && !/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'El parámetro date debe tener formato YYYY-MM-DD.',
+      });
+      return;
+    }
+
+    const { dateStr, dateObj } = parseUtcDateOnly(rawDate || undefined);
+
+    const currencies = await prisma.currency.findMany({
+      include: {
+        exchanges: {
+          orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }],
+          take: 1,
+        },
+      },
+    });
+
+    const ves = currencies.find((c) => c.code === 'VES' || c.code === 'VED');
+    const eur = currencies.find((c) => c.code === 'EUR');
+
+    const [exactUsd, exactEur] = await Promise.all([
+      ves
+        ? prisma.currencyExchange.findFirst({
+            where: {
+              currencyId: ves.id,
+              effectiveDate: dateObj,
+            },
+            orderBy: { id: 'desc' },
+          })
+        : null,
+      eur
+        ? prisma.currencyExchange.findFirst({
+            where: {
+              currencyId: eur.id,
+              effectiveDate: dateObj,
+            },
+            orderBy: { id: 'desc' },
+          })
+        : null,
+    ]);
+
+    const latestUsd = ves?.exchanges[0]?.rate ? Number(ves.exchanges[0].rate) : null;
+    const latestEur = eur?.exchanges[0]?.rate ? Number(eur.exchanges[0].rate) : null;
+    const latestDateObj = [ves?.exchanges[0], eur?.exchanges[0]]
+      .filter((ex): ex is NonNullable<typeof ex> => !!ex)
+      .sort((a, b) => b.effectiveDate.getTime() - a.effectiveDate.getTime())[0]
+      ?.effectiveDate;
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      data: {
+        date: dateStr,
+        hasUsdRate: Boolean(exactUsd),
+        hasEurRate: Boolean(exactEur),
+        usdRate: exactUsd ? Number(exactUsd.rate) : null,
+        usdRateId: exactUsd ? exactUsd.id.toString() : null,
+        eurRate: exactEur ? Number(exactEur.rate) : null,
+        eurRateId: exactEur ? exactEur.id.toString() : null,
+        vesCurrencyId: ves?.id ?? null,
+        eurCurrencyId: eur?.id ?? null,
+        latestFallback: {
+          USD: latestUsd,
+          EUR: latestEur,
+          effectiveDate: latestDateObj ? latestDateObj.toISOString().split('T')[0] : null,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * PUT / POST /api/exchange-rates
  * Actualiza o registra nuevas tasas oficiales en la base de datos (Prisma).
  * Soporta múltiples formatos de payload:
@@ -106,7 +215,11 @@ export const updateExchangeRates = async (
       userId = adminUser?.id ?? 1;
     }
 
-    const effectiveDateObj = effectiveDate ? new Date(effectiveDate) : new Date();
+    const { dateObj: effectiveDateObj } = parseUtcDateOnly(
+      typeof effectiveDate === 'string' && effectiveDate.trim()
+        ? effectiveDate.trim().slice(0, 10)
+        : undefined
+    );
 
     // 2. Normalizar la lista de tasas a registrar
     const updatesToApply: Array<{ currencyId: number; rate: number }> = [];

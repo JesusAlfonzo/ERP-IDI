@@ -206,19 +206,19 @@ const BREADCRUMB_GROUPS: BreadcrumbGroup[] = [
     id: "pagos",
     label: "Pagos",
     icon: Wallet,
-    roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
+    roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION", "COORDINADOR"],
     subModules: [
       {
         label: "Cuentas por Pagar",
         href: "/purchasing/debts",
         icon: FileSpreadsheet,
-        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
+        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION", "COORDINADOR"],
       },
       {
-        label: "Pagos Directos",
+        label: "Órdenes de Servicio",
         href: "/admin/financial/payments",
         icon: Wallet,
-        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION"],
+        roles: ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION", "COORDINADOR"],
       },
     ],
   },
@@ -403,7 +403,9 @@ export function Navbar({ user, onOpenSidebar }: NavbarProps) {
   const notifRef = useRef<HTMLDivElement>(null);
 
   const canEditRate =
-    user?.roles?.includes("ADMINISTRADOR") || user?.roles?.includes("COMPRAS");
+    user?.roles?.includes("ADMINISTRADOR") ||
+    user?.roles?.includes("COMPRAS") ||
+    user?.roles?.includes("ADMINISTRACION");
 
   const loadCurrencies = useCallback(async () => {
     try {

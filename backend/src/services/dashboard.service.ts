@@ -1002,7 +1002,7 @@ export class DashboardService {
           where: { paymentDate: { gte: monthStart } },
         }),
         prisma.directPayment.findMany({
-          where: { paymentDate: { gte: monthStart } },
+          where: { status: 'PAGADA', paymentDate: { gte: monthStart } },
         }),
         prisma.orderPayment.findMany({
           include: {
@@ -1014,6 +1014,7 @@ export class DashboardService {
           take: 6,
         }),
         prisma.directPayment.findMany({
+          where: { status: 'PAGADA' },
           include: {
             sourceAccount: true,
             registeredBy: { select: { fullName: true, username: true } },

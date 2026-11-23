@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useMemo, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { InventoryClientService } from "@/services/inventory.service";
 import { CurrencyService } from "@/services/currency.service";
@@ -14,6 +13,7 @@ import {
 import type { Supplier, Currency } from "@/types/purchasing";
 import type { Product, Category } from "@/types/inventory";
 import { ProductPackagingSelector } from "@/components/purchasing/ProductPackagingSelector";
+import { cn } from "@/lib/utils";
 import {
   ShoppingCart,
   Plus,
@@ -21,20 +21,23 @@ import {
   Building2,
   Loader2,
   ArrowLeft,
-  Coins,
   Receipt,
   FileCheck2,
   CheckCircle2,
   AlertCircle,
+  ShieldCheck,
+  Calculator,
+  DollarSign,
+  Boxes,
+  X,
 } from "lucide-react";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Alert } from "@/components/ui/alert";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { toast } from "@/utils/toast";
 
 interface FormRow {
@@ -44,6 +47,29 @@ interface FormRow {
   unitPrice: number;
   isExempt: boolean;
 }
+
+const QUICK_CONDITIONS = [
+  {
+    word: "Contado",
+    text: "Condición de pago: Contra entrega de factura fiscal y verificación física",
+  },
+  {
+    word: "Crédito",
+    text: "Condición de crédito comercial: Plazo pactado a 15-30 días continuos",
+  },
+  {
+    word: "Anticipo",
+    text: "Requiere anticipo financiero del 50% para activación del pedido",
+  },
+  {
+    word: "Refrigerado",
+    text: "Insumos biológicos o reactivos: Despacho estricto en cadena de frío (2-8°C)",
+  },
+  {
+    word: "Urgente",
+    text: "Prioridad operativa alta: Entrega inmediata en almacén central",
+  },
+];
 
 export default function NewPurchaseOrderPage() {
   const router = useRouter();
@@ -70,9 +96,6 @@ export default function NewPurchaseOrderPage() {
     { productId: 0, unitId: 0, quantityOrdered: 1, unitPrice: 0, isExempt: false },
   ]);
   const [notes, setNotes] = useState("");
-  const [reviewedBy, setReviewedBy] = useState("");
-  const [authorizedBy, setAuthorizedBy] = useState("");
-  const [approvedBy, setApprovedBy] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
     status: "success" | "error";
@@ -230,18 +253,12 @@ export default function NewPurchaseOrderPage() {
     exemptAmount = Math.round(exemptAmount * 100) / 100;
     const iva16 = Math.round(taxableAmount * 0.16 * 100) / 100;
     const totalAmount = Math.round((taxableAmount + exemptAmount + iva16) * 100) / 100;
-    const rate = Number(exchangeRate) || (currency === "EUR" ? bcvRates.EUR : bcvRates.USD) || 1.0;
+    const rate =
+      Number(exchangeRate) || (currency === "EUR" ? bcvRates.EUR : bcvRates.USD) || 1.0;
     const totalBs =
       currency === "VED"
         ? totalAmount
         : Math.round(totalAmount * rate * 100) / 100;
-
-    const totalUsd =
-      currency === "USD"
-        ? totalAmount
-        : currency === "VED"
-          ? (rate > 0 ? Math.round((totalAmount / rate) * 100) / 100 : totalAmount)
-          : (bcvRates.USD > 0 ? Math.round(((totalAmount * rate) / bcvRates.USD) * 100) / 100 : totalAmount);
 
     return {
       taxableAmount,
@@ -249,7 +266,6 @@ export default function NewPurchaseOrderPage() {
       iva16,
       totalAmount,
       totalBs,
-      totalUsd,
     };
   }, [items, exchangeRate, currency, bcvRates]);
 
@@ -260,7 +276,7 @@ export default function NewPurchaseOrderPage() {
     if (!supplierId || Number(supplierId) <= 0) {
       setFeedback({
         status: "error",
-        message: "Debe seleccionar un proveedor registrado para generar la orden de compra.",
+        message: "Debe seleccionar un proveedor registrado para generar la orden.",
       });
       toast.error("Debe seleccionar un proveedor obligatorio.");
       return;
@@ -274,9 +290,9 @@ export default function NewPurchaseOrderPage() {
       setFeedback({
         status: "error",
         message:
-          "Asegúrese de seleccionar producto, cantidad y costo unitario válido en cada renglón.",
+          "Complete insumo, cantidad y precio unitario mayor a 0 en cada línea.",
       });
-      toast.error("Complete los renglones con cantidad y precio válidos.");
+      toast.error("Complete los insumos con cantidad y precio válidos.");
       return;
     }
 
@@ -298,9 +314,9 @@ export default function NewPurchaseOrderPage() {
       });
 
       toast.success(
-        `Orden de compra #${result.orderNumber || result.id} generada exitosamente.`
+        `Orden de compra #${result.orderNumber || result.id} creada exitosamente.`
       );
-      router.push("/purchasing/orders");
+      router.push(`/purchasing/orders/${result.id}`);
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "Error al registrar la orden de compra.";
@@ -321,49 +337,36 @@ export default function NewPurchaseOrderPage() {
       <div className="h-[60vh] flex flex-col items-center justify-center space-y-3">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
         <span className="text-xs text-muted-foreground font-medium">
-          Cargando datos maestros de proveedores y productos...
+          Cargando catálogos de proveedores e insumos...
         </span>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
-      {/* Cabecera y Navegación */}
+    <div className="space-y-6 pb-12">
+      {/* ========================================================
+          ENCABEZADO ESTANDARIZADO
+         ======================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start sm:items-center gap-3">
           <Button
             type="button"
             variant="outline"
             size="icon"
             onClick={() => router.push("/purchasing/orders")}
-            className="cursor-pointer"
-            title="Regresar a Órdenes"
+            className="h-9 w-9 shrink-0 cursor-pointer"
+            title="Volver a Órdenes de Compra"
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="indigo" className="text-xs font-semibold">
-                Orden de Compra
-              </Badge>
-              <Badge variant="outline" className="border-border/60 bg-muted/20 text-xs text-muted-foreground">
-                Compromiso Comercial
-              </Badge>
-              <Badge variant="success" className="text-xs font-mono font-bold">
-                Total: {currentSymbol} {fiscalSummary.totalAmount.toFixed(2)}
-              </Badge>
-              {exchangeRate && (
-                <Badge variant="purple" className="text-xs font-mono">
-                  Tasa: {Number(exchangeRate).toFixed(2)} Bs./{currency === "EUR" ? "€" : "$"}
-                </Badge>
-              )}
-            </div>
-            <h1 className="text-xl font-bold tracking-tight text-foreground mt-1">
-              Nueva Orden de Compra Institucional
+            <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+              <ShoppingCart className="w-6 h-6 text-primary" />
+              Nueva Orden de Compra
             </h1>
-            <p className="text-xs text-muted-foreground">
-              Emisión de orden de adquisición con soporte fiscal SENIAT y asignación de proveedor
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Emisión de orden con cálculo fiscal SENIAT y asignación de proveedor
             </p>
           </div>
         </div>
@@ -374,7 +377,7 @@ export default function NewPurchaseOrderPage() {
             variant="outline"
             size="sm"
             onClick={() => router.push("/purchasing/orders")}
-            className="text-xs cursor-pointer"
+            className="h-9 text-xs cursor-pointer"
           >
             Cancelar
           </Button>
@@ -383,47 +386,146 @@ export default function NewPurchaseOrderPage() {
             type="submit"
             size="sm"
             disabled={submitting}
-            className="text-xs gap-1.5 cursor-pointer shadow-xs"
+            className="h-9 text-xs font-bold gap-1.5 cursor-pointer shadow-2xs"
           >
-            {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {submitting ? "Generando..." : "Crear Orden de Compra"}
+            {submitting ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <FileCheck2 className="w-4 h-4" />
+            )}
+            <span>{submitting ? "Creando..." : "Crear Orden"}</span>
           </Button>
         </div>
       </div>
 
       {feedback && (
-        <Alert variant={feedback.status === "success" ? "success" : "destructive"}>
+        <Alert
+          variant={feedback.status === "success" ? "success" : "destructive"}
+          className="animate-in fade-in duration-200"
+        >
           {feedback.status === "success" ? (
             <CheckCircle2 className="w-4 h-4" />
           ) : (
             <AlertCircle className="w-4 h-4" />
           )}
-          <span className="text-xs font-medium ml-2">{feedback.message}</span>
+          <AlertTitle>
+            {feedback.status === "success" ? "Operación Exitosa" : "Error"}
+          </AlertTitle>
+          <AlertDescription className="flex items-center justify-between text-xs">
+            <span>{feedback.message}</span>
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              className="opacity-70 hover:opacity-100 cursor-pointer ml-3"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </AlertDescription>
         </Alert>
       )}
 
+      {/* ========================================================
+          4 TARJETAS KPI DE CÁLCULO FISCAL EN TIEMPO REAL
+         ======================================================== */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="p-4 border-border shadow-2xs flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              Base Gravable
+            </span>
+            <div className="text-2xl font-bold font-mono text-foreground">
+              {currentSymbol} {fiscalSummary.taxableAmount.toFixed(2)}
+            </div>
+            <span className="text-[11px] text-muted-foreground block">
+              Sujeto a IVA 16%
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+            <Receipt className="w-5 h-5" />
+          </div>
+        </Card>
+
+        <Card className="p-4 border-border shadow-2xs flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              Subtotal Exento
+            </span>
+            <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
+              {currentSymbol} {fiscalSummary.exemptAmount.toFixed(2)}
+            </div>
+            <span className="text-[11px] text-muted-foreground block">
+              Exonerado de impuesto
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+        </Card>
+
+        <Card className="p-4 border-border shadow-2xs flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              IVA (16%)
+            </span>
+            <div className="text-2xl font-bold font-mono text-amber-600 dark:text-amber-400">
+              {currentSymbol} {fiscalSummary.iva16.toFixed(2)}
+            </div>
+            <span className="text-[11px] text-muted-foreground block">
+              Impuesto calculado
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <Calculator className="w-5 h-5" />
+          </div>
+        </Card>
+
+        <Card className="p-4 border-primary/30 bg-primary/5 shadow-2xs flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-primary uppercase tracking-wider block">
+              Total ({currency})
+            </span>
+            <div className="text-2xl font-bold font-mono text-primary">
+              {currentSymbol} {fiscalSummary.totalAmount.toFixed(2)}
+            </div>
+            <span className="text-[11px] text-muted-foreground font-mono block">
+              {currency !== "VED"
+                ? `Bs. ${fiscalSummary.totalBs.toLocaleString("es-VE", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}`
+                : "Moneda nacional"}
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+            <DollarSign className="w-5 h-5" />
+          </div>
+        </Card>
+      </div>
+
       <form id="order-form" onSubmit={handleSubmit} className="space-y-6">
-        {/* SECCIÓN 1: Parámetros Comerciales y Moneda */}
-        <Card className="p-5 shadow-2xs space-y-4">
+        {/* ========================================================
+            SECCIÓN 1: PROVEEDOR Y FACTURACIÓN
+           ======================================================== */}
+        <Card className="p-5 border-border shadow-2xs space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-border">
             <Building2 className="w-4 h-4 text-primary" />
             <CardTitle className="text-sm font-bold text-foreground">
-              1. Proveedor y Parámetros Comerciales
+              1. Proveedor y Facturación
             </CardTitle>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs uppercase font-semibold flex items-center gap-1">
-                Proveedor Comercial <span className="text-rose-500 font-bold">*</span>
+              <Label className="text-xs uppercase font-semibold">
+                Proveedor *
               </Label>
               <select
                 value={supplierId}
                 onChange={(e) => setSupplierId(e.target.value)}
                 required
-                className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
+                className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
               >
-                <option value="">-- Seleccione Proveedor Obligatorio --</option>
+                <option value="">-- Seleccione un proveedor --</option>
                 {suppliers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} {s.rifOrId ? `(${s.rifOrId})` : ""}
@@ -434,12 +536,12 @@ export default function NewPurchaseOrderPage() {
 
             <div className="space-y-1.5">
               <Label className="text-xs uppercase font-semibold">
-                Moneda de Transacción *
+                Moneda *
               </Label>
               <select
                 value={currency}
                 onChange={(e) => handleCurrencyChange(e.target.value as CurrencyCode)}
-                className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
+                className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
               >
                 {CURRENCY_OPTIONS.map((c) => (
                   <option key={c.code} value={c.code}>
@@ -451,7 +553,9 @@ export default function NewPurchaseOrderPage() {
 
             <div className="space-y-1.5">
               <Label className="text-xs uppercase font-semibold">
-                Tasa de Cambio Oficial ({currency === "EUR" ? "Bs./EUR" : currency === "VED" ? "VED" : "Bs./USD"})
+                {currency === "VED"
+                  ? "Tasa de Cambio (VED)"
+                  : `Tasa BCV (${currency === "EUR" ? "Bs./EUR" : "Bs./USD"})`}
               </Label>
               <Input
                 type="number"
@@ -462,7 +566,7 @@ export default function NewPurchaseOrderPage() {
                 onChange={(e) =>
                   setExchangeRate(e.target.value ? Number(e.target.value) : "")
                 }
-                className="font-mono text-xs"
+                className="font-mono font-bold text-xs h-9"
                 placeholder="Tasa oficial BCV..."
                 required
               />
@@ -473,47 +577,43 @@ export default function NewPurchaseOrderPage() {
           </div>
         </Card>
 
-        {/* SECCIÓN 2: Insumos, Cantidades y Precios Unitarios */}
-        <Card className="p-5 shadow-2xs space-y-4">
+        {/* ========================================================
+            SECCIÓN 2: INSUMOS Y COSTOS
+           ======================================================== */}
+        <Card className="p-5 border-border shadow-2xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-border">
             <div className="flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4 text-primary" />
+              <Boxes className="w-4 h-4 text-primary" />
               <CardTitle className="text-sm font-bold text-foreground">
-                2. Insumos y Costos Unitarios ({items.length})
+                2. Insumos y Costos ({items.length})
               </CardTitle>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="flex items-center gap-1.5">
-                <Label
-                  htmlFor="filter-order-cat"
-                  className="text-xs font-medium text-muted-foreground whitespace-nowrap"
-                >
-                  Filtrar categoría:
-                </Label>
-                <select
-                  id="filter-order-cat"
-                  value={selectedCategoryFilter}
-                  onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                  className="h-8 bg-background border border-input rounded-lg px-2.5 text-xs font-semibold text-foreground focus:ring-2 focus:ring-ring transition-colors cursor-pointer"
-                >
-                  <option value="">Todas las categorías</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                id="filter-order-cat"
+                value={selectedCategoryFilter}
+                onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                className="h-8 bg-background border border-input rounded-lg px-2.5 text-xs font-medium text-foreground focus:ring-2 focus:ring-ring cursor-pointer"
+                title="Filtrar insumos por categoría"
+              >
+                <option value="">Todas las categorías</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
 
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={handleAddItem}
-                className="gap-1.5 text-xs text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 cursor-pointer"
+                className="h-8 gap-1.5 text-xs text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 cursor-pointer"
               >
-                <Plus className="w-3.5 h-3.5" /> Agregar renglón
+                <Plus className="w-3.5 h-3.5" />
+                <span>Agregar insumo</span>
               </Button>
             </div>
           </div>
@@ -523,22 +623,20 @@ export default function NewPurchaseOrderPage() {
               const selectedProd = catalogProducts.find((p) => p.id === row.productId);
               const activeUnit =
                 row.unitId === selectedProd?.purchaseUnitId
-                  ? selectedProd?.purchaseUnit?.abbreviation || selectedProd?.purchaseUnit?.name
-                  : selectedProd?.baseUnit?.abbreviation || selectedProd?.baseUnit?.name || "";
-              const hasConversion =
-                selectedProd?.conversionFactor &&
-                Number(selectedProd.conversionFactor) > 1 &&
-                row.unitId === selectedProd?.purchaseUnitId;
-              const baseQty = hasConversion
-                ? Math.round(Number(row.quantityOrdered || 0) * Number(selectedProd.conversionFactor) * 100) / 100
-                : null;
+                  ? selectedProd?.purchaseUnit?.abbreviation ||
+                    selectedProd?.purchaseUnit?.name
+                  : selectedProd?.baseUnit?.abbreviation ||
+                    selectedProd?.baseUnit?.name ||
+                    "";
               const lineTotal =
-                Math.round(Number(row.quantityOrdered || 0) * Number(row.unitPrice || 0) * 100) / 100;
+                Math.round(
+                  Number(row.quantityOrdered || 0) * Number(row.unitPrice || 0) * 100
+                ) / 100;
 
               return (
                 <Card
                   key={idx}
-                  className="p-4 bg-muted/20 border-border hover:border-border/80 transition-colors"
+                  className="p-4 bg-muted/20 border-border hover:border-border/80 transition-colors shadow-none"
                 >
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                     <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-background border border-border text-xs font-mono font-bold text-muted-foreground shrink-0">
@@ -556,10 +654,10 @@ export default function NewPurchaseOrderPage() {
                       />
                     </div>
 
-                    {/* Cantidad Ordenada */}
+                    {/* Cantidad */}
                     <div className="w-full sm:w-28 shrink-0">
                       <Label className="text-[11px] mb-1 block">
-                        Cant. {activeUnit ? `(${activeUnit})` : ""} *
+                        Cantidad {activeUnit ? `(${activeUnit})` : ""} *
                       </Label>
                       <Input
                         type="number"
@@ -573,20 +671,15 @@ export default function NewPurchaseOrderPage() {
                             Math.max(1, Number(e.target.value))
                           )
                         }
-                        className="font-mono font-bold text-xs"
+                        className="font-mono font-bold text-xs h-9"
                         required
                       />
-                      {hasConversion && baseQty !== null && (
-                        <span className="text-[10px] text-primary font-medium block mt-0.5 truncate">
-                          ≈ {baseQty} {selectedProd?.baseUnit?.abbreviation || "UND"}
-                        </span>
-                      )}
                     </div>
 
-                    {/* Costo Unitario */}
+                    {/* Precio Unitario */}
                     <div className="w-full sm:w-28 shrink-0">
                       <Label className="text-[11px] mb-1 block">
-                        Costo Unit. ({currentSymbol}) *
+                        Precio Unit. ({currentSymbol}) *
                       </Label>
                       <Input
                         type="number"
@@ -601,13 +694,13 @@ export default function NewPurchaseOrderPage() {
                             Math.max(0, Number(e.target.value))
                           )
                         }
-                        className="font-mono text-xs font-bold"
+                        className="font-mono text-xs font-bold h-9"
                         required
                       />
                     </div>
 
                     {/* Exento IVA */}
-                    <div className="flex items-center gap-1.5 self-center sm:self-auto pt-2 sm:pt-0 shrink-0">
+                    <div className="flex items-center gap-1.5 self-center sm:self-end sm:pb-2 shrink-0">
                       <Checkbox
                         id={`exempt-${idx}`}
                         checked={row.isExempt}
@@ -619,22 +712,22 @@ export default function NewPurchaseOrderPage() {
                         htmlFor={`exempt-${idx}`}
                         className="text-xs cursor-pointer font-medium text-muted-foreground whitespace-nowrap"
                       >
-                        Exento IVA
+                        Exento
                       </Label>
                     </div>
 
-                    {/* Subtotal de Línea */}
+                    {/* Subtotal */}
                     <div className="w-full sm:w-24 text-right shrink-0">
                       <Label className="text-[11px] mb-1 block text-muted-foreground">
                         Subtotal
                       </Label>
-                      <span className="font-mono font-bold text-xs text-foreground block">
+                      <span className="font-mono font-bold text-xs text-foreground block leading-9">
                         {currentSymbol} {lineTotal.toFixed(2)}
                       </span>
                     </div>
 
-                    {/* Eliminar renglón */}
-                    <div className="sm:self-end mb-0.5 shrink-0">
+                    {/* Eliminar */}
+                    <div className="sm:self-end sm:pb-1 shrink-0">
                       <Button
                         type="button"
                         variant="ghost"
@@ -642,7 +735,7 @@ export default function NewPurchaseOrderPage() {
                         onClick={() => handleRemoveItem(idx)}
                         disabled={items.length === 1}
                         className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
-                        title="Eliminar renglón"
+                        title="Eliminar insumo"
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -659,125 +752,80 @@ export default function NewPurchaseOrderPage() {
               variant="outline"
               size="sm"
               onClick={() => handleToggleAllExempt(true)}
-              className="text-xs cursor-pointer"
+              className="text-[11px] h-7 cursor-pointer"
             >
-              Marcar todos Exentos
+              Marcar todo Exento
             </Button>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => handleToggleAllExempt(false)}
-              className="text-xs cursor-pointer"
+              className="text-[11px] h-7 cursor-pointer"
             >
-              Aplicar IVA 16% general
+              Marcar todo Gravable (16%)
             </Button>
           </div>
         </Card>
 
-        {/* SECCIÓN 3: Liquidación Fiscal SENIAT en Vivo */}
-        <Card className="p-5 shadow-2xs space-y-3 bg-muted/10 border-border">
-          <div className="flex items-center gap-2 pb-2 border-b border-border">
-            <Receipt className="w-4 h-4 text-emerald-600" />
-            <CardTitle className="text-sm font-bold text-foreground">
-              3. Liquidación Fiscal SENIAT y Cómputo Total
-            </CardTitle>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="p-3 bg-background rounded-lg border border-border">
-              <span className="text-[11px] text-muted-foreground block font-medium">
-                Base Imponible (Gravable)
-              </span>
-              <span className="text-base font-bold font-mono text-foreground">
-                {currentSymbol} {fiscalSummary.taxableAmount.toFixed(2)}
-              </span>
-            </div>
-
-            <div className="p-3 bg-background rounded-lg border border-border">
-              <span className="text-[11px] text-muted-foreground block font-medium">
-                Monto Exento de IVA
-              </span>
-              <span className="text-base font-bold font-mono text-foreground">
-                {currentSymbol} {fiscalSummary.exemptAmount.toFixed(2)}
-              </span>
-            </div>
-
-            <div className="p-3 bg-background rounded-lg border border-border">
-              <span className="text-[11px] text-muted-foreground block font-medium">
-                IVA Estimado (16%)
-              </span>
-              <span className="text-base font-bold font-mono text-foreground">
-                {currentSymbol} {fiscalSummary.iva16.toFixed(2)}
-              </span>
-            </div>
-
-            <div className="p-3 bg-emerald-500/10 rounded-lg border border-emerald-500/30">
-              <span className="text-[11px] text-emerald-800 dark:text-emerald-300 block font-bold">
-                Total Orden ({currency})
-              </span>
-              <span className="text-lg font-bold font-mono text-emerald-700 dark:text-emerald-400">
-                {currentSymbol} {fiscalSummary.totalAmount.toFixed(2)} {currency}
-              </span>
-              {currency !== "VED" && (
-                <span className="text-[10px] text-muted-foreground font-mono block mt-0.5">
-                  ≈ Bs. {fiscalSummary.totalBs.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
-                </span>
-              )}
-              {currency !== "USD" && (
-                <span className="text-[10px] text-muted-foreground font-mono block">
-                  ≈ $ {fiscalSummary.totalUsd.toLocaleString("es-VE", { minimumFractionDigits: 2 })} USD
-                </span>
-              )}
-            </div>
-          </div>
-        </Card>
-
-        {/* SECCIÓN 4: Condiciones Comerciales y Badges Rápidos */}
-        <Card className="p-5 shadow-2xs space-y-4">
+        {/* ========================================================
+            SECCIÓN 3: CONDICIONES Y OBSERVACIONES
+           ======================================================== */}
+        <Card className="p-5 border-border shadow-2xs space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-border">
             <FileCheck2 className="w-4 h-4 text-primary" />
             <CardTitle className="text-sm font-bold text-foreground">
-              4. Términos de Pago y Observaciones
+              3. Condiciones y Observaciones
             </CardTitle>
           </div>
 
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <Label className="text-xs uppercase font-semibold">
-                Condiciones Comerciales y Términos de Entrega
+                Condiciones Comerciales y Términos de Entrega (Opcional)
               </Label>
               <span className="text-[11px] text-muted-foreground">
-                (Haz clic para asociar condiciones rápidas)
+                Selecciona etiquetas para agregar condiciones rápidas
               </span>
             </div>
 
-            <div className="flex flex-wrap gap-2 pt-0.5">
-              {[
-                { word: "Contado", text: "Condición de pago: Contra entrega de factura fiscal y verificación física", theme: "bg-emerald-50 text-emerald-700 border-emerald-200/90 hover:bg-emerald-100/90" },
-                { word: "Crédito", text: "Condición de crédito comercial: Plazo pactado a 15-30 días continuos", theme: "bg-amber-50 text-amber-700 border-amber-200/90 hover:bg-amber-100/90" },
-                { word: "Anticipo", text: "Requiere anticipo financiero del 50% para activación del pedido", theme: "bg-indigo-50 text-indigo-700 border-indigo-200/90 hover:bg-indigo-100/90" },
-                { word: "Refrigerado", text: "Insumos biológicos o reactivos: Despacho estricto en cadena de frío (2-8°C)", theme: "bg-sky-50 text-sky-700 border-sky-200/90 hover:bg-sky-100/90" },
-                { word: "Urgente", text: "Prioridad operativa alta: Entrega inmediata en almacén central", theme: "bg-rose-50 text-rose-700 border-rose-200/90 hover:bg-rose-100/90" },
-              ].map((badge) => {
-                const isSelected = notes.toLowerCase().includes(badge.text.toLowerCase());
+            <div className="flex flex-wrap gap-2">
+              {QUICK_CONDITIONS.map((badge) => {
+                const isSelected = notes
+                  .toLowerCase()
+                  .includes(badge.text.toLowerCase());
                 return (
                   <button
                     key={badge.word}
                     type="button"
                     onClick={() => {
                       if (isSelected) {
-                        setNotes((prev) => prev.split("\n").filter((l) => !l.toLowerCase().includes(badge.text.toLowerCase())).join("\n").trim());
+                        setNotes((prev) =>
+                          prev
+                            .split("\n")
+                            .filter(
+                              (l) => !l.toLowerCase().includes(badge.text.toLowerCase())
+                            )
+                            .join("\n")
+                            .trim()
+                        );
                       } else {
-                        setNotes((prev) => prev.trim() ? `${prev.trim()}\n• ${badge.text}` : `• ${badge.text}`);
+                        setNotes((prev) =>
+                          prev.trim()
+                            ? `${prev.trim()}\n• ${badge.text}`
+                            : `• ${badge.text}`
+                        );
                       }
                     }}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border cursor-pointer transition-all ${
-                      isSelected ? "bg-primary text-primary-foreground border-primary shadow-xs font-semibold" : badge.theme
-                    }`}
+                    className={cn(
+                      "inline-flex items-center px-3 py-1 rounded-lg text-xs font-medium border cursor-pointer transition-all",
+                      isSelected
+                        ? "bg-primary text-primary-foreground border-primary shadow-2xs font-semibold"
+                        : "bg-muted/30 text-foreground border-border hover:bg-muted"
+                    )}
                     title={badge.text}
                   >
-                    <span className="font-bold">{badge.word}</span>
+                    {badge.word}
                   </button>
                 );
               })}
@@ -787,47 +835,9 @@ export default function NewPurchaseOrderPage() {
               rows={3}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Especifique términos de entrega, cuenta bancaria para pago o acuerdos comerciales..."
+              placeholder="Especifique términos de entrega, condiciones de pago o instrucciones de despacho..."
               className="text-xs"
             />
-          </div>
-
-          <div className="pt-2 border-t border-border space-y-2">
-            <Label className="text-xs uppercase font-semibold">
-              Firmas de Autorización de la Orden de Compra
-            </Label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label className="text-[11px] text-muted-foreground">Revisado por</Label>
-                <Input
-                  type="text"
-                  value={reviewedBy}
-                  onChange={(e) => setReviewedBy(e.target.value)}
-                  placeholder="Ej. Lic. Ana Pérez"
-                  className="text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[11px] text-muted-foreground">Autorizado por</Label>
-                <Input
-                  type="text"
-                  value={authorizedBy}
-                  onChange={(e) => setAuthorizedBy(e.target.value)}
-                  placeholder="Ej. Dr. Roberto Silva"
-                  className="text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[11px] text-muted-foreground">Aprobado por</Label>
-                <Input
-                  type="text"
-                  value={approvedBy}
-                  onChange={(e) => setApprovedBy(e.target.value)}
-                  placeholder="Ej. Dra. Carmen Díaz"
-                  className="text-xs"
-                />
-              </div>
-            </div>
           </div>
         </Card>
 
@@ -839,7 +849,7 @@ export default function NewPurchaseOrderPage() {
             onClick={() => router.push("/purchasing/orders")}
             className="cursor-pointer"
           >
-            Regresar al Listado
+            Volver al Listado
           </Button>
 
           <Button
@@ -847,8 +857,12 @@ export default function NewPurchaseOrderPage() {
             disabled={submitting}
             className="gap-2 cursor-pointer shadow-xs px-6"
           >
-            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            {submitting ? "Generando Orden..." : "Generar Orden de Compra"}
+            {submitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileCheck2 className="w-4 h-4" />
+            )}
+            {submitting ? "Creando Orden..." : "Crear Orden de Compra"}
           </Button>
         </div>
       </form>

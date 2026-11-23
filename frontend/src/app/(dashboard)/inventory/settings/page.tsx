@@ -2072,6 +2072,8 @@ export default function InventorySettingsPage() {
                     >
                       <option value="CORRIENTE">Corriente</option>
                       <option value="CUSTODIA">Custodia</option>
+                      <option value="DIVISAS">Cuenta de Divisas</option>
+                      <option value="CAJA_CHICA">Caja Chica</option>
                       <option value="EFECTIVO">Efectivo</option>
                     </select>
                   </div>

@@ -2,14 +2,10 @@
 
 import React, { useState, useEffect, useMemo, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import {
-  BankAccountService,
-  type BankAccountItem,
-} from "@/services/bank-account.service";
+import { BankAccountService } from "@/services/bank-account.service";
 import {
   InventoryMasterService,
-  type PaymentMethodItem,
+  type DepartmentItem,
 } from "@/services/inventory-master.service";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { CurrencyService } from "@/services/currency.service";
@@ -21,96 +17,76 @@ import {
 import {
   Wallet,
   Building2,
-  DollarSign,
-  CreditCard,
   Calendar,
   AlertCircle,
-  CheckCircle2,
   Loader2,
   ArrowLeft,
-  Receipt,
   FileCheck2,
+  FileText,
+  Link2,
+  X,
 } from "lucide-react";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Alert } from "@/components/ui/alert";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { toast } from "@/utils/toast";
 
-export default function NewDirectPaymentPage() {
+export default function NewServiceOrderPage() {
   const router = useRouter();
 
   // Maestros
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<BankAccountItem[]>([]);
-  const [paymentMethodsList, setPaymentMethodsList] = useState<PaymentMethodItem[]>([]);
-  const [bcvRates, setBcvRates] = useState<{
-    USD: number;
-    EUR: number;
-    VED: number;
-  }>({
+  const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [bcvRates, setBcvRates] = useState<{ USD: number; EUR: number; VED: number }>({
     USD: 75.0,
     EUR: 81.5,
     VED: 1.0,
   });
   const [loadingInitial, setLoadingInitial] = useState(true);
 
-  // Formulario
-  const [concept, setConcept] = useState("");
+  // Formulario de Solicitud de Orden de Servicio
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string | number>("");
   const [beneficiary, setBeneficiary] = useState("");
-  const [method, setMethod] = useState<string>("TRANSFERENCIA");
-  const [sourceAccountId, setSourceAccountId] = useState("");
-  const [destinationAccount, setDestinationAccount] = useState("");
-  const [referenceNumber, setReferenceNumber] = useState("");
-  const [paymentDate, setPaymentDate] = useState(() =>
-    new Date().toISOString().split("T")[0]
-  );
-  const [transactionCurrency, setTransactionCurrency] = useState<
-    "USD" | "VED" | "EUR"
-  >("USD");
+  const [departmentId, setDepartmentId] = useState<string>("");
+  const [concept, setConcept] = useState("");
+  const [transactionCurrency, setTransactionCurrency] = useState<"USD" | "VED" | "EUR">("USD");
   const [amountPaid, setAmountPaid] = useState("");
   const [exchangeRate, setExchangeRate] = useState("");
+  const [estimatedDate, setEstimatedDate] = useState(() =>
+    new Date().toISOString().split("T")[0]
+  );
+  const [supportUrl, setSupportUrl] = useState("");
   const [notes, setNotes] = useState("");
-  const [reviewedBy, setReviewedBy] = useState("");
-  const [authorizedBy, setAuthorizedBy] = useState("");
-  const [approvedBy, setApprovedBy] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState<{
-    status: "success" | "error";
-    message: string;
-  } | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     let ignore = false;
     void (async () => {
       try {
-        const [accountsData, ratesData, suppliersData, pmData] = await Promise.all([
-          BankAccountService.getBankAccounts(true).catch(() => []),
-          CurrencyService.getCurrentRates().catch(() => null),
+        const [sups, deps, ratesData] = await Promise.all([
           PurchasingClientService.getSuppliers().catch(() => []),
-          InventoryMasterService.getPaymentMethods(true).catch(() => []),
+          InventoryMasterService.getDepartments(true).catch(() => []),
+          CurrencyService.getCurrentRates().catch(() => null),
         ]);
 
         if (!ignore) {
-          setBankAccounts(accountsData);
-          setSuppliers(suppliersData);
-          setPaymentMethodsList(pmData);
-          if (pmData.length > 0 && pmData[0]?.code) {
-            setMethod(pmData[0].code);
-          }
-
+          setSuppliers(sups);
+          setDepartments(deps);
           if (ratesData) {
-            const usdR = Number(ratesData.USD || ratesData.rates?.USD || 75.0);
-            const eurR = Number(ratesData.EUR || ratesData.rates?.EUR || 81.5);
-            setBcvRates({ USD: usdR, EUR: eurR, VED: 1.0 });
+            setBcvRates({
+              USD: Number(ratesData.USD || ratesData.rates?.USD || 75.0),
+              EUR: Number(ratesData.EUR || ratesData.rates?.EUR || 81.5),
+              VED: 1.0,
+            });
           }
         }
-      } catch (err) {
-        console.error("Error cargando datos para nuevo egreso", err);
-        toast.error("Error al cargar cuentas bancarias o proveedores.");
+      } catch {
+        toast.error("Error al cargar catálogos.");
       } finally {
         if (!ignore) setLoadingInitial(false);
       }
@@ -121,44 +97,46 @@ export default function NewDirectPaymentPage() {
     };
   }, []);
 
-  const handleCurrencyChange = (curr: "USD" | "VED" | "EUR") => {
-    setTransactionCurrency(curr);
-    if (curr === "VED") {
-      setExchangeRate(bcvRates.USD.toString());
-    } else if (curr === "EUR") {
-      setExchangeRate(bcvRates.EUR.toString());
-    } else {
-      setExchangeRate("");
-    }
-  };
-
-  // Autocompletado inteligente de proveedores
   const supplierOptions = useMemo<SearchableOption<Supplier>[]>(() => {
     return suppliers.map((s) => ({
       value: s.id,
       label: s.name,
-      sublabel: [s.rifOrId || s.rif, s.contactName, s.phone].filter(Boolean).join(" · "),
-      searchTerms: [s.name, s.rifOrId || s.rif || "", s.contactName || "", s.email || ""],
+      sublabel: [s.rifOrId || s.rif, s.contactName, s.phone]
+        .filter(Boolean)
+        .join(" · "),
+      searchTerms: [
+        s.name,
+        s.rifOrId || s.rif || "",
+        s.contactName || "",
+        s.email || "",
+      ],
       badgeText: s.rifOrId || s.rif,
       data: s,
     }));
   }, [suppliers]);
 
-  // Cálculo reactivo equivalente en USD
+  const handleCurrencyChange = (curr: "USD" | "VED" | "EUR") => {
+    setTransactionCurrency(curr);
+    if (curr === "VED") {
+      setExchangeRate(bcvRates.USD.toFixed(2));
+    } else if (curr === "EUR") {
+      setExchangeRate(bcvRates.EUR.toFixed(2));
+    } else {
+      setExchangeRate("");
+    }
+  };
+
   const dynamicEquivalentUsd = useMemo(() => {
     const amt = parseFloat(amountPaid);
-    if (isNaN(amt) || amt <= 0) return 0;
+    if (Number.isNaN(amt) || amt <= 0) return 0;
     if (transactionCurrency === "USD") return amt;
     if (transactionCurrency === "VED") {
       const rate = parseFloat(exchangeRate) || bcvRates.USD || 1;
       return rate > 0 ? amt / rate : 0;
     }
-    if (transactionCurrency === "EUR") {
-      const eurRate = parseFloat(exchangeRate) || bcvRates.EUR || 1;
-      const usdRate = bcvRates.USD || 1;
-      return usdRate > 0 ? (amt * eurRate) / usdRate : amt;
-    }
-    return 0;
+    const eurRate = parseFloat(exchangeRate) || bcvRates.EUR || 1;
+    const usdRate = bcvRates.USD || 1;
+    return usdRate > 0 ? (amt * eurRate) / usdRate : amt;
   }, [amountPaid, transactionCurrency, exchangeRate, bcvRates]);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -166,89 +144,53 @@ export default function NewDirectPaymentPage() {
     setFeedback(null);
 
     if (!concept.trim()) {
-      setFeedback({
-        status: "error",
-        message: "Debe ingresar el concepto del egreso.",
-      });
-      toast.error("Debe ingresar el concepto del egreso.");
+      setFeedback("Debe describir el concepto del servicio.");
       return;
     }
 
-    if (!beneficiary.trim()) {
-      setFeedback({
-        status: "error",
-        message: "Debe especificar el beneficiario o proveedor.",
-      });
-      toast.error("Debe especificar el beneficiario.");
+    if (!selectedSupplierId && !beneficiary.trim()) {
+      setFeedback("Seleccione un proveedor registrado o indique el beneficiario con su RIF.");
       return;
     }
 
-    const parsedAmount = parseFloat(amountPaid);
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      setFeedback({
-        status: "error",
-        message: "El monto debe ser un número válido mayor a 0.",
-      });
-      toast.error("El monto debe ser mayor a 0.");
-      return;
-    }
-
-    if (!referenceNumber.trim()) {
-      setFeedback({
-        status: "error",
-        message: "Debe ingresar el número de referencia o comprobante.",
-      });
-      toast.error("Debe ingresar el número de referencia.");
-      return;
-    }
-
-    if (
-      (method === "TRANSFERENCIA" || method === "PAGO_MOVIL") &&
-      !sourceAccountId
-    ) {
-      setFeedback({
-        status: "error",
-        message: "Debe seleccionar la cuenta bancaria de origen.",
-      });
-      toast.error("Debe seleccionar la cuenta bancaria de origen.");
+    const parsedAmt = parseFloat(amountPaid);
+    if (Number.isNaN(parsedAmt) || parsedAmt <= 0) {
+      setFeedback("El monto estimado del servicio debe ser mayor a 0.");
       return;
     }
 
     setSubmitting(true);
     try {
-      let finalRate: number | undefined;
-      if (transactionCurrency === "VED") {
-        finalRate = parseFloat(exchangeRate) || bcvRates.USD;
-      } else if (transactionCurrency === "EUR") {
-        finalRate = parseFloat(exchangeRate) || bcvRates.EUR;
-      }
-
-      await BankAccountService.createDirectPayment({
+      const created = await BankAccountService.createDirectPayment({
         concept: concept.trim(),
-        beneficiary: beneficiary.trim(),
-        method,
-        sourceAccountId: sourceAccountId ? Number(sourceAccountId) : undefined,
-        destinationAccount: destinationAccount.trim() || undefined,
-        referenceNumber: referenceNumber.trim(),
-        paymentDate: new Date(paymentDate).toISOString(),
+        supplierId: selectedSupplierId ? Number(selectedSupplierId) : null,
+        beneficiary: beneficiary.trim() || undefined,
+        departmentId: departmentId ? Number(departmentId) : null,
+        amountPaid: parsedAmt,
         transactionCurrency,
-        amountPaid: parsedAmount,
-        exchangeRate: finalRate,
-        notes: notes.trim() || undefined,
-        reviewedBy: reviewedBy.trim() || undefined,
-        authorizedBy: authorizedBy.trim() || undefined,
-        approvedBy: approvedBy.trim() || undefined,
+        exchangeRate:
+          transactionCurrency === "USD"
+            ? 1.0
+            : parseFloat(exchangeRate) ||
+              (transactionCurrency === "EUR" ? bcvRates.EUR : bcvRates.USD),
+        estimatedDate: estimatedDate || null,
+        supportUrl: supportUrl.trim() || null,
+        notes: notes.trim() || null,
       });
 
-      toast.success("Pago directo asentado exitosamente.");
-      router.push("/admin/financial/payments");
+      toast.success(
+        `Orden de servicio ${created.serviceOrderNumber || `#${created.id}`} creada en estado Borrador.`
+      );
+      router.push(`/admin/financial/payments/${created.id}`);
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Error al registrar pago directo.";
-      setFeedback({
-        status: "error",
-        message: msg,
-      });
+      let msg = "Error al crear la orden de servicio.";
+      if (err && typeof err === "object" && "response" in err) {
+        const resErr = err as { response?: { data?: { message?: string } } };
+        if (resErr.response?.data?.message) msg = resErr.response.data.message;
+      } else if (err instanceof Error) {
+        msg = err.message;
+      }
+      setFeedback(msg);
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -260,51 +202,44 @@ export default function NewDirectPaymentPage() {
       <div className="h-[60vh] flex flex-col items-center justify-center space-y-3">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
         <span className="text-xs text-muted-foreground font-medium">
-          Cargando cuentas bancarias y proveedores...
+          Cargando catálogos de proveedores y áreas...
         </span>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
-      {/* Cabecera y Navegación */}
+    <div className="space-y-6 pb-12">
+      {/* ========================================================
+          ENCABEZADO ESTANDARIZADO
+         ======================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start sm:items-center gap-3">
           <Button
             type="button"
             variant="outline"
             size="icon"
             onClick={() => router.push("/admin/financial/payments")}
-            className="cursor-pointer"
-            title="Regresar a Egresos"
+            className="h-9 w-9 shrink-0 cursor-pointer"
+            title="Volver a Órdenes de Servicio"
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="indigo" className="text-xs font-semibold">
-                Gestión Financiera
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                <Wallet className="w-6 h-6 text-primary" />
+                Nueva Orden de Servicio
+              </h1>
+              <Badge
+                variant="secondary"
+                className="text-xs bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/20"
+              >
+                Borrador
               </Badge>
-              <Badge variant="outline" className="border-border/60 bg-muted/20 text-xs text-muted-foreground">
-                Egreso Directo Sin Orden
-              </Badge>
-              {dynamicEquivalentUsd > 0 && (
-                <Badge variant="success" className="text-xs font-mono font-bold">
-                  Equiv. ${dynamicEquivalentUsd.toFixed(2)} USD
-                </Badge>
-              )}
-              {bcvRates?.USD && (
-                <Badge variant="purple" className="text-xs font-mono">
-                  Tasa: Bs. {bcvRates.USD.toFixed(2)}
-                </Badge>
-              )}
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-foreground mt-1">
-              Registro de Egreso / Pago Directo
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              Desembolso inmediato para servicios, nómina, reparaciones o compras menores directas
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Registro inicial del servicio para posterior aprobación, orden de pago y liquidación
             </p>
           </div>
         </div>
@@ -315,386 +250,245 @@ export default function NewDirectPaymentPage() {
             variant="outline"
             size="sm"
             onClick={() => router.push("/admin/financial/payments")}
-            className="text-xs cursor-pointer"
+            className="h-9 text-xs cursor-pointer"
           >
             Cancelar
           </Button>
           <Button
-            form="direct-payment-form"
+            form="service-order-form"
             type="submit"
             size="sm"
             disabled={submitting}
-            className="text-xs gap-1.5 cursor-pointer shadow-xs"
+            className="h-9 text-xs font-bold gap-1.5 cursor-pointer shadow-2xs"
           >
-            {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {submitting ? "Asentando..." : "Asentar Egreso Directo"}
+            {submitting ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <FileCheck2 className="w-4 h-4" />
+            )}
+            <span>{submitting ? "Creando..." : "Crear Orden de Servicio"}</span>
           </Button>
         </div>
       </div>
 
       {feedback && (
-        <Alert variant={feedback.status === "success" ? "success" : "destructive"}>
-          {feedback.status === "success" ? (
-            <CheckCircle2 className="w-4 h-4" />
-          ) : (
-            <AlertCircle className="w-4 h-4" />
-          )}
-          <span className="text-xs font-medium ml-2">{feedback.message}</span>
+        <Alert variant="destructive" className="animate-in fade-in duration-200">
+          <AlertCircle className="w-4 h-4" />
+          <AlertTitle>Verifique los datos</AlertTitle>
+          <AlertDescription className="flex items-center justify-between text-xs">
+            <span>{feedback}</span>
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              className="opacity-70 hover:opacity-100 cursor-pointer ml-3"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </AlertDescription>
         </Alert>
       )}
 
-      <form id="direct-payment-form" onSubmit={handleSubmit} className="space-y-6">
-        {/* SECCIÓN 1: Beneficiario y Concepto */}
-        <Card className="p-5 shadow-2xs space-y-4">
+      <form id="service-order-form" onSubmit={handleSubmit} className="space-y-6">
+        {/* ========================================================
+            SECCIÓN 1: PROVEEDOR Y ÁREA SOLICITANTE
+           ======================================================== */}
+        <Card className="p-5 border-border shadow-2xs space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-border">
             <Building2 className="w-4 h-4 text-primary" />
             <CardTitle className="text-sm font-bold text-foreground">
-              1. Beneficiario y Concepto del Desembolso
+              1. Proveedor y Área Solicitante
             </CardTitle>
           </div>
 
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
+              <Label className="text-xs uppercase font-semibold">
+                Proveedor Registrado (Recomendado)
+              </Label>
+              <SearchableSelect
+                options={supplierOptions}
+                value={selectedSupplierId}
+                onChange={(val, opt) => {
+                  setSelectedSupplierId(val);
+                  if (opt?.data) {
+                    const rif = opt.data.rifOrId || opt.data.rif;
+                    setBeneficiary(rif ? `${opt.data.name} (${rif})` : opt.data.name);
+                  }
+                }}
+                placeholder="Buscar proveedor por nombre o RIF..."
+                emptyMessage="No se encontraron proveedores"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase font-semibold">
+                Área / Departamento Solicitante
+              </Label>
+              <select
+                value={departmentId}
+                onChange={(e) => setDepartmentId(e.target.value)}
+                className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
+              >
+                <option value="">-- Seleccione un departamento --</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.code} - {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="md:col-span-2 space-y-1.5">
+              <Label className="text-xs uppercase font-semibold">
+                Beneficiario / Razón Social y RIF {!selectedSupplierId && "*"}
+              </Label>
+              <Input
+                type="text"
+                value={beneficiary}
+                onChange={(e) => {
+                  setBeneficiary(e.target.value);
+                  if (selectedSupplierId) setSelectedSupplierId("");
+                }}
+                placeholder="Ej: Servicios Técnicos ABC C.A. (J-12345678-9)"
+                className="text-xs h-9"
+                required={!selectedSupplierId}
+              />
+              <span className="text-[11px] text-muted-foreground block">
+                Si el proveedor no está registrado en el catálogo, incluya su RIF o cédula fiscal.
+              </span>
+            </div>
+          </div>
+        </Card>
+
+        {/* ========================================================
+            SECCIÓN 2: CONCEPTO, MONTO Y SOPORTE
+           ======================================================== */}
+        <Card className="p-5 border-border shadow-2xs space-y-4">
+          <div className="flex items-center gap-2 pb-2 border-b border-border">
+            <FileText className="w-4 h-4 text-primary" />
+            <CardTitle className="text-sm font-bold text-foreground">
+              2. Detalle del Servicio y Presupuesto
+            </CardTitle>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase font-semibold">
+                Concepto / Descripción del Servicio *
+              </Label>
+              <Textarea
+                rows={3}
+                value={concept}
+                onChange={(e) => setConcept(e.target.value)}
+                placeholder="Ej: Mantenimiento preventivo de equipos de refrigeración del laboratorio central, calibración de centrífugas..."
+                className="text-xs"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase font-semibold">Moneda *</Label>
+                <select
+                  value={transactionCurrency}
+                  onChange={(e) =>
+                    handleCurrencyChange(e.target.value as "USD" | "VED" | "EUR")
+                  }
+                  className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
+                >
+                  <option value="USD">USD ($)</option>
+                  <option value="VED">VED (Bs.)</option>
+                  <option value="EUR">EUR (€)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
                 <Label className="text-xs uppercase font-semibold">
-                  Beneficiario / Proveedor / RIF *
+                  Monto ({transactionCurrency === "VED" ? "Bs." : transactionCurrency === "EUR" ? "€" : "$"}) *
                 </Label>
-                {suppliers.length > 0 && (
-                  <span className="text-[11px] text-muted-foreground font-normal">
-                    Seleccione un proveedor para autocompletar o ingrese libremente
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={amountPaid}
+                  onChange={(e) => setAmountPaid(e.target.value)}
+                  placeholder="0.00"
+                  className="font-mono font-bold text-xs h-9"
+                  required
+                />
+                {dynamicEquivalentUsd > 0 && transactionCurrency !== "USD" && (
+                  <span className="text-[10px] text-primary font-mono block">
+                    ≈ ${dynamicEquivalentUsd.toFixed(2)} USD
                   </span>
                 )}
               </div>
 
-              {suppliers.length > 0 && (
-                <div className="mb-2">
-                  <SearchableSelect<Supplier>
-                    options={supplierOptions}
-                    value=""
-                    onChange={(_val, opt) => {
-                      if (opt?.data) {
-                        const s = opt.data;
-                        const label = (s.rifOrId || s.rif) ? `${s.name} (${s.rifOrId || s.rif})` : s.name;
-                        setBeneficiary(label);
-                      }
-                    }}
-                    placeholder="🔍 Buscar proveedor registrado para autocompletar datos..."
-                    emptyMessage="No se encontró ningún proveedor registrado."
-                    itemTypeLabel="proveedor(es)"
-                    icon={<Building2 className="w-4 h-4 text-muted-foreground shrink-0" />}
-                  />
-                </div>
-              )}
-
-              <Input
-                type="text"
-                required
-                value={beneficiary}
-                onChange={(e) => setBeneficiary(e.target.value)}
-                placeholder="Ej. Comercializadora Médica C.A. (RIF J-12345678-9) o Lic. Pedro Morales..."
-                className="text-xs"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase font-semibold">
-                Concepto Principal del Desembolso *
-              </Label>
-              <Input
-                type="text"
-                required
-                value={concept}
-                onChange={(e) => setConcept(e.target.value)}
-                placeholder="Ej. Pago de Electricidad CORPOELEC Sede Principal Mes Octubre..."
-                className="text-xs font-medium"
-              />
-            </div>
-          </div>
-        </Card>
-
-        {/* SECCIÓN 2: Moneda, Tasa y Monto */}
-        <Card className="p-5 shadow-2xs space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border">
-            <DollarSign className="w-4 h-4 text-emerald-600" />
-            <CardTitle className="text-sm font-bold text-foreground">
-              2. Moneda, Tasa de Cambio y Monto del Pago
-            </CardTitle>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase font-semibold">
-                Moneda de Transacción *
-              </Label>
-              <select
-                value={transactionCurrency}
-                onChange={(e) =>
-                  handleCurrencyChange(
-                    e.target.value as "USD" | "VED" | "EUR"
-                  )
-                }
-                className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
-              >
-                <option value="USD">Dólares Americanos ($ USD)</option>
-                <option value="VED">Bolívares (Bs. VED)</option>
-                <option value="EUR">Euros (€ EUR)</option>
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase font-semibold">
-                Tasa de Cambio ({transactionCurrency === "EUR" ? "Bs./€" : "Bs./$"})
-              </Label>
-              <Input
-                type="number"
-                step="0.0001"
-                min="0.0001"
-                placeholder={
-                  transactionCurrency === "EUR"
-                    ? bcvRates.EUR.toFixed(2)
-                    : bcvRates.USD.toFixed(2)
-                }
-                value={exchangeRate}
-                onChange={(e) => setExchangeRate(e.target.value)}
-                disabled={transactionCurrency === "USD"}
-                className="font-mono text-xs"
-              />
-              <span className="text-[10px] text-muted-foreground font-mono block">
-                BCV: {transactionCurrency === "EUR" ? bcvRates.EUR.toFixed(2) : bcvRates.USD.toFixed(2)} Bs.
-              </span>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase font-semibold">
-                Monto Pagado ({transactionCurrency === "VED" ? "Bs." : transactionCurrency === "EUR" ? "€" : "$"}) *
-              </Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0.01"
-                required
-                placeholder="0.00"
-                value={amountPaid}
-                onChange={(e) => setAmountPaid(e.target.value)}
-                className="font-mono font-bold text-sm"
-              />
-            </div>
-          </div>
-
-          {/* Tarjeta Informativa de Equivalente USD */}
-          <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200/90 flex justify-between items-center text-xs">
-            <div>
-              <span className="font-semibold text-emerald-900 block">
-                Equivalente estimado en Divisas (USD):
-              </span>
-              <span className="text-[11px] text-emerald-700">
-                Calculado a la tasa oficial aplicada
-              </span>
-            </div>
-            <span className="font-mono text-xl font-bold text-emerald-800">
-              $ {dynamicEquivalentUsd.toFixed(2)} USD
-            </span>
-          </div>
-        </Card>
-
-        {/* SECCIÓN 3: Método de Pago e Instrumento Bancario */}
-        <Card className="p-5 shadow-2xs space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border">
-            <CreditCard className="w-4 h-4 text-primary" />
-            <CardTitle className="text-sm font-bold text-foreground">
-              3. Método de Pago y Cuenta Bancaria
-            </CardTitle>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase font-semibold">
-                Método de Pago *
-              </Label>
-              <select
-                value={method}
-                onChange={(e) => setMethod(e.target.value)}
-                className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
-              >
-                {paymentMethodsList.length > 0 ? (
-                  paymentMethodsList.map((pm) => (
-                    <option key={pm.code} value={pm.code}>
-                      {pm.name}
-                    </option>
-                  ))
-                ) : (
-                  <>
-                    <option value="TRANSFERENCIA">Transferencia Bancaria</option>
-                    <option value="PAGO_MOVIL">Pago Móvil Interbancario</option>
-                    <option value="EFECTIVO">Efectivo (USD / Bolívares)</option>
-                    <option value="ZELLE">Zelle (USD)</option>
-                  </>
-                )}
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase font-semibold">
-                Cuenta Bancaria Origen
-              </Label>
-              <select
-                value={sourceAccountId}
-                onChange={(e) => setSourceAccountId(e.target.value)}
-                className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer font-mono"
-              >
-                <option value="">-- Seleccione cuenta institucional --</option>
-                {bankAccounts
-                  .filter((acc) => acc.currency === transactionCurrency || transactionCurrency === "VED")
-                  .map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.bankName} - {acc.accountNumber?.slice(-4) || acc.id} ({acc.currency})
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase font-semibold">
-                Cuenta o Teléfono de Destino (Opcional)
-              </Label>
-              <Input
-                type="text"
-                value={destinationAccount}
-                onChange={(e) => setDestinationAccount(e.target.value)}
-                placeholder="Ej. 0102... o 0414... / correo Zelle"
-                className="font-mono text-xs"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase font-semibold">
-                N° Comprobante / Referencia *
-              </Label>
-              <Input
-                type="text"
-                required
-                value={referenceNumber}
-                onChange={(e) => setReferenceNumber(e.target.value)}
-                placeholder="Ej. 98765432"
-                className="font-mono text-xs"
-              />
-            </div>
-
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-xs uppercase font-semibold">
-                Fecha de Emisión del Pago *
-              </Label>
-              <Input
-                type="date"
-                required
-                value={paymentDate}
-                onChange={(e) => setPaymentDate(e.target.value)}
-                className="text-xs w-full sm:w-64"
-              />
-            </div>
-          </div>
-        </Card>
-
-        {/* SECCIÓN 4: Conceptos Rápidos y Firmas */}
-        <Card className="p-5 shadow-2xs space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border">
-            <FileCheck2 className="w-4 h-4 text-primary" />
-            <CardTitle className="text-sm font-bold text-foreground">
-              4. Clasificación del Gasto y Autorizaciones
-            </CardTitle>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs uppercase font-semibold">
-                Clasificación Rápida y Observaciones
-              </Label>
-              <span className="text-[11px] text-muted-foreground">
-                (Haz clic para asociar categoría del egreso)
-              </span>
-            </div>
-
-            <div className="flex flex-wrap gap-2 pt-0.5">
-              {[
-                { word: "Servicios", text: "Pago de servicios básicos y telecomunicaciones", theme: "bg-sky-50 text-sky-700 border-sky-200/90 hover:bg-sky-100/90" },
-                { word: "Nómina", text: "Honorarios profesionales o desembolso directo de nómina", theme: "bg-emerald-50 text-emerald-700 border-emerald-200/90 hover:bg-emerald-100/90" },
-                { word: "Mantenimiento", text: "Servicio técnico preventivo/correctivo e infraestructura", theme: "bg-amber-50 text-amber-700 border-amber-200/90 hover:bg-amber-100/90" },
-                { word: "Alquiler", text: "Canon de arrendamiento de instalaciones operativas", theme: "bg-purple-50 text-purple-700 border-purple-200/90 hover:bg-purple-100/90" },
-                { word: "Suministros", text: "Insumos menores y gastos operativos de oficina", theme: "bg-indigo-50 text-indigo-700 border-indigo-200/90 hover:bg-indigo-100/90" },
-                { word: "Urgencia", text: "Egreso de contingencia para continuidad de operaciones", theme: "bg-rose-50 text-rose-700 border-rose-200/90 hover:bg-rose-100/90" },
-              ].map((badge) => {
-                const isSelected = notes.toLowerCase().includes(badge.text.toLowerCase());
-                return (
-                  <button
-                    key={badge.word}
-                    type="button"
-                    onClick={() => {
-                      if (isSelected) {
-                        setNotes((prev) => prev.split("\n").filter((l) => !l.toLowerCase().includes(badge.text.toLowerCase())).join("\n").trim());
-                      } else {
-                        setNotes((prev) => prev.trim() ? `${prev.trim()}\n• ${badge.text}` : `• ${badge.text}`);
-                      }
-                    }}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border cursor-pointer transition-all ${
-                      isSelected ? "bg-primary text-primary-foreground border-primary shadow-xs font-semibold" : badge.theme
-                    }`}
-                    title={badge.text}
-                  >
-                    <span className="font-bold">{badge.word}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <Textarea
-              rows={2}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Detalles sobre facturas recibidas, recibos o justificación del desembolso..."
-              className="text-xs"
-            />
-          </div>
-
-          <div className="pt-2 border-t border-border space-y-2">
-            <Label className="text-xs uppercase font-semibold">
-              Firmas de Autorización del Egreso
-            </Label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label className="text-[11px] text-muted-foreground">Revisado por</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase font-semibold">
+                  {transactionCurrency === "USD"
+                    ? "Tasa Referencial"
+                    : `Tasa BCV (Bs./${transactionCurrency === "EUR" ? "€" : "$"})`}
+                </Label>
                 <Input
-                  type="text"
-                  value={reviewedBy}
-                  onChange={(e) => setReviewedBy(e.target.value)}
-                  placeholder="Ej. Lic. Ana Pérez"
-                  className="text-xs"
+                  type="number"
+                  step="0.0001"
+                  min="0.0001"
+                  value={transactionCurrency === "USD" ? "1.00" : exchangeRate}
+                  disabled={transactionCurrency === "USD"}
+                  onChange={(e) => setExchangeRate(e.target.value)}
+                  className="font-mono text-xs h-9"
+                />
+                <span className="text-[10px] text-muted-foreground font-mono block">
+                  BCV: {bcvRates.USD.toFixed(2)} Bs./$ · {bcvRates.EUR.toFixed(2)} Bs./€
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase font-semibold flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-muted-foreground" />
+                  Fecha Estimada
+                </Label>
+                <Input
+                  type="date"
+                  value={estimatedDate}
+                  onChange={(e) => setEstimatedDate(e.target.value)}
+                  className="text-xs h-9"
                 />
               </div>
-              <div className="space-y-1">
-                <Label className="text-[11px] text-muted-foreground">Autorizado por</Label>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border">
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase font-semibold flex items-center gap-1.5">
+                  <Link2 className="w-3.5 h-3.5 text-muted-foreground" />
+                  Enlace a Cotización / Soporte (Opcional)
+                </Label>
                 <Input
-                  type="text"
-                  value={authorizedBy}
-                  onChange={(e) => setAuthorizedBy(e.target.value)}
-                  placeholder="Ej. Dr. Roberto Silva"
-                  className="text-xs"
+                  type="url"
+                  value={supportUrl}
+                  onChange={(e) => setSupportUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="text-xs h-9"
                 />
               </div>
-              <div className="space-y-1">
-                <Label className="text-[11px] text-muted-foreground">Aprobado por</Label>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase font-semibold">
+                  Observaciones Adicionales (Opcional)
+                </Label>
                 <Input
                   type="text"
-                  value={approvedBy}
-                  onChange={(e) => setApprovedBy(e.target.value)}
-                  placeholder="Ej. Dra. Carmen Díaz"
-                  className="text-xs"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Condiciones de ejecución, urgencia o notas..."
+                  className="text-xs h-9"
                 />
               </div>
             </div>
           </div>
         </Card>
 
-        {/* Barra Inferior de Acción */}
+        {/* Barra Inferior */}
         <div className="flex items-center justify-between gap-4 pt-2">
           <Button
             type="button"
@@ -702,7 +496,7 @@ export default function NewDirectPaymentPage() {
             onClick={() => router.push("/admin/financial/payments")}
             className="cursor-pointer"
           >
-            Regresar al Historial
+            Volver al Listado
           </Button>
 
           <Button
@@ -710,8 +504,12 @@ export default function NewDirectPaymentPage() {
             disabled={submitting}
             className="gap-2 cursor-pointer shadow-xs px-6"
           >
-            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            {submitting ? "Asentando Egreso..." : "Asentar Egreso Directo"}
+            {submitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileCheck2 className="w-4 h-4" />
+            )}
+            {submitting ? "Creando Orden..." : "Crear Orden de Servicio"}
           </Button>
         </div>
       </form>

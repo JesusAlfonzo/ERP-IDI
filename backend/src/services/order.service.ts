@@ -108,6 +108,19 @@ export class OrderService {
         },
         payments: true,
         invoices: true,
+        paymentOrders: {
+          select: {
+            id: true,
+            paymentOrderNumber: true,
+            status: true,
+            debtCurrency: true,
+            totalDebtAmount: true,
+            paidAmount: true,
+            remainingBalance: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -148,6 +161,19 @@ export class OrderService {
           orderBy: { paymentDate: 'desc' },
         },
         invoices: true,
+        paymentOrders: {
+          select: {
+            id: true,
+            paymentOrderNumber: true,
+            status: true,
+            debtCurrency: true,
+            totalDebtAmount: true,
+            paidAmount: true,
+            remainingBalance: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
 
@@ -608,12 +634,40 @@ export class OrderService {
       include: {
         items: {
           include: {
-            product: true,
+            product: {
+              include: { baseUnit: true, purchaseUnit: true },
+            },
             unit: true,
           },
         },
         supplier: true,
         currencyRel: true,
+        requisition: {
+          select: {
+            id: true,
+            requisitionNumber: true,
+            departmentSection: true,
+          },
+        },
+        payments: {
+          include: {
+            sourceAccount: true,
+          },
+          orderBy: { paymentDate: 'desc' },
+        },
+        paymentOrders: {
+          select: {
+            id: true,
+            paymentOrderNumber: true,
+            status: true,
+            debtCurrency: true,
+            totalDebtAmount: true,
+            paidAmount: true,
+            remainingBalance: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
   }

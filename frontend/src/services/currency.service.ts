@@ -1,4 +1,5 @@
 import { apiClient } from "@/lib/api-client";
+import type { DailyExchangeRateLookup } from "@/types/treasury";
 
 export interface CurrencyItem {
   id: number;
@@ -66,6 +67,20 @@ export const CurrencyService = {
       },
     });
     return res.data?.data ?? res.data;
+  },
+
+  getRatesByDate: async (date: string): Promise<DailyExchangeRateLookup> => {
+    const res = await apiClient.get<{
+      status: string;
+      data: DailyExchangeRateLookup;
+    }>("/exchange-rates/by-date", {
+      params: { date, _t: Date.now() },
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        Pragma: "no-cache",
+      },
+    });
+    return res.data?.data;
   },
 
   registerRate: async (data: {

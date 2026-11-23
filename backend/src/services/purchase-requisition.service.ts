@@ -82,6 +82,14 @@ export class PurchaseRequisitionService {
             id: true,
             fullName: true,
             email: true,
+            department: true,
+            userRoles: {
+              include: {
+                role: {
+                  select: { name: true },
+                },
+              },
+            },
           },
         },
         items: {
@@ -119,6 +127,14 @@ export class PurchaseRequisitionService {
             id: true,
             fullName: true,
             email: true,
+            department: true,
+            userRoles: {
+              include: {
+                role: {
+                  select: { name: true },
+                },
+              },
+            },
           },
         },
         items: {

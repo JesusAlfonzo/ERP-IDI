@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useMemo, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { InventoryClientService } from "@/services/inventory.service";
 import { CurrencyService } from "@/services/currency.service";
@@ -15,6 +14,7 @@ import {
 import type { Supplier, Currency, PurchaseOrder } from "@/types/purchasing";
 import type { Product, Category } from "@/types/inventory";
 import { ProductPackagingSelector } from "@/components/purchasing/ProductPackagingSelector";
+import { cn } from "@/lib/utils";
 import {
   ShoppingCart,
   Plus,
@@ -22,15 +22,19 @@ import {
   Building2,
   Loader2,
   ArrowLeft,
-  Coins,
   Receipt,
   FileCheck2,
   CheckCircle2,
   AlertCircle,
   ShieldAlert,
+  ShieldCheck,
+  Calculator,
+  DollarSign,
+  Boxes,
   Save,
+  X,
 } from "lucide-react";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -48,10 +52,34 @@ interface FormRow {
   isExempt: boolean;
 }
 
+const QUICK_CONDITIONS = [
+  {
+    word: "Contado",
+    text: "Condición de pago: Contra entrega de factura fiscal y verificación física",
+  },
+  {
+    word: "Crédito",
+    text: "Condición de crédito comercial: Plazo pactado a 15-30 días continuos",
+  },
+  {
+    word: "Anticipo",
+    text: "Requiere anticipo financiero del 50% para activación del pedido",
+  },
+  {
+    word: "Refrigerado",
+    text: "Insumos biológicos o reactivos: Despacho estricto en cadena de frío (2-8°C)",
+  },
+  {
+    word: "Urgente",
+    text: "Prioridad operativa alta: Entrega inmediata en almacén central",
+  },
+];
+
 export default function EditPurchaseOrderPage() {
   const params = useParams();
   const router = useRouter();
-  const orderId = params?.id as string;
+  const rawId = params?.id;
+  const orderId = Array.isArray(rawId) ? rawId[0] : (rawId as string);
 
   // Estado de carga y orden
   const [order, setOrder] = useState<PurchaseOrder | null>(null);
@@ -106,15 +134,13 @@ export default function EditPurchaseOrderPage() {
           setCurrencies(currs);
 
           if (rates) {
-            const ratesObj = {
+            setBcvRates({
               USD: Number(rates.USD || rates.rates?.USD || 75.0),
               EUR: Number(rates.EUR || rates.rates?.EUR || 81.5),
               VED: 1.0,
-            };
-            setBcvRates(ratesObj);
+            });
           }
 
-          // Cargar datos de la orden en el formulario
           const supId = orderData.supplierId || orderData.supplier?.id;
           if (supId) setSupplierId(String(supId));
 
@@ -263,18 +289,12 @@ export default function EditPurchaseOrderPage() {
     exemptAmount = Math.round(exemptAmount * 100) / 100;
     const iva16 = Math.round(taxableAmount * 0.16 * 100) / 100;
     const totalAmount = Math.round((taxableAmount + exemptAmount + iva16) * 100) / 100;
-    const rate = Number(exchangeRate) || (currency === "EUR" ? bcvRates.EUR : bcvRates.USD) || 1.0;
+    const rate =
+      Number(exchangeRate) || (currency === "EUR" ? bcvRates.EUR : bcvRates.USD) || 1.0;
     const totalBs =
       currency === "VED"
         ? totalAmount
         : Math.round(totalAmount * rate * 100) / 100;
-
-    const totalUsd =
-      currency === "USD"
-        ? totalAmount
-        : currency === "VED"
-          ? (rate > 0 ? Math.round((totalAmount / rate) * 100) / 100 : totalAmount)
-          : (bcvRates.USD > 0 ? Math.round(((totalAmount * rate) / bcvRates.USD) * 100) / 100 : totalAmount);
 
     return {
       taxableAmount,
@@ -282,7 +302,6 @@ export default function EditPurchaseOrderPage() {
       iva16,
       totalAmount,
       totalBs,
-      totalUsd,
     };
   }, [items, exchangeRate, currency, bcvRates]);
 
@@ -307,9 +326,9 @@ export default function EditPurchaseOrderPage() {
       setFeedback({
         status: "error",
         message:
-          "Asegúrese de seleccionar producto, cantidad y costo unitario válido en cada renglón.",
+          "Complete insumo, cantidad y precio unitario mayor a 0 en cada línea.",
       });
-      toast.error("Complete los renglones con cantidad y precio válidos.");
+      toast.error("Complete los insumos con cantidad y precio válidos.");
       return;
     }
 
@@ -362,94 +381,97 @@ export default function EditPurchaseOrderPage() {
 
   if (!order) {
     return (
-      <div className="p-8 text-center space-y-4 max-w-md mx-auto">
-        <Card className="p-6 space-y-4">
-          <CardContent className="space-y-4 p-0">
-            <ShieldAlert className="w-10 h-10 text-rose-500 mx-auto" />
+      <div className="max-w-md mx-auto py-12">
+        <Card className="p-6 text-center space-y-4 border-border shadow-2xs">
+          <div className="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
             <h2 className="text-base font-bold text-foreground">
               Orden de compra no encontrada
             </h2>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => router.push("/purchasing/orders")}
-              className="gap-2 cursor-pointer"
-            >
-              <ArrowLeft className="w-4 h-4" /> Volver al listado
-            </Button>
-          </CardContent>
+            <p className="text-xs text-muted-foreground">
+              No se encontró la orden solicitada para edición.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/purchasing/orders")}
+            className="gap-1.5 text-xs cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Volver a Órdenes
+          </Button>
         </Card>
       </div>
     );
   }
 
-  // Si la orden ya no está en BORRADOR, no se permite editar
   if (order.status !== "BORRADOR") {
     return (
-      <div className="p-8 text-center space-y-4 max-w-lg mx-auto">
-        <Card className="p-6 space-y-4 border-amber-300 bg-amber-50/40 dark:bg-amber-950/20">
-          <CardContent className="space-y-3 p-0">
-            <ShieldAlert className="w-10 h-10 text-amber-600 mx-auto" />
+      <div className="max-w-lg mx-auto py-12">
+        <Card className="p-6 text-center space-y-4 border-amber-500/30 shadow-2xs">
+          <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
             <h2 className="text-base font-bold text-foreground">
-              Orden #{order.orderNumber} Bloqueada para Edición
+              Orden #{order.orderNumber} bloqueada para edición
             </h2>
             <p className="text-xs text-muted-foreground">
-              Esta orden se encuentra en estado <strong>{order.status}</strong>. Solo las órdenes en estado <strong>Borrador</strong> pueden modificarse. Una vez enviada al proveedor o recibida mercancía, los precios y términos quedan formalizados.
+              Solo las órdenes en estado <strong className="text-foreground">Borrador</strong> pueden modificarse. Estado actual:{" "}
+              <strong className="text-foreground">{order.status}</strong>.
             </p>
-            <div className="pt-2 flex justify-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => router.push(`/purchasing/orders/${orderId}`)}
-                className="gap-2 cursor-pointer text-xs"
-              >
-                <ArrowLeft className="w-4 h-4" /> Ver Detalle de la Orden
-              </Button>
-            </div>
-          </CardContent>
+          </div>
+          <div className="pt-2 flex justify-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/purchasing/orders/${orderId}`)}
+              className="gap-1.5 cursor-pointer text-xs"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> Ver Detalle
+            </Button>
+          </div>
         </Card>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
-      {/* Cabecera y Navegación */}
+    <div className="space-y-6 pb-12">
+      {/* ========================================================
+          ENCABEZADO ESTANDARIZADO
+         ======================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start sm:items-center gap-3">
           <Button
             type="button"
             variant="outline"
             size="icon"
             onClick={() => router.push(`/purchasing/orders/${orderId}`)}
-            className="cursor-pointer"
-            title="Regresar a Detalle"
+            className="h-9 w-9 shrink-0 cursor-pointer"
+            title="Volver al detalle"
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="indigo" className="text-xs font-mono font-bold">
-                {order.orderNumber || `#${orderId}`}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                <ShoppingCart className="w-6 h-6 text-primary" />
+                Editar Orden #{order.orderNumber || orderId}
+              </h1>
+              <Badge
+                variant="secondary"
+                className="text-xs bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/20"
+              >
+                Borrador
               </Badge>
-              <Badge variant="secondary" className="text-xs font-bold">
-                Borrador (Editable)
-              </Badge>
-              <Badge variant="success" className="text-xs font-mono font-bold">
-                Total: {currentSymbol} {fiscalSummary.totalAmount.toFixed(2)}
-              </Badge>
-              {exchangeRate && (
-                <Badge variant="purple" className="text-xs font-mono">
-                  Tasa: Bs. {Number(exchangeRate).toFixed(2)}
-                </Badge>
-              )}
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-foreground mt-1">
-              Modificar Orden de Compra (Borrador)
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              Ajuste proveedor, moneda, renglones y precios antes de marcarla como enviada al proveedor
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Ajuste proveedor, moneda, insumos y precios antes de enviar la orden
             </p>
           </div>
         </div>
@@ -460,7 +482,7 @@ export default function EditPurchaseOrderPage() {
             variant="outline"
             size="sm"
             onClick={() => router.push(`/purchasing/orders/${orderId}`)}
-            className="text-xs cursor-pointer"
+            className="h-9 text-xs cursor-pointer"
           >
             Cancelar
           </Button>
@@ -469,54 +491,146 @@ export default function EditPurchaseOrderPage() {
             type="submit"
             size="sm"
             disabled={submitting}
-            className="text-xs gap-1.5 cursor-pointer shadow-xs bg-primary text-primary-foreground"
+            className="h-9 text-xs font-bold gap-1.5 cursor-pointer shadow-2xs"
           >
             {submitting ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Save className="w-3.5 h-3.5" />
             )}
-            {submitting ? "Guardando..." : "Guardar Cambios"}
+            <span>{submitting ? "Guardando..." : "Guardar Cambios"}</span>
           </Button>
         </div>
       </div>
 
       {feedback && (
         <Alert
-          variant={feedback.status === "success" ? "default" : "destructive"}
-          className={feedback.status === "success" ? "border-emerald-300 bg-emerald-50 text-emerald-900" : ""}
+          variant={feedback.status === "success" ? "success" : "destructive"}
+          className="animate-in fade-in duration-200"
         >
           {feedback.status === "success" ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <CheckCircle2 className="w-4 h-4" />
           ) : (
             <AlertCircle className="w-4 h-4" />
           )}
-          <AlertDescription>{feedback.message}</AlertDescription>
+          <AlertTitle>
+            {feedback.status === "success" ? "Operación Exitosa" : "Error"}
+          </AlertTitle>
+          <AlertDescription className="flex items-center justify-between text-xs">
+            <span>{feedback.message}</span>
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              className="opacity-70 hover:opacity-100 cursor-pointer ml-3"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </AlertDescription>
         </Alert>
       )}
 
+      {/* ========================================================
+          4 TARJETAS KPI DE CÁLCULO FISCAL EN TIEMPO REAL
+         ======================================================== */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="p-4 border-border shadow-2xs flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              Base Gravable
+            </span>
+            <div className="text-2xl font-bold font-mono text-foreground">
+              {currentSymbol} {fiscalSummary.taxableAmount.toFixed(2)}
+            </div>
+            <span className="text-[11px] text-muted-foreground block">
+              Sujeto a IVA 16%
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+            <Receipt className="w-5 h-5" />
+          </div>
+        </Card>
+
+        <Card className="p-4 border-border shadow-2xs flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              Subtotal Exento
+            </span>
+            <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
+              {currentSymbol} {fiscalSummary.exemptAmount.toFixed(2)}
+            </div>
+            <span className="text-[11px] text-muted-foreground block">
+              Exonerado de impuesto
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+        </Card>
+
+        <Card className="p-4 border-border shadow-2xs flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              IVA (16%)
+            </span>
+            <div className="text-2xl font-bold font-mono text-amber-600 dark:text-amber-400">
+              {currentSymbol} {fiscalSummary.iva16.toFixed(2)}
+            </div>
+            <span className="text-[11px] text-muted-foreground block">
+              Impuesto calculado
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <Calculator className="w-5 h-5" />
+          </div>
+        </Card>
+
+        <Card className="p-4 border-primary/30 bg-primary/5 shadow-2xs flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-primary uppercase tracking-wider block">
+              Total ({currency})
+            </span>
+            <div className="text-2xl font-bold font-mono text-primary">
+              {currentSymbol} {fiscalSummary.totalAmount.toFixed(2)}
+            </div>
+            <span className="text-[11px] text-muted-foreground font-mono block">
+              {currency !== "VED"
+                ? `Bs. ${fiscalSummary.totalBs.toLocaleString("es-VE", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}`
+                : "Moneda nacional"}
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+            <DollarSign className="w-5 h-5" />
+          </div>
+        </Card>
+      </div>
+
       <form id="order-edit-form" onSubmit={handleSubmit} className="space-y-6">
-        {/* SECCIÓN 1: Proveedor, Moneda y Tasa */}
-        <Card className="p-5 shadow-2xs space-y-4">
+        {/* ========================================================
+            SECCIÓN 1: PROVEEDOR Y FACTURACIÓN
+           ======================================================== */}
+        <Card className="p-5 border-border shadow-2xs space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-border">
             <Building2 className="w-4 h-4 text-primary" />
             <CardTitle className="text-sm font-bold text-foreground">
-              1. Proveedor y Condiciones Comerciales
+              1. Proveedor y Facturación
             </CardTitle>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs uppercase font-semibold flex items-center gap-1">
-                Proveedor Comercial <span className="text-rose-500 font-bold">*</span>
+              <Label className="text-xs uppercase font-semibold">
+                Proveedor *
               </Label>
               <select
                 value={supplierId}
                 onChange={(e) => setSupplierId(e.target.value)}
                 required
-                className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
+                className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
               >
-                <option value="">-- Seleccione Proveedor Obligatorio --</option>
+                <option value="">-- Seleccione un proveedor --</option>
                 {suppliers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} {s.rifOrId ? `(${s.rifOrId})` : ""}
@@ -527,12 +641,12 @@ export default function EditPurchaseOrderPage() {
 
             <div className="space-y-1.5">
               <Label className="text-xs uppercase font-semibold">
-                Moneda de Transacción *
+                Moneda *
               </Label>
               <select
                 value={currency}
                 onChange={(e) => handleCurrencyChange(e.target.value as CurrencyCode)}
-                className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
+                className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
               >
                 {CURRENCY_OPTIONS.map((c) => (
                   <option key={c.code} value={c.code}>
@@ -544,7 +658,9 @@ export default function EditPurchaseOrderPage() {
 
             <div className="space-y-1.5">
               <Label className="text-xs uppercase font-semibold">
-                Tasa de Cambio Oficial ({currency === "EUR" ? "Bs./EUR" : currency === "VED" ? "VED" : "Bs./USD"})
+                {currency === "VED"
+                  ? "Tasa de Cambio (VED)"
+                  : `Tasa BCV (${currency === "EUR" ? "Bs./EUR" : "Bs./USD"})`}
               </Label>
               <Input
                 type="number"
@@ -555,7 +671,7 @@ export default function EditPurchaseOrderPage() {
                 onChange={(e) =>
                   setExchangeRate(e.target.value ? Number(e.target.value) : "")
                 }
-                className="font-mono text-xs"
+                className="font-mono font-bold text-xs h-9"
                 placeholder="Tasa oficial BCV..."
                 required
               />
@@ -566,114 +682,86 @@ export default function EditPurchaseOrderPage() {
           </div>
         </Card>
 
-        {/* SECCIÓN 2: Insumos, Cantidades y Precios Unitarios */}
-        <Card className="p-5 shadow-2xs space-y-4">
+        {/* ========================================================
+            SECCIÓN 2: INSUMOS Y COSTOS
+           ======================================================== */}
+        <Card className="p-5 border-border shadow-2xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-border">
             <div className="flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4 text-primary" />
+              <Boxes className="w-4 h-4 text-primary" />
               <CardTitle className="text-sm font-bold text-foreground">
-                2. Insumos y Costos Unitarios ({items.length})
+                2. Insumos y Costos ({items.length})
               </CardTitle>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="flex items-center gap-1.5">
-                <Label
-                  htmlFor="filter-order-cat-edit"
-                  className="text-xs text-muted-foreground whitespace-nowrap"
-                >
-                  Filtrar categoría:
-                </Label>
-                <select
-                  id="filter-order-cat-edit"
-                  value={selectedCategoryFilter}
-                  onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                  className="bg-background border border-input rounded-md px-2 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring cursor-pointer"
-                >
-                  <option value="">Todas las categorías</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                id="filter-order-cat-edit"
+                value={selectedCategoryFilter}
+                onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                className="h-8 bg-background border border-input rounded-lg px-2.5 text-xs font-medium text-foreground focus:ring-2 focus:ring-ring cursor-pointer"
+                title="Filtrar insumos por categoría"
+              >
+                <option value="">Todas las categorías</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
 
-              <div className="flex items-center gap-2 border-l border-border pl-2.5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleToggleAllExempt(true)}
-                  className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground cursor-pointer"
-                >
-                  Marcar todos Exentos
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleToggleAllExempt(false)}
-                  className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground cursor-pointer"
-                >
-                  Todos Gravables (16%)
-                </Button>
-              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAddItem}
+                className="h-8 gap-1.5 text-xs text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Agregar insumo</span>
+              </Button>
             </div>
           </div>
 
           <div className="space-y-3">
             {items.map((row, idx) => {
-              const lineSubtotal =
+              const selectedProd = catalogProducts.find((p) => p.id === row.productId);
+              const activeUnit =
+                row.unitId === selectedProd?.purchaseUnitId
+                  ? selectedProd?.purchaseUnit?.abbreviation ||
+                    selectedProd?.purchaseUnit?.name
+                  : selectedProd?.baseUnit?.abbreviation ||
+                    selectedProd?.baseUnit?.name ||
+                    "";
+              const lineTotal =
                 Math.round(
-                  (Number(row.quantityOrdered) || 0) * (Number(row.unitPrice) || 0) * 100
+                  Number(row.quantityOrdered || 0) * Number(row.unitPrice || 0) * 100
                 ) / 100;
-              const lineTax = row.isExempt
-                ? 0
-                : Math.round(lineSubtotal * 0.16 * 100) / 100;
-              const lineTotal = Math.round((lineSubtotal + lineTax) * 100) / 100;
 
               return (
-                <div
+                <Card
                   key={idx}
-                  className="p-3.5 rounded-xl border border-border/80 bg-background/50 hover:bg-muted/10 transition-colors space-y-3"
+                  className="p-4 bg-muted/20 border-border hover:border-border/80 transition-colors shadow-none"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-xs font-mono font-bold text-muted-foreground bg-muted px-2 py-0.5 rounded">
-                      Renglón #{idx + 1}
-                    </span>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-background border border-border text-xs font-mono font-bold text-muted-foreground shrink-0">
+                      {idx + 1}
+                    </div>
 
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleRemoveItem(idx)}
-                      disabled={items.length === 1}
-                      className="text-muted-foreground hover:text-rose-600 h-7 w-7 cursor-pointer"
-                      title="Eliminar este renglón"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                    <div className="sm:col-span-6 space-y-1">
-                      <Label className="text-xs text-muted-foreground">
-                        Producto / Insumo *
-                      </Label>
+                    <div className="flex-1 min-w-0">
                       <ProductPackagingSelector
                         products={catalogProducts}
+                        selectedCategoryId={selectedCategoryFilter}
                         selectedProductId={row.productId}
                         selectedUnitId={row.unitId}
-                        selectedCategoryId={selectedCategoryFilter ? Number(selectedCategoryFilter) : undefined}
-                        onChange={(pId: number, uId: number) => handleProductSelect(idx, pId, uId)}
+                        onChange={(pId, uId) => handleProductSelect(idx, pId, uId)}
                         disabled={submitting}
                       />
                     </div>
 
-                    <div className="sm:col-span-2 space-y-1">
-                      <Label className="text-xs text-muted-foreground">
-                        Cantidad *
+                    <div className="w-full sm:w-28 shrink-0">
+                      <Label className="text-[11px] mb-1 block">
+                        Cantidad {activeUnit ? `(${activeUnit})` : ""} *
                       </Label>
                       <Input
                         type="number"
@@ -683,14 +771,14 @@ export default function EditPurchaseOrderPage() {
                         onChange={(e) =>
                           handleRowChange(idx, "quantityOrdered", Number(e.target.value))
                         }
-                        className="text-xs font-mono"
+                        className="font-mono font-bold text-xs h-9"
                         required
                       />
                     </div>
 
-                    <div className="sm:col-span-2 space-y-1">
-                      <Label className="text-xs text-muted-foreground">
-                        Costo Unit. ({currentSymbol}) *
+                    <div className="w-full sm:w-28 shrink-0">
+                      <Label className="text-[11px] mb-1 block">
+                        Precio Unit. ({currentSymbol}) *
                       </Label>
                       <Input
                         type="number"
@@ -700,130 +788,173 @@ export default function EditPurchaseOrderPage() {
                         onChange={(e) =>
                           handleRowChange(idx, "unitPrice", Number(e.target.value))
                         }
-                        className="text-xs font-mono"
+                        className="font-mono text-xs font-bold h-9"
                         required
                       />
                     </div>
 
-                    <div className="sm:col-span-2 space-y-1 pb-1">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`exempt-${idx}`}
-                          checked={row.isExempt}
-                          onCheckedChange={(checked) =>
-                            handleRowChange(idx, "isExempt", Boolean(checked))
-                          }
-                        />
-                        <label
-                          htmlFor={`exempt-${idx}`}
-                          className="text-xs text-muted-foreground cursor-pointer font-medium"
-                        >
-                          Exento IVA (E)
-                        </label>
-                      </div>
+                    <div className="flex items-center gap-1.5 self-center sm:self-end sm:pb-2 shrink-0">
+                      <Checkbox
+                        id={`exempt-edit-${idx}`}
+                        checked={row.isExempt}
+                        onCheckedChange={(checked) =>
+                          handleRowChange(idx, "isExempt", Boolean(checked))
+                        }
+                      />
+                      <Label
+                        htmlFor={`exempt-edit-${idx}`}
+                        className="text-xs cursor-pointer font-medium text-muted-foreground whitespace-nowrap"
+                      >
+                        Exento
+                      </Label>
+                    </div>
+
+                    <div className="w-full sm:w-24 text-right shrink-0">
+                      <Label className="text-[11px] mb-1 block text-muted-foreground">
+                        Subtotal
+                      </Label>
+                      <span className="font-mono font-bold text-xs text-foreground block leading-9">
+                        {currentSymbol} {lineTotal.toFixed(2)}
+                      </span>
+                    </div>
+
+                    <div className="sm:self-end sm:pb-1 shrink-0">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => handleRemoveItem(idx)}
+                        disabled={items.length === 1}
+                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                        title="Eliminar insumo"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
-
-                  <div className="pt-2 border-t border-border/40 flex justify-end gap-4 text-xs font-mono text-muted-foreground">
-                    <span>
-                      Subtotal:{" "}
-                      <strong className="text-foreground">
-                        {currentSymbol} {lineSubtotal.toFixed(2)}
-                      </strong>
-                    </span>
-                    <span>
-                      IVA (16%):{" "}
-                      <strong className="text-foreground">
-                        {currentSymbol} {lineTax.toFixed(2)}
-                      </strong>
-                    </span>
-                    <span>
-                      Total Renglón:{" "}
-                      <strong className="text-foreground font-bold">
-                        {currentSymbol} {lineTotal.toFixed(2)}
-                      </strong>
-                    </span>
-                  </div>
-                </div>
+                </Card>
               );
             })}
           </div>
 
+          <div className="flex justify-end gap-2 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleToggleAllExempt(true)}
+              className="text-[11px] h-7 cursor-pointer"
+            >
+              Marcar todo Exento
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleToggleAllExempt(false)}
+              className="text-[11px] h-7 cursor-pointer"
+            >
+              Marcar todo Gravable (16%)
+            </Button>
+          </div>
+        </Card>
+
+        {/* ========================================================
+            SECCIÓN 3: CONDICIONES Y OBSERVACIONES
+           ======================================================== */}
+        <Card className="p-5 border-border shadow-2xs space-y-4">
+          <div className="flex items-center gap-2 pb-2 border-b border-border">
+            <FileCheck2 className="w-4 h-4 text-primary" />
+            <CardTitle className="text-sm font-bold text-foreground">
+              3. Condiciones y Observaciones
+            </CardTitle>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <Label className="text-xs uppercase font-semibold">
+                Condiciones Comerciales y Términos de Entrega (Opcional)
+              </Label>
+              <span className="text-[11px] text-muted-foreground">
+                Selecciona etiquetas para agregar condiciones rápidas
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {QUICK_CONDITIONS.map((badge) => {
+                const isSelected = notes
+                  .toLowerCase()
+                  .includes(badge.text.toLowerCase());
+                return (
+                  <button
+                    key={badge.word}
+                    type="button"
+                    onClick={() => {
+                      if (isSelected) {
+                        setNotes((prev) =>
+                          prev
+                            .split("\n")
+                            .filter(
+                              (l) => !l.toLowerCase().includes(badge.text.toLowerCase())
+                            )
+                            .join("\n")
+                            .trim()
+                        );
+                      } else {
+                        setNotes((prev) =>
+                          prev.trim()
+                            ? `${prev.trim()}\n• ${badge.text}`
+                            : `• ${badge.text}`
+                        );
+                      }
+                    }}
+                    className={cn(
+                      "inline-flex items-center px-3 py-1 rounded-lg text-xs font-medium border cursor-pointer transition-all",
+                      isSelected
+                        ? "bg-primary text-primary-foreground border-primary shadow-2xs font-semibold"
+                        : "bg-muted/30 text-foreground border-border hover:bg-muted"
+                    )}
+                    title={badge.text}
+                  >
+                    {badge.word}
+                  </button>
+                );
+              })}
+            </div>
+
+            <Textarea
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Especifique términos de entrega, condiciones de pago o instrucciones de despacho..."
+              className="text-xs"
+            />
+          </div>
+        </Card>
+
+        {/* Barra Inferior de Acción */}
+        <div className="flex items-center justify-between gap-4 pt-2">
           <Button
             type="button"
             variant="outline"
-            size="sm"
-            onClick={handleAddItem}
-            className="w-full py-4 text-xs border-dashed gap-1.5 cursor-pointer text-muted-foreground hover:text-foreground"
+            onClick={() => router.push(`/purchasing/orders/${orderId}`)}
+            className="cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5" />
-            Agregar otro renglón a la orden
+            Cancelar
           </Button>
-        </Card>
 
-        {/* SECCIÓN 3: Desglose Fiscal SENIAT & Observaciones */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-          <div className="sm:col-span-2 space-y-4">
-            <Card className="p-5 shadow-2xs space-y-2">
-              <Label className="text-xs uppercase font-semibold">
-                Observaciones y Justificación de Compra
-              </Label>
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Indique justificación de adquisición, términos de entrega, requerimientos especiales..."
-                className="text-xs resize-none h-28"
-              />
-            </Card>
-          </div>
-
-          {/* Liquidación Fiscal SENIAT */}
-          <div className="space-y-4">
-            <Card className="p-5 shadow-2xs bg-muted/20 border-primary/20 space-y-3">
-              <div className="flex items-center gap-2 pb-2 border-b border-border">
-                <Receipt className="w-4 h-4 text-primary" />
-                <CardTitle className="text-xs uppercase font-bold text-foreground">
-                  Liquidación Fiscal SENIAT
-                </CardTitle>
-              </div>
-
-              <div className="space-y-2 text-xs font-mono">
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Base Imponible (G 16%):</span>
-                  <span>{currentSymbol} {fiscalSummary.taxableAmount.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Monto Exento (E):</span>
-                  <span>{currentSymbol} {fiscalSummary.exemptAmount.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Impuesto IVA (16%):</span>
-                  <span>{currentSymbol} {fiscalSummary.iva16.toFixed(2)}</span>
-                </div>
-                <div className="pt-2 border-t border-border flex justify-between text-sm font-bold text-foreground">
-                  <span>TOTAL PACTADO:</span>
-                  <span>{currentSymbol} {fiscalSummary.totalAmount.toFixed(2)} {currency}</span>
-                </div>
-
-                {currency !== "VED" && (
-                  <div className="pt-2 border-t border-border/60 flex justify-between text-xs text-muted-foreground">
-                    <span>Equivalente en Bolívares:</span>
-                    <span className="font-bold text-foreground font-mono">
-                      Bs. {fiscalSummary.totalBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                )}
-                {currency !== "USD" && (
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Equivalente en Dólares:</span>
-                    <span className="font-bold text-foreground font-mono">
-                      $ {fiscalSummary.totalUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-                    </span>
-                  </div>
-                )}
-              </div>
-            </Card>
-          </div>
+          <Button
+            type="submit"
+            disabled={submitting}
+            className="gap-2 cursor-pointer shadow-xs px-6"
+          >
+            {submitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {submitting ? "Guardando..." : "Guardar Cambios"}
+          </Button>
         </div>
       </form>
     </div>

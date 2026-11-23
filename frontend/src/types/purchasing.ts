@@ -1,5 +1,6 @@
 export type PurchaseOrderStatus =
   | "BORRADOR"
+  | "ENVIADA"
   | "PENDIENTE"
   | "APROBADA"
   | "PARCIAL"
@@ -57,10 +58,46 @@ export interface SupplierPayment {
   createdAt?: string;
 }
 
+export type ServiceOrderStatus =
+  | "BORRADOR"
+  | "EN_APROBACION"
+  | "APROBADA"
+  | "RECHAZADA"
+  | "ORDEN_PAGO"
+  | "PAGADA"
+  | "CANCELADA";
+
+export interface DirectPaymentUserRef {
+  id: number;
+  fullName: string;
+  email: string;
+  department?: string | null;
+}
+
 export interface DirectPayment {
   id: string | number;
+  serviceOrderNumber?: string | null;
+  paymentOrderNumber?: string | null;
+  status: ServiceOrderStatus;
   concept: string;
   beneficiary: string;
+  supplierId?: number | null;
+  supplier?: {
+    id: number;
+    name: string;
+    rifOrId?: string;
+    contactName?: string | null;
+    phone?: string | null;
+    email?: string | null;
+  } | null;
+  departmentId?: number | null;
+  department?: {
+    id: number;
+    code: string;
+    name: string;
+  } | null;
+  estimatedDate?: string | null;
+  supportUrl?: string | null;
   method: string;
   sourceAccountId?: number | null;
   sourceAccount?: {
@@ -84,13 +121,32 @@ export interface DirectPayment {
   reviewedBy?: string | null;
   authorizedBy?: string | null;
   approvedBy?: string | null;
+  approvedByUserId?: number | null;
+  approvedByUser?: DirectPaymentUserRef | null;
+  approvedAt?: string | null;
+  approvalNotes?: string | null;
+  rejectedByUserId?: number | null;
+  rejectedByUser?: DirectPaymentUserRef | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
+  paymentOrderIssuedAt?: string | null;
+  paymentOrderIssuedById?: number | null;
+  paymentOrderIssuedBy?: DirectPaymentUserRef | null;
+  paymentOrderNotes?: string | null;
   registeredById?: number;
-  registeredBy?: {
-    id: number;
-    fullName: string;
-    email: string;
-  };
+  registeredBy?: DirectPaymentUserRef;
+  paymentOrders?: Array<{
+    id: string | number;
+    paymentOrderNumber: string;
+    status: string;
+    debtCurrency: string;
+    totalDebtAmount: number | string;
+    paidAmount: number | string;
+    remainingBalance: number | string;
+    createdAt?: string;
+  }>;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Supplier {
@@ -306,6 +362,12 @@ export interface PurchaseRequisition {
     id: number;
     fullName: string;
     email: string;
+    department?: string | null;
+    userRoles?: Array<{
+      role?: {
+        name: string;
+      };
+    }>;
   };
   items: PurchaseRequisitionItem[];
   orders?: Array<{
@@ -389,6 +451,16 @@ export interface PurchaseOrder {
     controlNumber?: string | null;
     total: number;
     createdAt: string;
+  }>;
+  paymentOrders?: Array<{
+    id: string | number;
+    paymentOrderNumber: string;
+    status: string;
+    debtCurrency: string;
+    totalDebtAmount: number | string;
+    paidAmount: number | string;
+    remainingBalance: number | string;
+    createdAt?: string;
   }>;
 }
 

@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { useState, useEffect, useCallback, useMemo, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { AuthService } from "@/services/auth.service";
-import { useDebounce } from "@/hooks/use-debounce";
 import { usePagination } from "@/hooks/use-pagination";
 import { TablePagination } from "@/components/common/TablePagination";
 import type { Supplier } from "@/types/purchasing";
+import { cn } from "@/lib/utils";
+import { toast } from "@/utils/toast";
 import {
   Building2,
   Plus,
@@ -25,6 +27,8 @@ import {
   Trash2,
   AlertTriangle,
   X,
+  Ban,
+  Save,
 } from "lucide-react";
 
 import {
@@ -35,7 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -52,12 +56,14 @@ import {
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+type ActiveTab = "todos" | "activos" | "inactivos";
+
 export default function SuppliersPage() {
   const router = useRouter();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<ActiveTab>("todos");
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 350);
   const [isAdmin] = useState(() => {
     if (typeof window === "undefined") return false;
     return (
@@ -107,8 +113,11 @@ export default function SuppliersPage() {
   } | null>(null);
 
   const loadSuppliers = useCallback(async () => {
+    setLoading(true);
     try {
-      const data = await PurchasingClientService.getSuppliers();
+      const data = await PurchasingClientService.getSuppliers({
+        includeInactive: true,
+      });
       setSuppliers(data);
     } catch {
       // Manejado por interceptor global
@@ -118,34 +127,56 @@ export default function SuppliersPage() {
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
-
     if (!AuthService.isAuthenticated()) {
       router.replace("/login");
       return;
     }
+    void loadSuppliers();
+  }, [router, loadSuppliers]);
 
-    PurchasingClientService.getSuppliers()
-      .then((data) => {
-        if (isMounted) setSuppliers(data);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (isMounted) setLoading(false);
-      });
-
-    return () => {
-      isMounted = false;
+  // Métricas KPI y contadores
+  const metrics = useMemo(() => {
+    let activeCount = 0;
+    let inactiveCount = 0;
+    suppliers.forEach((s) => {
+      if (s.isActive !== false) activeCount++;
+      else inactiveCount++;
+    });
+    return {
+      total: suppliers.length,
+      activeCount,
+      inactiveCount,
     };
-  }, [router]);
+  }, [suppliers]);
 
-  const filteredSuppliers = suppliers.filter((s) => {
-    const term = debouncedSearch.toLowerCase().trim();
-    const rif = (s.rifOrId || s.rif || "").toLowerCase();
-    const name = s.name.toLowerCase();
-    const contact = (s.contactName || "").toLowerCase();
-    return rif.includes(term) || name.includes(term) || contact.includes(term);
-  });
+  // Filtrado reactivo en memoria
+  const filteredSuppliers = useMemo(() => {
+    return suppliers.filter((s) => {
+      const isSupActive = s.isActive !== false;
+      if (activeTab === "activos" && !isSupActive) return false;
+      if (activeTab === "inactivos" && isSupActive) return false;
+
+      if (search.trim()) {
+        const term = search.toLowerCase().trim();
+        const rif = (s.rifOrId || s.rif || "").toLowerCase();
+        const name = s.name.toLowerCase();
+        const contact = (s.contactName || "").toLowerCase();
+        const phone = (s.phone || "").toLowerCase();
+        const email = (s.email || "").toLowerCase();
+        if (
+          !rif.includes(term) &&
+          !name.includes(term) &&
+          !contact.includes(term) &&
+          !phone.includes(term) &&
+          !email.includes(term)
+        ) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [suppliers, activeTab, search]);
 
   // Paginación
   const pagination = usePagination(filteredSuppliers, { initialPageSize: 10 });
@@ -153,7 +184,7 @@ export default function SuppliersPage() {
 
   useEffect(() => {
     resetPage();
-  }, [debouncedSearch, resetPage]);
+  }, [activeTab, search, resetPage]);
 
   const handleCreateSupplier = async (e: FormEvent) => {
     e.preventDefault();
@@ -170,11 +201,7 @@ export default function SuppliersPage() {
         address: createForm.address.trim() || undefined,
       });
 
-      setCreateFeedback({
-        status: "success",
-        message: "Proveedor registrado exitosamente.",
-      });
-
+      toast.success(`Proveedor "${createForm.name.trim()}" registrado correctamente.`);
       setCreateForm({
         rifOrId: "",
         name: "",
@@ -183,13 +210,9 @@ export default function SuppliersPage() {
         email: "",
         address: "",
       });
-
+      setIsCreateModalOpen(false);
+      setCreateFeedback(null);
       await loadSuppliers();
-
-      setTimeout(() => {
-        setIsCreateModalOpen(false);
-        setCreateFeedback(null);
-      }, 1200);
     } catch (err: unknown) {
       setCreateFeedback({
         status: "error",
@@ -234,17 +257,10 @@ export default function SuppliersPage() {
         isActive: editForm.isActive,
       });
 
-      setEditFeedback({
-        status: "success",
-        message: "Proveedor actualizado exitosamente.",
-      });
-
+      toast.success(`Proveedor "${editForm.name.trim()}" actualizado correctamente.`);
+      setEditingSupplier(null);
+      setEditFeedback(null);
       await loadSuppliers();
-
-      setTimeout(() => {
-        setEditingSupplier(null);
-        setEditFeedback(null);
-      }, 1000);
     } catch (err: unknown) {
       setEditFeedback({
         status: "error",
@@ -280,7 +296,7 @@ export default function SuppliersPage() {
       setTimeout(() => {
         setDeletingSupplier(null);
         setDeleteFeedback(null);
-      }, 1200);
+      }, 1000);
     } catch (err: unknown) {
       setDeleteFeedback({
         status: "error",
@@ -296,197 +312,333 @@ export default function SuppliersPage() {
 
   return (
     <div className="space-y-6">
-      {/* Encabezado */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* ========================================================
+          ENCABEZADO ESTANDARIZADO
+         ======================================================== */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <Building2 className="w-6 h-6 text-primary" />
-            Directorio de Proveedores Comerciales
+            Proveedores
           </h1>
           <p className="text-xs text-muted-foreground">
-            Registro, actualización y gestión técnica de proveedores y casas comerciales
+            Gestión del catálogo de proveedores y casas comerciales
           </p>
         </div>
 
-        <Button
-          onClick={() => {
-            setIsCreateModalOpen(true);
-            setCreateFeedback(null);
-          }}
-          className="gap-2 self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          Registrar Proveedor
-        </Button>
+        <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-auto">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void loadSuppliers()}
+            disabled={loading}
+            className="h-9 gap-1.5 text-xs cursor-pointer shadow-2xs"
+            title="Actualizar listado de proveedores"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
+            <span>Actualizar</span>
+          </Button>
+
+          <Button
+            type="button"
+            onClick={() => {
+              setIsCreateModalOpen(true);
+              setCreateFeedback(null);
+            }}
+            className="h-9 gap-1.5 text-xs font-bold shadow-2xs cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Registrar Proveedor</span>
+          </Button>
+        </div>
       </div>
 
-      {/* Barra de Filtros */}
-      <Card>
-        <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2 flex-1">
-            <div className="relative w-full sm:w-80">
-              <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="Buscar por RIF, Razón Social o Contacto..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 pr-8 text-xs h-9"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch("")}
-                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground cursor-pointer"
-                  title="Borrar búsqueda"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+      {/* ========================================================
+          3 TARJETAS KPI ESTANDARIZADAS
+         ======================================================== */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card className="p-4 border-border shadow-2xs hover:border-primary/40 transition-all flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              Total Proveedores
+            </span>
+            <div className="text-2xl font-bold font-mono text-foreground">
+              {metrics.total}
             </div>
+            <span className="text-[11px] text-muted-foreground block">
+              Registrados en catálogo
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+            <Building2 className="w-5 h-5" />
+          </div>
+        </Card>
 
+        <Card className="p-4 border-border shadow-2xs hover:border-emerald-500/40 transition-all flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              Activos
+            </span>
+            <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
+              {metrics.activeCount}
+            </div>
+            <span className="text-[11px] text-muted-foreground block">
+              Habilitados para compras
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+        </Card>
+
+        <Card className="p-4 border-border shadow-2xs hover:border-slate-500/40 transition-all flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              Inactivos
+            </span>
+            <div className="text-2xl font-bold font-mono text-slate-600 dark:text-slate-300">
+              {metrics.inactiveCount}
+            </div>
+            <span className="text-[11px] text-muted-foreground block">
+              Desactivados temporalmente
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-slate-500/10 border border-slate-500/20 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
+            <Ban className="w-5 h-5" />
+          </div>
+        </Card>
+      </div>
+
+      {/* ========================================================
+          PESTAÑAS Y BUSCADOR
+         ======================================================== */}
+      <Card className="p-4 border-border shadow-2xs space-y-3.5">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-border text-xs">
+          <button
+            type="button"
+            onClick={() => setActiveTab("todos")}
+            className={cn(
+              "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
+              activeTab === "todos"
+                ? "bg-primary text-primary-foreground shadow-2xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <span>Todos</span>
+            <Badge
+              variant={activeTab === "todos" ? "secondary" : "outline"}
+              className="text-[10px] px-1.5 py-0 font-mono"
+            >
+              {metrics.total}
+            </Badge>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("activos")}
+            className={cn(
+              "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
+              activeTab === "activos"
+                ? "bg-emerald-600 text-white shadow-2xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <span>Activos</span>
+            <Badge
+              variant={activeTab === "activos" ? "secondary" : "outline"}
+              className="text-[10px] px-1.5 py-0 font-mono"
+            >
+              {metrics.activeCount}
+            </Badge>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("inactivos")}
+            className={cn(
+              "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
+              activeTab === "inactivos"
+                ? "bg-slate-600 text-white shadow-2xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <span>Inactivos</span>
+            <Badge
+              variant={activeTab === "inactivos" ? "secondary" : "outline"}
+              className="text-[10px] px-1.5 py-0 font-mono"
+            >
+              {metrics.inactiveCount}
+            </Badge>
+          </button>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Buscar por RIF, razón social, contacto, teléfono o correo..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 pr-8 text-xs h-9 bg-background"
+            />
             {search && (
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
+                type="button"
                 onClick={() => setSearch("")}
-                className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-9 cursor-pointer"
-                title="Limpiar filtros"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                title="Borrar búsqueda"
               >
                 <X className="w-3.5 h-3.5" />
-                <span>Limpiar filtros</span>
-              </Button>
+              </button>
             )}
           </div>
 
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => void loadSuppliers()}
-            title="Actualizar listado"
-            className="cursor-pointer"
-          >
-            <RefreshCw
-              className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
-            />
-          </Button>
-        </CardContent>
+          {search && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setSearch("")}
+              className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-9 cursor-pointer"
+              title="Limpiar búsqueda"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Limpiar</span>
+            </Button>
+          )}
+        </div>
       </Card>
 
-      {/* Tabla de Proveedores */}
-      <Card className="overflow-hidden">
+      {/* ========================================================
+          TABLA DE PROVEEDORES
+         ======================================================== */}
+      <Card className="overflow-hidden border-border shadow-2xs">
         <div className="overflow-x-auto">
           <Table>
-            <TableHeader className="bg-muted/50">
-              <TableRow>
-                <TableHead className="py-3 px-4">RIF / ID Fiscal</TableHead>
-                <TableHead className="py-3 px-4">Razón Social</TableHead>
-                <TableHead className="py-3 px-4">Contacto Directo</TableHead>
-                <TableHead className="py-3 px-4">Teléfono</TableHead>
-                <TableHead className="py-3 px-4">Correo Electrónico</TableHead>
-                <TableHead className="py-3 px-4">Dirección</TableHead>
-                <TableHead className="py-3 px-4 text-center">Estado</TableHead>
-                <TableHead className="py-3 px-4 text-center">Acciones</TableHead>
+            <TableHeader>
+              <TableRow className="bg-muted/30">
+                <TableHead className="py-3 px-4 font-semibold text-xs">RIF</TableHead>
+                <TableHead className="py-3 px-4 font-semibold text-xs">Razón Social</TableHead>
+                <TableHead className="py-3 px-4 font-semibold text-xs">Contacto</TableHead>
+                <TableHead className="py-3 px-4 font-semibold text-xs">Teléfono</TableHead>
+                <TableHead className="py-3 px-4 font-semibold text-xs">Correo</TableHead>
+                <TableHead className="py-3 px-4 text-center font-semibold text-xs">Estado</TableHead>
+                <TableHead className="py-3 px-4 text-center font-semibold text-xs">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
-                    Cargando directorio de proveedores...
+                  <TableCell colSpan={7} className="py-12 text-center text-muted-foreground text-xs">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto text-primary mb-2" />
+                    Cargando proveedores...
                   </TableCell>
                 </TableRow>
               ) : filteredSuppliers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-12 text-center text-muted-foreground text-xs">
                     No se encontraron proveedores registrados.
                   </TableCell>
                 </TableRow>
               ) : (
-                pagination.paginatedItems.map((sup) => (
-                  <TableRow
-                    key={sup.id}
-                    className="hover:bg-muted/50 transition-colors"
-                  >
-                    <TableCell className="py-3 px-4 font-mono font-bold text-foreground whitespace-nowrap">
-                      {sup.rifOrId || sup.rif || "-"}
-                    </TableCell>
-                    <TableCell className="py-3 px-4 font-semibold text-foreground">
-                      <button
-                        onClick={() => router.push(`/purchasing/suppliers/${sup.id}`)}
-                        className="text-left hover:text-primary hover:underline cursor-pointer"
-                      >
-                        {sup.name}
-                      </button>
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-muted-foreground whitespace-nowrap">
-                      <span className="flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                        {sup.contactName || "-"}
-                      </span>
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-muted-foreground whitespace-nowrap">
-                      <span className="flex items-center gap-1.5">
-                        <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                        {sup.phone || "-"}
-                      </span>
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-muted-foreground">
-                      <span className="flex items-center gap-1.5">
-                        <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                        {sup.email || "-"}
-                      </span>
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-muted-foreground max-w-xs truncate">
-                      <span
-                        className="flex items-center gap-1.5"
-                        title={sup.address || ""}
-                      >
-                        <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                        {sup.address || "-"}
-                      </span>
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-center whitespace-nowrap">
-                      <Badge variant={sup.isActive !== false ? "success" : "secondary"}>
-                        {sup.isActive !== false ? "Activo" : "Inactivo"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-center whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => router.push(`/purchasing/suppliers/${sup.id}`)}
-                          className="h-8 w-8 text-muted-foreground hover:text-primary"
-                          title="Ver Ficha Técnica y Órdenes"
+                pagination.paginatedItems.map((sup) => {
+                  const isSupActive = sup.isActive !== false;
+                  return (
+                    <TableRow
+                      key={sup.id}
+                      className="hover:bg-muted/40 transition-colors text-xs"
+                    >
+                      <TableCell className="py-3 px-4 font-mono font-bold text-foreground whitespace-nowrap">
+                        {sup.rifOrId || sup.rif || "-"}
+                      </TableCell>
+                      <TableCell className="py-3 px-4">
+                        <Link
+                          href={`/purchasing/suppliers/${sup.id}`}
+                          className="font-semibold text-foreground hover:text-primary hover:underline block"
                         >
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleOpenEditModal(sup)}
-                          className="h-8 w-8 text-muted-foreground hover:text-amber-600"
-                          title="Editar Proveedor"
+                          {sup.name}
+                        </Link>
+                        {sup.address && (
+                          <div
+                            className="text-[11px] text-muted-foreground truncate max-w-xs"
+                            title={sup.address}
+                          >
+                            {sup.address}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-3 px-4 text-muted-foreground whitespace-nowrap">
+                        <span className="flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          {sup.contactName || "-"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="py-3 px-4 text-muted-foreground font-mono whitespace-nowrap">
+                        <span className="flex items-center gap-1.5">
+                          <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          {sup.phone || "-"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="py-3 px-4 text-muted-foreground">
+                        <span className="flex items-center gap-1.5">
+                          <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          {sup.email || "-"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="py-3 px-4 text-center whitespace-nowrap">
+                        <Badge
+                          variant={isSupActive ? "success" : "secondary"}
+                          className={cn(
+                            "text-[11px]",
+                            isSupActive
+                              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20"
+                              : "bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/20"
+                          )}
                         >
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        {isAdmin && (
+                          {isSupActive ? "Activo" : "Inactivo"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="py-3 px-4 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs font-semibold gap-1 cursor-pointer"
+                            title="Ver ficha técnica y órdenes"
+                          >
+                            <Link href={`/purchasing/suppliers/${sup.id}`}>
+                              <Eye className="w-3.5 h-3.5" />
+                              Ver
+                            </Link>
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleOpenDeleteModal(sup)}
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                            title="Eliminar Proveedor (Admin)"
+                            onClick={() => handleOpenEditModal(sup)}
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground cursor-pointer"
+                            title="Editar proveedor"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Pencil className="w-3.5 h-3.5" />
                           </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
+                          {isAdmin && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDeleteModal(sup)}
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                              title="Eliminar proveedor"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -505,141 +657,166 @@ export default function SuppliersPage() {
 
       {/* Modal: Registrar Proveedor */}
       <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <div className="flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-primary" />
-              <DialogTitle className="text-base font-bold text-foreground">
-                Registrar Nuevo Proveedor
-              </DialogTitle>
+        <DialogContent className="sm:max-w-lg p-0 overflow-hidden gap-0">
+          <DialogHeader className="p-5 border-b border-border bg-muted/30">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                <Building2 className="w-4 h-4" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-foreground">
+                  Registrar Proveedor
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  Agregue un nuevo proveedor al catálogo de compras
+                </DialogDescription>
+              </div>
             </div>
           </DialogHeader>
 
-          {createFeedback && (
-            <Alert
-              variant={createFeedback.status === "success" ? "default" : "destructive"}
-              className={createFeedback.status === "success" ? "border-emerald-300 bg-emerald-50 text-emerald-900" : ""}
-            >
-              {createFeedback.status === "success" ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              ) : (
-                <AlertCircle className="w-4 h-4" />
+          <form onSubmit={handleCreateSupplier}>
+            <div className="p-5 space-y-4">
+              {createFeedback && (
+                <Alert variant={createFeedback.status === "success" ? "success" : "destructive"}>
+                  {createFeedback.status === "success" ? (
+                    <CheckCircle2 className="w-4 h-4" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4" />
+                  )}
+                  <AlertDescription className="text-xs">{createFeedback.message}</AlertDescription>
+                </Alert>
               )}
-              <AlertDescription>{createFeedback.message}</AlertDescription>
-            </Alert>
-          )}
 
-          <form onSubmit={handleCreateSupplier} className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-1 space-y-1.5">
-                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
-                  RIF / ID Fiscal *
-                </Label>
-                <Input
-                  type="text"
-                  value={createForm.rifOrId}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, rifOrId: e.target.value })
-                  }
-                  placeholder="J-12345678-9"
-                  className="font-mono"
-                  required
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-1 space-y-1.5">
+                  <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    RIF / ID *
+                  </Label>
+                  <Input
+                    type="text"
+                    value={createForm.rifOrId}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, rifOrId: e.target.value })
+                    }
+                    placeholder="J-12345678-9"
+                    className="font-mono text-xs h-9"
+                    required
+                  />
+                </div>
+
+                <div className="sm:col-span-2 space-y-1.5">
+                  <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Razón Social *
+                  </Label>
+                  <Input
+                    type="text"
+                    value={createForm.name}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, name: e.target.value })
+                    }
+                    placeholder="Nombre comercial o empresa"
+                    className="text-xs h-9"
+                    required
+                  />
+                </div>
               </div>
 
-              <div className="col-span-2 space-y-1.5">
-                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
-                  Razón Social *
-                </Label>
-                <Input
-                  type="text"
-                  value={createForm.name}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, name: e.target.value })
-                  }
-                  placeholder="Nombre comercial o empresa"
-                  required
-                />
-              </div>
-            </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Contacto
+                  </Label>
+                  <div className="relative">
+                    <User className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      value={createForm.contactName}
+                      onChange={(e) =>
+                        setCreateForm({
+                          ...createForm,
+                          contactName: e.target.value,
+                        })
+                      }
+                      placeholder="Representante de ventas"
+                      className="pl-8 text-xs h-9"
+                    />
+                  </div>
+                </div>
 
-            <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Teléfono
+                  </Label>
+                  <div className="relative">
+                    <Phone className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      value={createForm.phone}
+                      onChange={(e) =>
+                        setCreateForm({ ...createForm, phone: e.target.value })
+                      }
+                      placeholder="0212-0000000 / 0414-..."
+                      className="pl-8 text-xs h-9 font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
-                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
-                  Persona de Contacto
+                <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Correo Electrónico
                 </Label>
-                <Input
-                  type="text"
-                  value={createForm.contactName}
-                  onChange={(e) =>
-                    setCreateForm({
-                      ...createForm,
-                      contactName: e.target.value,
-                    })
-                  }
-                  placeholder="Representante de ventas"
-                />
+                <div className="relative">
+                  <Mail className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="email"
+                    value={createForm.email}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, email: e.target.value })
+                    }
+                    placeholder="ventas@proveedor.com"
+                    className="pl-8 text-xs h-9"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1.5">
-                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
-                  Teléfono
+                <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <MapPin className="w-3 h-3" />
+                  Dirección Fiscal o Almacén
                 </Label>
-                <Input
-                  type="text"
-                  value={createForm.phone}
+                <Textarea
+                  rows={2}
+                  value={createForm.address}
                   onChange={(e) =>
-                    setCreateForm({ ...createForm, phone: e.target.value })
+                    setCreateForm({ ...createForm, address: e.target.value })
                   }
-                  placeholder="0212-0000000 / 0414-..."
+                  placeholder="Ubicación física o ciudad..."
+                  className="resize-none text-xs"
                 />
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
-                Correo Electrónico
-              </Label>
-              <Input
-                type="email"
-                value={createForm.email}
-                onChange={(e) =>
-                  setCreateForm({ ...createForm, email: e.target.value })
-                }
-                placeholder="ventas@proveedor.com"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
-                Dirección Fiscal o Almacén
-              </Label>
-              <Textarea
-                rows={2}
-                value={createForm.address}
-                onChange={(e) =>
-                  setCreateForm({ ...createForm, address: e.target.value })
-                }
-                placeholder="Ubicación física o ciudad..."
-                className="resize-none"
-              />
-            </div>
-
-            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
+            <DialogFooter className="px-5 py-3.5 border-t border-border bg-muted/20 gap-2">
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 onClick={() => setIsCreateModalOpen(false)}
+                className="h-9 text-xs cursor-pointer"
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
+                size="sm"
                 disabled={createSubmitting}
-                className="gap-2"
+                className="h-9 text-xs font-semibold gap-1.5 cursor-pointer"
               >
-                {createSubmitting && (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                {createSubmitting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Plus className="w-3.5 h-3.5" />
                 )}
                 {createSubmitting ? "Guardando..." : "Guardar Proveedor"}
               </Button>
@@ -655,163 +832,217 @@ export default function SuppliersPage() {
           if (!open) setEditingSupplier(null);
         }}
       >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <div className="flex items-center gap-2">
-              <Pencil className="w-5 h-5 text-amber-600" />
-              <DialogTitle className="text-base font-bold text-foreground">
-                Editar Proveedor Comercial
-              </DialogTitle>
+        <DialogContent className="sm:max-w-lg p-0 overflow-hidden gap-0">
+          <DialogHeader className="p-5 border-b border-border bg-muted/30">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                <Pencil className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <DialogTitle className="text-base font-bold text-foreground truncate">
+                  Editar Proveedor
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground font-mono truncate">
+                  {editingSupplier?.name}
+                  {(editingSupplier?.rifOrId || editingSupplier?.rif) &&
+                    ` · ${editingSupplier?.rifOrId || editingSupplier?.rif}`}
+                </DialogDescription>
+              </div>
             </div>
           </DialogHeader>
 
-          {editFeedback && (
-            <Alert
-              variant={editFeedback.status === "success" ? "default" : "destructive"}
-              className={editFeedback.status === "success" ? "border-emerald-300 bg-emerald-50 text-emerald-900" : ""}
-            >
-              {editFeedback.status === "success" ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              ) : (
-                <AlertCircle className="w-4 h-4" />
+          <form onSubmit={handleUpdateSupplier}>
+            <div className="p-5 space-y-4">
+              {editFeedback && (
+                <Alert variant={editFeedback.status === "success" ? "success" : "destructive"}>
+                  {editFeedback.status === "success" ? (
+                    <CheckCircle2 className="w-4 h-4" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4" />
+                  )}
+                  <AlertDescription className="text-xs">{editFeedback.message}</AlertDescription>
+                </Alert>
               )}
-              <AlertDescription>{editFeedback.message}</AlertDescription>
-            </Alert>
-          )}
 
-          <form onSubmit={handleUpdateSupplier} className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-1 space-y-1.5">
-                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
-                  RIF / ID Fiscal *
-                </Label>
-                <Input
-                  type="text"
-                  value={editForm.rifOrId}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, rifOrId: e.target.value })
-                  }
-                  placeholder="J-12345678-9"
-                  className="font-mono"
-                  required
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-1 space-y-1.5">
+                  <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    RIF / ID *
+                  </Label>
+                  <Input
+                    type="text"
+                    value={editForm.rifOrId}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, rifOrId: e.target.value })
+                    }
+                    placeholder="J-12345678-9"
+                    className="font-mono text-xs h-9"
+                    required
+                  />
+                </div>
+
+                <div className="sm:col-span-2 space-y-1.5">
+                  <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Razón Social *
+                  </Label>
+                  <Input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, name: e.target.value })
+                    }
+                    placeholder="Nombre comercial o empresa"
+                    className="text-xs h-9"
+                    required
+                  />
+                </div>
               </div>
 
-              <div className="col-span-2 space-y-1.5">
-                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
-                  Razón Social *
-                </Label>
-                <Input
-                  type="text"
-                  value={editForm.name}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, name: e.target.value })
-                  }
-                  placeholder="Nombre comercial o empresa"
-                  required
-                />
-              </div>
-            </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Contacto
+                  </Label>
+                  <div className="relative">
+                    <User className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      value={editForm.contactName}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, contactName: e.target.value })
+                      }
+                      placeholder="Representante"
+                      className="pl-8 text-xs h-9"
+                    />
+                  </div>
+                </div>
 
-            <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Teléfono
+                  </Label>
+                  <div className="relative">
+                    <Phone className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      value={editForm.phone}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, phone: e.target.value })
+                      }
+                      placeholder="0212-... / 0414-..."
+                      className="pl-8 text-xs h-9 font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
-                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
-                  Persona de Contacto
+                <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Correo Electrónico
                 </Label>
-                <Input
-                  type="text"
-                  value={editForm.contactName}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, contactName: e.target.value })
-                  }
-                  placeholder="Representante"
-                />
+                <div className="relative">
+                  <Mail className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, email: e.target.value })
+                    }
+                    placeholder="contacto@proveedor.com"
+                    className="pl-8 text-xs h-9"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1.5">
-                <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
-                  Teléfono
+                <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <MapPin className="w-3 h-3" />
+                  Dirección Fiscal o Almacén
                 </Label>
-                <Input
-                  type="text"
-                  value={editForm.phone}
+                <Textarea
+                  rows={2}
+                  value={editForm.address}
                   onChange={(e) =>
-                    setEditForm({ ...editForm, phone: e.target.value })
+                    setEditForm({ ...editForm, address: e.target.value })
                   }
-                  placeholder="0212-... / 0414-..."
+                  placeholder="Ubicación..."
+                  className="resize-none text-xs"
                 />
+              </div>
+
+              {/* Tarjeta interactiva de Estado Activo / Inactivo */}
+              <div
+                className={cn(
+                  "rounded-xl border p-3.5 flex items-center justify-between gap-3 transition-colors",
+                  editForm.isActive
+                    ? "bg-emerald-500/5 border-emerald-500/20"
+                    : "bg-muted/30 border-border"
+                )}
+              >
+                <div className="flex items-start gap-2.5">
+                  <Checkbox
+                    id="edit-supplier-active"
+                    checked={editForm.isActive}
+                    onCheckedChange={(checked) =>
+                      setEditForm({ ...editForm, isActive: checked === true })
+                    }
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-0.5">
+                    <Label
+                      htmlFor="edit-supplier-active"
+                      className="text-xs font-semibold text-foreground cursor-pointer block"
+                    >
+                      Proveedor habilitado para compras
+                    </Label>
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      Desactívelo para ocultarlo en nuevas órdenes sin perder su historial.
+                    </p>
+                  </div>
+                </div>
+                <Badge
+                  variant={editForm.isActive ? "success" : "secondary"}
+                  className={cn(
+                    "text-[11px] shrink-0",
+                    editForm.isActive
+                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20"
+                      : "bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/20"
+                  )}
+                >
+                  {editForm.isActive ? "Activo" : "Inactivo"}
+                </Badge>
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
-                Correo Electrónico
-              </Label>
-              <Input
-                type="email"
-                value={editForm.email}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, email: e.target.value })
-                }
-                placeholder="contacto@proveedor.com"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
-                Dirección Fiscal o Almacén
-              </Label>
-              <Textarea
-                rows={2}
-                value={editForm.address}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, address: e.target.value })
-                }
-                placeholder="Ubicación..."
-                className="resize-none"
-              />
-            </div>
-
-            {/* Toggle de Estado Activo/Inactivo */}
-            <div className="pt-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <Checkbox
-                  checked={editForm.isActive}
-                  onCheckedChange={(checked) =>
-                    setEditForm({ ...editForm, isActive: checked === true })
-                  }
-                />
-                <span className="text-xs font-medium text-foreground">
-                  Proveedor Activo en el Catálogo de Compras
-                </span>
-              </label>
-              <p className="text-[11px] text-muted-foreground pl-6">
-                Si un proveedor tiene órdenes en el historial y no puede eliminarse, puede desactivarlo para que no aparezca en nuevas órdenes.
-              </p>
-            </div>
-
-            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
+            <DialogFooter className="px-5 py-3.5 border-t border-border bg-muted/20 gap-2">
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 onClick={() => setEditingSupplier(null)}
+                className="h-9 text-xs cursor-pointer"
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
+                size="sm"
                 disabled={editSubmitting}
-                className="gap-2"
+                className="h-9 text-xs font-semibold gap-1.5 cursor-pointer"
               >
-                {editSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {editSubmitting ? "Guardando Cambios..." : "Actualizar Proveedor"}
+                {editSubmitting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Save className="w-3.5 h-3.5" />
+                )}
+                {editSubmitting ? "Guardando..." : "Guardar Cambios"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Modal: Confirmación de Eliminación (Protección Referencial) */}
+      {/* Modal: Confirmación de Eliminación */}
       <Dialog
         open={Boolean(deletingSupplier)}
         onOpenChange={(open) => {
@@ -822,14 +1053,14 @@ export default function SuppliersPage() {
           <DialogHeader>
             <div className="flex items-center gap-3">
               <div className="p-2 bg-destructive/10 text-destructive rounded-xl">
-                <AlertTriangle className="w-6 h-6" />
+                <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
                 <DialogTitle className="text-base font-bold text-foreground">
                   Eliminar Proveedor
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground">
-                  Confirmación con verificación de integridad referencial
+                  Verificación de integridad referencial
                 </DialogDescription>
               </div>
             </div>
@@ -837,7 +1068,7 @@ export default function SuppliersPage() {
 
           <div className="text-xs text-muted-foreground space-y-3">
             <p>
-              ¿Está seguro de que desea eliminar permanentemente al proveedor{" "}
+              ¿Está seguro de eliminar permanentemente al proveedor{" "}
               <strong className="text-foreground">
                 {deletingSupplier?.name}
               </strong>{" "}
@@ -847,23 +1078,22 @@ export default function SuppliersPage() {
               </span>
               )?
             </p>
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] leading-relaxed">
-              <strong>Aviso de Seguridad Institucional:</strong> El sistema verificará que este proveedor no posea Órdenes de Compra en el historial. Si existen órdenes registradas, la eliminación será rechazada por seguridad documental.
+            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-800 dark:text-amber-300 text-[11px] leading-relaxed">
+              <strong>Aviso:</strong> Si el proveedor tiene Órdenes de Compra registradas, la eliminación será rechazada y deberá inactivarlo.
             </div>
           </div>
 
           {deleteFeedback && (
-            <Alert
-              variant={deleteFeedback.status === "success" ? "default" : "destructive"}
-              className={deleteFeedback.status === "success" ? "border-emerald-300 bg-emerald-50 text-emerald-900" : ""}
-            >
+            <Alert variant={deleteFeedback.status === "success" ? "success" : "destructive"}>
               {deleteFeedback.status === "success" ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
               ) : (
                 <AlertCircle className="w-4 h-4 shrink-0" />
               )}
               <div className="space-y-1">
-                <AlertDescription className="font-semibold">{deleteFeedback.message}</AlertDescription>
+                <AlertDescription className="text-xs font-semibold">
+                  {deleteFeedback.message}
+                </AlertDescription>
                 {deleteFeedback.status === "error" && (
                   <button
                     type="button"
@@ -881,23 +1111,26 @@ export default function SuppliersPage() {
             </Alert>
           )}
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
+          <DialogFooter className="gap-2 pt-2 border-t border-border">
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={() => setDeletingSupplier(null)}
               disabled={deleteSubmitting}
+              className="cursor-pointer"
             >
               Cancelar
             </Button>
             <Button
               type="button"
               variant="destructive"
+              size="sm"
               onClick={handleDeleteSupplier}
               disabled={deleteSubmitting}
-              className="gap-2"
+              className="gap-2 cursor-pointer"
             >
-              {deleteSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {deleteSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {deleteSubmitting ? "Verificando..." : "Confirmar Eliminación"}
             </Button>
           </DialogFooter>

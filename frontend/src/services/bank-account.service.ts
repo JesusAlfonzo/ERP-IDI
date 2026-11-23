@@ -52,8 +52,12 @@ export interface RegisterOrderPaymentPayload {
 
 export interface CreateDirectPaymentPayload {
   concept: string;
-  beneficiary: string;
-  method: "TRANSFERENCIA" | "PAGO_MOVIL" | "EFECTIVO" | "ZELLE" | string;
+  beneficiary?: string;
+  supplierId?: number | null;
+  departmentId?: number | null;
+  estimatedDate?: string | null;
+  supportUrl?: string | null;
+  method?: "TRANSFERENCIA" | "PAGO_MOVIL" | "EFECTIVO" | "ZELLE" | string;
   sourceAccountId?: number | null;
   destinationAccount?: string | null;
   referenceNumber?: string | null;
@@ -63,6 +67,23 @@ export interface CreateDirectPaymentPayload {
   exchangeRate?: number | null;
   notes?: string | null;
   receiptImageUrl?: string | null;
+  reviewedBy?: string | null;
+  authorizedBy?: string | null;
+  approvedBy?: string | null;
+  immediateSettlement?: boolean;
+}
+
+export interface RegisterServicePaymentPayload {
+  method: "TRANSFERENCIA" | "PAGO_MOVIL" | "EFECTIVO" | "ZELLE" | string;
+  sourceAccountId?: number | null;
+  destinationAccount?: string | null;
+  referenceNumber: string;
+  paymentDate?: string;
+  amountPaid?: number;
+  transactionCurrency?: "USD" | "EUR" | "VED" | string;
+  exchangeRate?: number | null;
+  receiptImageUrl?: string | null;
+  notes?: string | null;
   reviewedBy?: string | null;
   authorizedBy?: string | null;
   approvedBy?: string | null;
@@ -204,9 +225,12 @@ export const BankAccountService = {
     return res.data?.data;
   },
 
-  // Egresos / Pagos Directos sin Orden de Compra previa
+  // Órdenes de Servicio (antes Pagos Directos)
   getDirectPayments: async (params?: {
     search?: string;
+    status?: string;
+    departmentId?: number | string;
+    supplierId?: number | string;
     method?: string;
     currency?: string;
     startDate?: string;
@@ -246,6 +270,68 @@ export const BankAccountService = {
     const res = await apiClient.post<{ status: string; data: DirectPayment }>(
       "/financial/direct-payments",
       payload
+    );
+    return res.data?.data;
+  },
+
+  submitServiceOrder: async (id: string | number): Promise<DirectPayment> => {
+    const res = await apiClient.post<{ status: string; data: DirectPayment }>(
+      `/financial/direct-payments/${id}/submit`
+    );
+    return res.data?.data;
+  },
+
+  approveServiceOrder: async (
+    id: string | number,
+    notes?: string
+  ): Promise<DirectPayment> => {
+    const res = await apiClient.post<{ status: string; data: DirectPayment }>(
+      `/financial/direct-payments/${id}/approve`,
+      { notes }
+    );
+    return res.data?.data;
+  },
+
+  rejectServiceOrder: async (
+    id: string | number,
+    reason: string
+  ): Promise<DirectPayment> => {
+    const res = await apiClient.post<{ status: string; data: DirectPayment }>(
+      `/financial/direct-payments/${id}/reject`,
+      { reason }
+    );
+    return res.data?.data;
+  },
+
+  generatePaymentOrder: async (
+    id: string | number,
+    notes?: string
+  ): Promise<DirectPayment> => {
+    const res = await apiClient.post<{ status: string; data: DirectPayment }>(
+      `/financial/direct-payments/${id}/payment-order`,
+      { notes }
+    );
+    return res.data?.data;
+  },
+
+  registerServicePayment: async (
+    id: string | number,
+    payload: RegisterServicePaymentPayload
+  ): Promise<DirectPayment> => {
+    const res = await apiClient.post<{ status: string; data: DirectPayment }>(
+      `/financial/direct-payments/${id}/pay`,
+      payload
+    );
+    return res.data?.data;
+  },
+
+  cancelServiceOrder: async (
+    id: string | number,
+    reason?: string
+  ): Promise<DirectPayment> => {
+    const res = await apiClient.post<{ status: string; data: DirectPayment }>(
+      `/financial/direct-payments/${id}/cancel`,
+      { reason }
     );
     return res.data?.data;
   },

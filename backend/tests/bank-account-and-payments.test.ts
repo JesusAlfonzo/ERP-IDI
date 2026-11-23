@@ -290,6 +290,7 @@ describe('Integración FASE 4: Maestro de Cuentas Bancarias y Motor de Pagos Mul
           authorizedBy: 'Lic. Sofía Ramos (Administración)',
           approvedBy: 'Prof. Carlos Delgado (Dirección)',
           notes: 'Servicio ejecutado a satisfacción en cavas de reactivos',
+          immediateSettlement: true,
         });
 
       expect(res.status).toBe(201);

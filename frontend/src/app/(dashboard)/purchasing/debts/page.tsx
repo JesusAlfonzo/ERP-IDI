@@ -1,49 +1,53 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AuthService } from "@/services/auth.service";
 import { useDebounce } from "@/hooks/use-debounce";
 import { usePagination } from "@/hooks/use-pagination";
 import { TablePagination } from "@/components/common/TablePagination";
+import { TreasuryService } from "@/services/treasury.service";
 import { PurchasingClientService } from "@/services/purchasing.service";
-import {
-  BankAccountService,
-  type BankAccountItem,
-} from "@/services/bank-account.service";
-import {
-  InventoryMasterService,
-  type PaymentMethodItem,
-} from "@/services/inventory-master.service";
 import { CurrencyService } from "@/services/currency.service";
+import type {
+  EligiblePaymentSource,
+  EligibleSourcesResponse,
+  PaymentOrder,
+  PaymentOrderStatus,
+} from "@/types/treasury";
 import type { SupplierDebt, SupplierStatement } from "@/types/purchasing";
+import type { AuthUser } from "@/types/auth";
 import {
   UniversalPdfDownloadButton,
   SupplierDebtPdfDocument,
 } from "@/components/pdf";
+import { cn } from "@/lib/utils";
+import { toast } from "@/utils/toast";
 import {
-  AlertCircle,
   Banknote,
   Building2,
   CheckCircle2,
-  Coins,
+  Clock,
+  CreditCard,
   DollarSign,
+  ExternalLink,
   Eye,
-  Landmark,
+  FileCheck2,
+  History,
   Loader2,
-  PlusCircle,
-  Printer,
-  Receipt,
+  Plus,
   RefreshCw,
   Search,
+  ShoppingCart,
   Wallet,
   X,
 } from "lucide-react";
-import { Card, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -56,18 +60,62 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { toast } from "@/utils/toast";
 
-const PAYMENT_METHODS = [
-  ["TRANSFERENCIA", "Transferencia Bancaria"],
-  ["PAGO_MOVIL", "Pago Móvil"],
-  ["EFECTIVO", "Efectivo"],
-  ["ZELLE", "Zelle (USD)"],
-] as const;
+type OperationalTab = "ALL" | "PENDING_APPROVAL" | "PAYABLE" | "PAID" | "SUPPLIERS";
+type SourceFilter = "ALL" | "PURCHASE_ORDER" | "SERVICE_ORDER";
+
+const STATUS_BADGES: Record<
+  PaymentOrderStatus,
+  { label: string; className: string }
+> = {
+  BORRADOR: {
+    label: "Borrador",
+    className:
+      "bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/20",
+  },
+  PENDIENTE_APROBACION: {
+    label: "Por Aprobar",
+    className:
+      "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
+  },
+  APROBADA: {
+    label: "Aprobada",
+    className:
+      "bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/20",
+  },
+  PAGADA_PARCIALMENTE: {
+    label: "Pago Parcial",
+    className:
+      "bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/20",
+  },
+  PAGADA: {
+    label: "Pagada",
+    className:
+      "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20",
+  },
+  RECHAZADA: {
+    label: "Rechazada",
+    className:
+      "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20",
+  },
+  ANULADA: {
+    label: "Anulada",
+    className:
+      "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20",
+  },
+};
+
+function currencySymbol(code?: string): string {
+  const c = (code || "USD").toUpperCase();
+  if (c === "VED" || c === "VES") return "Bs.";
+  if (c === "EUR") return "€";
+  return "$";
+}
 
 function normalizeText(text: string): string {
   return text
@@ -76,1220 +124,1216 @@ function normalizeText(text: string): string {
     .toLowerCase();
 }
 
-export default function SupplierDebtsPage() {
+function getApiError(err: unknown, fallback: string): string {
+  if (err && typeof err === "object" && "response" in err) {
+    const res = (err as { response?: { data?: { message?: string } } }).response;
+    if (res?.data?.message) return res.data.message;
+  }
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+export default function TreasuryPaymentsPage() {
   const router = useRouter();
-  const [, startTransition] = useTransition();
+  const [currentUser] = useState<AuthUser | null>(() =>
+    AuthService.getCurrentUser()
+  );
+  const userRoles = currentUser?.roles || [];
+  const canCreateOp = userRoles.some((r) =>
+    ["ADMINISTRADOR", "COMPRAS", "ADMINISTRACION", "COORDINADOR"].includes(r)
+  );
 
-  // Estados principales
-  const [debts, setDebts] = useState<SupplierDebt[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<BankAccountItem[]>([]);
-  const [paymentMethodsList, setPaymentMethodsList] = useState<PaymentMethodItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Búsqueda inteligente y filtros rápidos
-  const [searchQuery, setSearchQuery] = useState("");
-  const debouncedSearchQuery = useDebounce(searchQuery, 350);
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "PENDING" | "PAID">("ALL");
-
-  // Tasas de cambio oficiales BCV
+  const [paymentOrders, setPaymentOrders] = useState<PaymentOrder[]>([]);
+  const [supplierDebts, setSupplierDebts] = useState<SupplierDebt[]>([]);
   const [bcvRates, setBcvRates] = useState<{ USD: number; EUR: number }>({
     USD: 75.0,
     EUR: 81.5,
   });
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Modal: Estado de Cuenta
-  const [selectedSupplier, setSelectedSupplier] = useState<SupplierDebt | null>(null);
+  // Filtros
+  const [activeTab, setActiveTab] = useState<OperationalTab>("ALL");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearch = useDebounce(searchQuery, 250);
+  const [showFullPaidHistory, setShowFullPaidHistory] = useState(false);
+
+  // Modal: Nueva Orden de Pago
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [loadingSources, setLoadingSources] = useState(false);
+  const [eligibleSources, setEligibleSources] = useState<EligibleSourcesResponse>({
+    purchaseOrders: [],
+    serviceOrders: [],
+  });
+  const [createSourceTab, setCreateSourceTab] = useState<
+    "PURCHASE_ORDER" | "SERVICE_ORDER"
+  >("PURCHASE_ORDER");
+  const [selectedSource, setSelectedSource] =
+    useState<EligiblePaymentSource | null>(null);
+  const [sourceSearch, setSourceSearch] = useState("");
+  const [opNotes, setOpNotes] = useState("");
+  const [creatingOp, setCreatingOp] = useState(false);
+
+  // Modal: Estado de Cuenta por Proveedor (pestaña Saldos por Proveedor)
+  const [selectedSupplier, setSelectedSupplier] = useState<SupplierDebt | null>(
+    null
+  );
   const [statement, setStatement] = useState<SupplierStatement | null>(null);
   const [loadingStatement, setLoadingStatement] = useState(false);
 
-  // Modal: Registrar Pago Unificado
-  const [paymentSupplier, setPaymentSupplier] = useState<SupplierDebt | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<string>("TRANSFERENCIA");
-  const [sourceAccountId, setSourceAccountId] = useState<string>("");
-  const [transactionCurrency, setTransactionCurrency] = useState<"USD" | "VED" | "EUR">("USD");
-  const [amountPaid, setAmountPaid] = useState<string>("");
-  const [exchangeRate, setExchangeRate] = useState<string>("1.0");
-  const [referenceNumber, setReferenceNumber] = useState("");
-  const [paymentDate, setPaymentDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
-  const [notes, setNotes] = useState("");
-  const [reviewedBy, setReviewedBy] = useState("");
-  const [authorizedBy, setAuthorizedBy] = useState("");
-  const [approvedBy, setApprovedBy] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState<{
-    status: "success" | "error";
-    message: string;
-  } | null>(null);
-
-  // Carga inicial y recarga
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setFeedback(null);
+  const fetchAll = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
     try {
-      const [debtsData, accountsData, ratesData, pmData] = await Promise.all([
-        PurchasingClientService.getSupplierDebts(),
-        BankAccountService.getBankAccounts(true),
+      const [ordersData, debtsData, ratesData] = await Promise.all([
+        TreasuryService.getPaymentOrders(),
+        PurchasingClientService.getSupplierDebts().catch(() => []),
         CurrencyService.getCurrentRates().catch(() => null),
-        InventoryMasterService.getPaymentMethods(true).catch(() => []),
       ]);
-
-      setDebts(debtsData);
-      setBankAccounts(accountsData);
-      setPaymentMethodsList(pmData);
-
+      setPaymentOrders(ordersData);
+      setSupplierDebts(debtsData);
       if (ratesData) {
         setBcvRates({
           USD: Number(ratesData.USD || ratesData.rates?.USD || 75.0),
           EUR: Number(ratesData.EUR || ratesData.rates?.EUR || 81.5),
         });
       }
-    } catch (error) {
-      console.error("Error al cargar saldos comerciales:", error);
-      setFeedback({
-        status: "error",
-        message: "No se pudieron consultar las cuentas por pagar.",
-      });
+    } catch (err) {
+      toast.error(getApiError(err, "No se pudo cargar el módulo de Tesorería."));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
+    let ignore = false;
     if (!AuthService.isAuthenticated()) {
       router.replace("/login");
       return;
     }
-    const init = async () => {
-      if (isMounted) await loadData();
-    };
-    void init();
+    void (async () => {
+      try {
+        const [ordersData, debtsData, ratesData] = await Promise.all([
+          TreasuryService.getPaymentOrders(),
+          PurchasingClientService.getSupplierDebts().catch(() => []),
+          CurrencyService.getCurrentRates().catch(() => null),
+        ]);
+        if (ignore) return;
+        setPaymentOrders(ordersData);
+        setSupplierDebts(debtsData);
+        if (ratesData) {
+          setBcvRates({
+            USD: Number(ratesData.USD || ratesData.rates?.USD || 75.0),
+            EUR: Number(ratesData.EUR || ratesData.rates?.EUR || 81.5),
+          });
+        }
+      } catch (err) {
+        if (!ignore) {
+          toast.error(
+            getApiError(err, "No se pudo cargar el módulo de Tesorería.")
+          );
+        }
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    })();
     return () => {
-      isMounted = false;
+      ignore = true;
     };
-  }, [router, loadData]);
+  }, [router]);
 
-  // Manejar cambio de moneda y sugerencia de tasa
-  const handleCurrencyChange = (curr: "USD" | "VED" | "EUR") => {
-    setTransactionCurrency(curr);
-    if (curr === "VED") {
-      setExchangeRate(bcvRates.USD.toString());
-    } else if (curr === "EUR") {
-      setExchangeRate(bcvRates.EUR.toString());
-    } else {
-      setExchangeRate("1.0");
+  const openCreateModal = async () => {
+    setCreateModalOpen(true);
+    setSelectedSource(null);
+    setSourceSearch("");
+    setOpNotes("");
+    setLoadingSources(true);
+    try {
+      const data = await TreasuryService.getEligibleSources();
+      setEligibleSources(data);
+      if (data.purchaseOrders.length === 0 && data.serviceOrders.length > 0) {
+        setCreateSourceTab("SERVICE_ORDER");
+      } else {
+        setCreateSourceTab("PURCHASE_ORDER");
+      }
+    } catch (err) {
+      toast.error(
+        getApiError(err, "Error al consultar órdenes pendientes por pagar.")
+      );
+    } finally {
+      setLoadingSources(false);
     }
   };
 
-  // Abrir modal de pago inicializando formulario
-  const handleOpenPaymentModal = (debt: SupplierDebt) => {
-    setPaymentSupplier(debt);
-    setPaymentMethod("TRANSFERENCIA");
-    setSourceAccountId("");
-    const defaultCurr: "VED" | "USD" = ((debt.balanceBs || 0) > 0.01 && (!debt.balanceUsd || debt.balanceUsd <= 0.01)) ? "VED" : "USD";
-    setTransactionCurrency(defaultCurr);
-    setAmountPaid("");
-    setExchangeRate(defaultCurr === "VED" ? bcvRates.USD.toString() : "1.0");
-    setReferenceNumber("");
-    setPaymentDate(new Date().toISOString().split("T")[0]);
-    setNotes("");
-    setReviewedBy("");
-    setAuthorizedBy("");
-    setApprovedBy("");
-    setFeedback(null);
-  };
-
-  // Cálculos dinámicos de equivalencia en el modal de pago
-  const parsedAmount = parseFloat(amountPaid) || 0;
-  const parsedRate = parseFloat(exchangeRate) || 1;
-
-  let dynamicEquivalentUsd = parsedAmount;
-  let dynamicEquivalentBs = parsedAmount;
-
-  if (transactionCurrency === "USD") {
-    dynamicEquivalentUsd = parsedAmount;
-    dynamicEquivalentBs = parsedAmount * (parsedRate > 1 ? parsedRate : bcvRates.USD);
-  } else if (transactionCurrency === "VED") {
-    dynamicEquivalentUsd = parsedRate > 0 ? parsedAmount / parsedRate : 0;
-    dynamicEquivalentBs = parsedAmount;
-  } else if (transactionCurrency === "EUR") {
-    const rateEur = parsedRate > 0 ? parsedRate : bcvRates.EUR;
-    dynamicEquivalentBs = parsedAmount * rateEur;
-    dynamicEquivalentUsd = bcvRates.USD > 0 ? dynamicEquivalentBs / bcvRates.USD : parsedAmount;
-  }
-
-  // Deuda total efectiva consolidada del proveedor seleccionado en el modal
-  const modalBalanceBs = paymentSupplier?.balanceBs || 0;
-  const modalBalanceUsd = paymentSupplier?.balanceUsd || 0;
-  const modalBalanceEur = paymentSupplier?.balanceEur || 0;
-
-  const effectiveRateForBs =
-    transactionCurrency === "VED" && parsedRate > 1
-      ? parsedRate
-      : bcvRates.USD > 0
-        ? bcvRates.USD
-        : 75.0;
-
-  const rateUsd = effectiveRateForBs;
-  const rateEur =
-    (transactionCurrency === "EUR" && parsedRate > 0 ? parsedRate : bcvRates.EUR) ||
-    (bcvRates.EUR > 0 ? bcvRates.EUR : 81.5);
-
-  const effectiveDebtBs =
-    modalBalanceBs +
-    modalBalanceUsd * rateUsd +
-    modalBalanceEur * rateEur;
-
-  const effectiveDebtUsd =
-    modalBalanceUsd +
-    (rateUsd > 0 ? modalBalanceBs / rateUsd : 0) +
-    (rateUsd > 0 ? (modalBalanceEur * rateEur) / rateUsd : 0);
-
-  const effectiveDebtEur =
-    modalBalanceEur +
-    (rateEur > 0 ? (modalBalanceBs + modalBalanceUsd * rateUsd) / rateEur : 0);
-
-  const remainingBalanceAfterPayBs = Math.max(0, effectiveDebtBs - dynamicEquivalentBs);
-  const remainingBalanceAfterPayUsd = Math.max(0, effectiveDebtUsd - dynamicEquivalentUsd);
-
-  const handleFillRemainingDebt = (curr?: "VED" | "USD" | "EUR") => {
-    const targetCurr = curr || transactionCurrency;
-    if (targetCurr === "VED") {
-      setAmountPaid(effectiveDebtBs.toFixed(2));
-    } else if (targetCurr === "USD") {
-      setAmountPaid(effectiveDebtUsd.toFixed(2));
-    } else if (targetCurr === "EUR") {
-      setAmountPaid(effectiveDebtEur.toFixed(2));
-    }
-  };
-
-  // Registrar Pago Unificado
-  const handlePayment = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!paymentSupplier || parsedAmount <= 0) return;
-
-    if (
-      (paymentMethod === "TRANSFERENCIA" || paymentMethod === "PAGO_MOVIL") &&
-      !sourceAccountId
-    ) {
-      toast.error("Debe seleccionar la cuenta bancaria origen del desembolso.");
+  const handleCreatePaymentOrder = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!selectedSource) {
+      toast.error("Seleccione una Orden de Compra u Orden de Servicio.");
       return;
     }
-
-    setSubmitting(true);
-    setFeedback(null);
-
+    setCreatingOp(true);
     try {
-      await PurchasingClientService.registerPayment({
-        supplierId: paymentSupplier.id,
-        amount: parsedAmount,
-        transactionCurrency,
-        exchangeRate: parsedRate,
-        paymentMethod,
-        sourceAccountId: sourceAccountId ? Number(sourceAccountId) : undefined,
-        referenceNumber: referenceNumber.trim(),
-        paymentDate: new Date(paymentDate).toISOString(),
-        notes: notes.trim() || undefined,
-        reviewedBy: reviewedBy.trim() || undefined,
-        authorizedBy: authorizedBy.trim() || undefined,
-        approvedBy: approvedBy.trim() || undefined,
+      const created = await TreasuryService.createPaymentOrder({
+        sourceType: selectedSource.sourceType,
+        purchaseOrderId:
+          selectedSource.sourceType === "PURCHASE_ORDER"
+            ? selectedSource.id
+            : undefined,
+        serviceOrderId:
+          selectedSource.sourceType === "SERVICE_ORDER"
+            ? selectedSource.id
+            : undefined,
+        notes: opNotes.trim() || null,
       });
-
-      const successMsg = `Pago de ${transactionCurrency} ${parsedAmount.toFixed(
-        2
-      )} registrado exitosamente para ${paymentSupplier.name}.`;
-      setFeedback({
-        status: "success",
-        message: successMsg,
-      });
-      toast.success(successMsg);
-      setPaymentSupplier(null);
-      await loadData();
-    } catch (err: unknown) {
-      const errorMsg =
-        err instanceof Error
-          ? err.message
-          : "Error al registrar el pago al proveedor.";
-      setFeedback({
-        status: "error",
-        message: errorMsg,
-      });
-      toast.error(errorMsg);
+      toast.success(
+        `Orden de Pago ${created.paymentOrderNumber} creada y enviada a aprobación.`
+      );
+      setCreateModalOpen(false);
+      router.push(`/purchasing/debts/${created.id}`);
+    } catch (err) {
+      toast.error(getApiError(err, "No se pudo crear la Orden de Pago."));
     } finally {
-      setSubmitting(false);
+      setCreatingOp(false);
     }
   };
 
-  // Abrir Estado de Cuenta
-  const openStatement = async (supplier: SupplierDebt) => {
+  const openSupplierStatement = async (supplier: SupplierDebt) => {
     setSelectedSupplier(supplier);
+    setStatement(null);
     setLoadingStatement(true);
     try {
-      const data = await PurchasingClientService.getSupplierStatement(supplier.id);
+      const data = await PurchasingClientService.getSupplierStatement(
+        supplier.id
+      );
       setStatement(data);
     } catch {
-      setFeedback({
-        status: "error",
-        message: "Error al cargar el estado de cuenta del proveedor.",
-      });
+      toast.error("Error al consultar estado de cuenta del proveedor.");
     } finally {
       setLoadingStatement(false);
     }
   };
 
-  // Totales de las 3 Cuentas por Proveedor
-  const totalDebtUsd = debts.reduce((acc, d) => acc + (d.balanceUsd || 0), 0);
-  const totalDebtBs = debts.reduce((acc, d) => acc + (d.balanceBs || 0), 0);
-  const totalDebtEur = debts.reduce((acc, d) => acc + (d.balanceEur || 0), 0);
+  const [mountNow] = useState(() => Date.now());
+  const isWithin7Days = useCallback(
+    (iso?: string | null) => {
+      if (!iso) return false;
+      const t = new Date(iso).getTime();
+      return !Number.isNaN(t) && mountNow - t <= SEVEN_DAYS_MS;
+    },
+    [mountNow]
+  );
 
-  const totalPaidUsd = debts.reduce((acc, d) => acc + (d.totalPaidUsd || 0), 0);
-  const totalPaidBs = debts.reduce((acc, d) => acc + (d.totalPaidBs || 0), 0);
-  const totalPaidEur = debts.reduce((acc, d) => acc + (d.totalPaidEur || 0), 0);
+  // KPIs
+  const pendingApprovalCount = useMemo(
+    () =>
+      paymentOrders.filter(
+        (po) =>
+          po.status === "PENDIENTE_APROBACION" || po.status === "BORRADOR"
+      ).length,
+    [paymentOrders]
+  );
 
-  const hasPendingDebt = (d: SupplierDebt) =>
-    (d.balanceUsd || 0) > 0.009 || (d.balanceBs || 0) > 0.009 || (d.balanceEur || 0) > 0.009;
+  const payableOrders = useMemo(
+    () =>
+      paymentOrders.filter(
+        (po) =>
+          po.status === "APROBADA" || po.status === "PAGADA_PARCIALMENTE"
+      ),
+    [paymentOrders]
+  );
 
-  const pendingSuppliers = debts.filter(hasPendingDebt).length;
+  const totalPendingUsdEq = useMemo(() => {
+    return payableOrders.reduce((acc, po) => {
+      const rem = Number(po.remainingBalance || 0);
+      const curr = (po.debtCurrency || "USD").toUpperCase();
+      if (curr === "VED" || curr === "VES") {
+        return acc + (bcvRates.USD > 0 ? rem / bcvRates.USD : 0);
+      }
+      if (curr === "EUR") {
+        return acc + (bcvRates.USD > 0 ? (rem * bcvRates.EUR) / bcvRates.USD : rem);
+      }
+      return acc + rem;
+    }, 0);
+  }, [payableOrders, bcvRates]);
 
-  // Filtrado inteligente de proveedores
-  const filteredDebts = debts.filter((d) => {
-    if (statusFilter === "PENDING" && !hasPendingDebt(d)) return false;
-    if (statusFilter === "PAID" && hasPendingDebt(d)) return false;
+  const paid7dCount = useMemo(
+    () =>
+      paymentOrders.filter(
+        (po) => po.status === "PAGADA" && isWithin7Days(po.updatedAt || po.createdAt)
+      ).length,
+    [paymentOrders, isWithin7Days]
+  );
 
-    if (!debouncedSearchQuery.trim()) return true;
-    const term = normalizeText(debouncedSearchQuery.trim());
-    const nameMatch = normalizeText(d.name || "").includes(term);
-    const taxMatch = normalizeText(d.rifOrId || "").includes(term);
-    return nameMatch || taxMatch;
+  const paidAllCount = useMemo(
+    () => paymentOrders.filter((po) => po.status === "PAGADA").length,
+    [paymentOrders]
+  );
+
+  // Filtrado de Órdenes de Pago
+  const filteredOrders = useMemo(() => {
+    const q = normalizeText(debouncedSearch.trim());
+    return paymentOrders.filter((po) => {
+      if (activeTab === "PENDING_APPROVAL") {
+        if (po.status !== "PENDIENTE_APROBACION" && po.status !== "BORRADOR") {
+          return false;
+        }
+      } else if (activeTab === "PAYABLE") {
+        if (po.status !== "APROBADA" && po.status !== "PAGADA_PARCIALMENTE") {
+          return false;
+        }
+      } else if (activeTab === "PAID") {
+        if (po.status !== "PAGADA") return false;
+        if (!showFullPaidHistory && !isWithin7Days(po.updatedAt || po.createdAt)) {
+          return false;
+        }
+      }
+
+      if (sourceFilter !== "ALL" && po.sourceType !== sourceFilter) {
+        return false;
+      }
+
+      if (!q) return true;
+      const haystack = normalizeText(
+        [
+          po.paymentOrderNumber,
+          po.beneficiaryName,
+          po.concept,
+          po.purchaseOrder?.orderNumber || "",
+          po.serviceOrder?.serviceOrderNumber || "",
+          po.supplier?.rifOrId || "",
+        ].join(" ")
+      );
+      return haystack.includes(q);
+    });
+  }, [
+    paymentOrders,
+    activeTab,
+    sourceFilter,
+    debouncedSearch,
+    showFullPaidHistory,
+    isWithin7Days,
+  ]);
+
+  // Filtrado de Proveedores (pestaña Saldos por Proveedor)
+  const filteredSuppliers = useMemo(() => {
+    const q = normalizeText(debouncedSearch.trim());
+    return supplierDebts.filter((s) => {
+      if (!q) return true;
+      return (
+        normalizeText(s.name || "").includes(q) ||
+        normalizeText(s.rifOrId || "").includes(q)
+      );
+    });
+  }, [supplierDebts, debouncedSearch]);
+
+  const ordersPagination = usePagination(filteredOrders, { initialPageSize: 10 });
+  const suppliersPagination = usePagination(filteredSuppliers, {
+    initialPageSize: 10,
   });
-
-  // Paginación
-  const pagination = usePagination(filteredDebts, { initialPageSize: 10 });
-  const { resetPage } = pagination;
+  const { resetPage: resetOrdersPage } = ordersPagination;
+  const { resetPage: resetSuppliersPage } = suppliersPagination;
 
   useEffect(() => {
-    resetPage();
-  }, [debouncedSearchQuery, statusFilter, resetPage]);
+    resetOrdersPage();
+    resetSuppliersPage();
+  }, [
+    activeTab,
+    sourceFilter,
+    debouncedSearch,
+    showFullPaidHistory,
+    resetOrdersPage,
+    resetSuppliersPage,
+  ]);
+
+  const modalSourcesList = useMemo(() => {
+    const list =
+      createSourceTab === "PURCHASE_ORDER"
+        ? eligibleSources.purchaseOrders
+        : eligibleSources.serviceOrders;
+    const q = normalizeText(sourceSearch.trim());
+    if (!q) return list;
+    return list.filter((item) =>
+      normalizeText(
+        `${item.code} ${item.beneficiaryName} ${item.concept} ${item.rifOrId || ""}`
+      ).includes(q)
+    );
+  }, [eligibleSources, createSourceTab, sourceSearch]);
+
+  const hasSupplierDebt = (d: SupplierDebt) =>
+    (d.balanceUsd || 0) > 0.009 ||
+    (d.balanceBs || 0) > 0.009 ||
+    (d.balanceEur || 0) > 0.009;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-6 pb-10">
+      {/* ========================================================
+          ENCABEZADO ESTANDARIZADO ERP-IDI
+         ======================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
         <div>
-          <div className="flex items-center gap-2">
-            <Badge variant="indigo" className="text-[10px] font-mono shadow-2xs font-medium">
-              Finanzas & Tesorería
-            </Badge>
-            <span className="text-xs font-mono font-medium text-muted-foreground">
-              Cuentas por Pagar Multi-Moneda
-            </span>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2 mt-1">
-            <Banknote className="h-6 w-6 text-emerald-600" />
-            Cuentas por Pagar a Proveedores
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <Banknote className="w-6 h-6 text-primary" />
+            Pagos y Tesorería
           </h1>
-          <p className="text-xs text-muted-foreground">
-            Balances comerciales en las 3 cuentas (Bs., USD, EUR), historial de amortizaciones y auditoría de pagos
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Órdenes de pago aprobadas, liquidación multimoneda y pagos mixtos para Compras y Servicios
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-auto">
-          <Badge variant="rose" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
-            <span className="font-bold">{pendingSuppliers}</span>
-            <span>con saldo</span>
-          </Badge>
-          <Badge variant="success" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium">
-            <span className="font-bold">{debts.length - pendingSuppliers}</span>
-            <span>solventes</span>
-          </Badge>
-          <Badge variant="purple" className="gap-1.5 py-1 px-3 text-xs shadow-2xs font-medium font-mono">
-            <span>BCV: {bcvRates.USD.toFixed(2)} Bs./$ · {bcvRates.EUR.toFixed(2)} Bs./€</span>
-          </Badge>
-
+        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
           <Button
+            type="button"
             variant="outline"
-            size="icon"
-            onClick={() => void loadData()}
-            title="Actualizar listado de saldos"
-            className="ml-1 cursor-pointer"
+            size="sm"
+            onClick={() => void fetchAll(true)}
+            disabled={refreshing}
+            className="h-9 gap-1.5 text-xs cursor-pointer"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={cn("w-3.5 h-3.5", refreshing && "animate-spin")}
+            />
+            <span>Actualizar</span>
           </Button>
 
-          <Button
-            asChild
-            size="sm"
-            className="gap-1.5 ml-1 text-xs cursor-pointer shadow-xs"
-          >
-            <Link href="/admin/financial/payments">
-              <Wallet className="w-3.5 h-3.5" />
-              Egresos / Pagos Directos
-            </Link>
-          </Button>
+          {canCreateOp && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void openCreateModal()}
+              className="h-9 gap-1.5 text-xs font-bold cursor-pointer shadow-2xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Nueva Orden de Pago</span>
+            </Button>
+          )}
         </div>
       </div>
 
-      {feedback && (
-        <Alert variant={feedback.status === "success" ? "success" : "destructive"}>
-          {feedback.status === "success" ? (
-            <CheckCircle2 className="h-4 w-4" />
-          ) : (
-            <AlertCircle className="h-4 w-4" />
-          )}
-          <AlertTitle>{feedback.status === "success" ? "Operación Exitosa" : "Error"}</AlertTitle>
-          <AlertDescription>{feedback.message}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Tarjetas Estadísticas: Las 3 Cuentas por Proveedor */}
+      {/* ========================================================
+          4 TARJETAS KPI ESTANDARIZADAS
+         ======================================================== */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Cuenta USD */}
-        <Card className="p-4 space-y-1.5 shadow-2xs border-blue-200/70 bg-blue-50/20">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-blue-800 flex items-center gap-1.5">
-              <DollarSign className="w-3.5 h-3.5" /> Cuenta Dólares (USD)
-            </span>
-            <Badge variant="indigo" className="text-[10px] font-mono py-0 px-1.5">USD</Badge>
+        <Card className="p-4 border-border shadow-2xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Por Aprobar
+            </p>
+            <p className="text-2xl font-bold font-mono text-foreground mt-1">
+              {pendingApprovalCount}
+            </p>
           </div>
-          <div className="text-2xl font-bold font-mono text-blue-950">
-            $ {totalDebtUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <div className="text-[11px] text-muted-foreground font-mono flex items-center justify-between pt-1 border-t border-blue-100">
-            <span>Pagado: ${totalPaidUsd.toFixed(2)}</span>
-            <span className="text-blue-700 font-semibold">Saldo Activo</span>
+          <div className="w-11 h-11 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <Clock className="w-5 h-5" />
           </div>
         </Card>
 
-        {/* Cuenta Bolívares */}
-        <Card className="p-4 space-y-1.5 shadow-2xs border-emerald-200/70 bg-emerald-50/20">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-emerald-800 flex items-center gap-1.5">
-              <Banknote className="w-3.5 h-3.5" /> Cuenta Bolívares (Bs.)
-            </span>
-            <Badge variant="success" className="text-[10px] font-mono py-0 px-1.5">Bs.</Badge>
+        <Card className="p-4 border-border shadow-2xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Listas para Pagar
+            </p>
+            <p className="text-2xl font-bold font-mono text-foreground mt-1">
+              {payableOrders.length}
+            </p>
           </div>
-          <div className="text-2xl font-bold font-mono text-emerald-950">
-            Bs. {totalDebtBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <div className="text-[11px] text-muted-foreground font-mono flex items-center justify-between pt-1 border-t border-emerald-100">
-            <span>≈ ${bcvRates.USD > 0 ? (totalDebtBs / bcvRates.USD).toFixed(2) : "0.00"} USD</span>
-            <span>Pagado: Bs. {totalPaidBs.toFixed(2)}</span>
+          <div className="w-11 h-11 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+            <FileCheck2 className="w-5 h-5" />
           </div>
         </Card>
 
-        {/* Cuenta Euros */}
-        <Card className="p-4 space-y-1.5 shadow-2xs border-purple-200/70 bg-purple-50/20">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-purple-800 flex items-center gap-1.5">
-              <Coins className="w-3.5 h-3.5" /> Cuenta Euros (EUR)
-            </span>
-            <Badge variant="purple" className="text-[10px] font-mono py-0 px-1.5">EUR</Badge>
+        <Card className="p-4 border-border shadow-2xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Saldo Pendiente (USD)
+            </p>
+            <p className="text-2xl font-bold font-mono text-foreground mt-1">
+              ${totalPendingUsdEq.toLocaleString("es-VE", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </p>
           </div>
-          <div className="text-2xl font-bold font-mono text-purple-950">
-            € {totalDebtEur.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <div className="text-[11px] text-muted-foreground font-mono flex items-center justify-between pt-1 border-t border-purple-100">
-            <span>Pagado: € {totalPaidEur.toFixed(2)}</span>
-            <span className="text-purple-700 font-semibold">{bcvRates.EUR.toFixed(2)} Bs./€</span>
+          <div className="w-11 h-11 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+            <DollarSign className="w-5 h-5" />
           </div>
         </Card>
 
-        {/* Proveedores con Saldo */}
-        <Card className="p-4 space-y-1.5 shadow-2xs border-amber-200/70 bg-amber-50/20">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-amber-800 flex items-center gap-1.5">
-              <Building2 className="w-3.5 h-3.5" /> Proveedores con Deuda
-            </span>
-            <Badge variant="rose" className="text-[10px] font-mono py-0 px-1.5">{pendingSuppliers} pendientes</Badge>
+        <Card className="p-4 border-border shadow-2xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Pagadas (7 días)
+            </p>
+            <p className="text-2xl font-bold font-mono text-foreground mt-1">
+              {paid7dCount}
+            </p>
           </div>
-          <div className="text-2xl font-bold font-mono text-amber-950">
-            {pendingSuppliers} <span className="text-xs font-normal text-muted-foreground">de {debts.length} registrados</span>
-          </div>
-          <div className="text-[11px] text-emerald-700 font-medium pt-1 border-t border-amber-100">
-            {debts.length - pendingSuppliers} solventes en todas las cuentas
+          <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-5 h-5" />
           </div>
         </Card>
       </div>
 
-      {/* Barra de Búsqueda Inteligente y Filtros Rápidos */}
-      <Card className="p-3.5 shadow-2xs space-y-2.5">
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      {/* ========================================================
+          BARRA DE PESTAÑAS OPERATIVAS + BÚSQUEDA + ORIGEN
+         ======================================================== */}
+      <Card className="p-3.5 border-border shadow-2xs space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {(
+              [
+                { key: "ALL", label: `Todas (${paymentOrders.length})` },
+                {
+                  key: "PENDING_APPROVAL",
+                  label: `Por Aprobar (${pendingApprovalCount})`,
+                },
+                {
+                  key: "PAYABLE",
+                  label: `Por Pagar (${payableOrders.length})`,
+                },
+                {
+                  key: "PAID",
+                  label: showFullPaidHistory
+                    ? `Pagadas (${paidAllCount})`
+                    : `Pagadas 7d (${paid7dCount})`,
+                },
+                {
+                  key: "SUPPLIERS",
+                  label: `Saldos por Proveedor (${supplierDebts.length})`,
+                },
+              ] as const
+            ).map((tab) => (
+              <Button
+                key={tab.key}
+                type="button"
+                size="sm"
+                variant={activeTab === tab.key ? "default" : "outline"}
+                onClick={() => setActiveTab(tab.key)}
+                className="h-8 text-xs px-3 cursor-pointer"
+              >
+                {tab.label}
+              </Button>
+            ))}
+          </div>
+
+          {activeTab === "PAID" && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowFullPaidHistory((prev) => !prev)}
+              className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>
+                {showFullPaidHistory
+                  ? "Ver últimos 7 días"
+                  : "Ver historial completo"}
+              </span>
+            </Button>
+          )}
+        </div>
+
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2.5">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar por razón social, nombre comercial o RIF / Cédula..."
-              className="pl-9 text-xs"
+              placeholder={
+                activeTab === "SUPPLIERS"
+                  ? "Buscar proveedor por razón social o RIF..."
+                  : "Buscar por N° OP, Orden de Compra, Orden de Servicio, proveedor o concepto..."
+              }
+              className="pl-9 pr-8 h-9 text-xs bg-background"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-            <Button
-              type="button"
-              variant={statusFilter === "ALL" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setStatusFilter("ALL")}
-              className="h-8 text-xs px-2.5 cursor-pointer"
-            >
-              Todos ({debts.length})
-            </Button>
-            <Button
-              type="button"
-              variant={statusFilter === "PENDING" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setStatusFilter("PENDING")}
-              className="h-8 text-xs px-2.5 cursor-pointer text-amber-600 dark:text-amber-400"
-            >
-              Con Deuda ({pendingSuppliers})
-            </Button>
-            <Button
-              type="button"
-              variant={statusFilter === "PAID" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setStatusFilter("PAID")}
-              className="h-8 text-xs px-2.5 cursor-pointer text-emerald-600 dark:text-emerald-400"
-            >
-              Solventes ({debts.length - pendingSuppliers})
-            </Button>
-
-            {(searchQuery || statusFilter !== "ALL") && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSearchQuery("");
-                  setStatusFilter("ALL");
-                }}
-                className="h-8 text-xs px-2.5 text-muted-foreground hover:text-foreground gap-1 cursor-pointer"
-                title="Limpiar filtros"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span>Limpiar filtros</span>
-              </Button>
-            )}
-          </div>
+          {activeTab !== "SUPPLIERS" && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              {(
+                [
+                  { key: "ALL", label: "Todos" },
+                  { key: "PURCHASE_ORDER", label: "Compras" },
+                  { key: "SERVICE_ORDER", label: "Servicios" },
+                ] as const
+              ).map((src) => (
+                <Button
+                  key={src.key}
+                  type="button"
+                  size="sm"
+                  variant={sourceFilter === src.key ? "secondary" : "outline"}
+                  onClick={() => setSourceFilter(src.key)}
+                  className="h-9 text-xs px-3 cursor-pointer"
+                >
+                  {src.label}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
       </Card>
 
-      {/* Tabla de Proveedores y Deuda con las 3 Cuentas (Bs., USD, EUR) */}
-      <Card className="overflow-hidden shadow-2xs">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/30">
-              <TableHead className="px-4 py-3">Proveedor / RIF</TableHead>
-              <TableHead className="px-4 py-3 text-right">
-                <div className="font-semibold text-emerald-800 dark:text-emerald-400">Cuenta Bolívares (Bs.)</div>
-                <div className="text-[10px] font-normal text-muted-foreground font-mono">Comprado · Pagado · Saldo</div>
-              </TableHead>
-              <TableHead className="px-4 py-3 text-right">
-                <div className="font-semibold text-blue-800 dark:text-blue-400">Cuenta Dólares (USD)</div>
-                <div className="text-[10px] font-normal text-muted-foreground font-mono">Comprado · Pagado · Saldo</div>
-              </TableHead>
-              <TableHead className="px-4 py-3 text-right">
-                <div className="font-semibold text-purple-800 dark:text-purple-400">Cuenta Euros (EUR)</div>
-                <div className="text-[10px] font-normal text-muted-foreground font-mono">Comprado · Pagado · Saldo</div>
-              </TableHead>
-              <TableHead className="px-4 py-3 text-center">Estado</TableHead>
-              <TableHead className="px-4 py-3 text-center">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
-                  <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-primary" />
-                  Cargando cuentas comerciales y estados financieros...
-                </TableCell>
-              </TableRow>
-            ) : filteredDebts.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
-                  {searchQuery || statusFilter !== "ALL"
-                    ? "No se encontraron proveedores que coincidan con los criterios de búsqueda."
-                    : "No se encontraron proveedores ni deudas comerciales registradas."}
-                </TableCell>
-              </TableRow>
-            ) : (
-              pagination.paginatedItems.map((debt) => (
-                <TableRow key={debt.id} className="hover:bg-muted/40 transition-colors">
-                  <TableCell className="px-4 py-3">
-                    <div className="flex items-center gap-2 font-semibold text-foreground">
-                      <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span>{debt.name}</span>
-                    </div>
-                    <div className="ml-6 font-mono text-[10px] text-muted-foreground">
-                      RIF / Cédula: {debt.rifOrId}
-                    </div>
-                  </TableCell>
-
-                  {/* Cuenta Bolívares */}
-                  <TableCell className="px-4 py-3 text-right font-mono">
-                    {(debt.balanceBs || 0) > 0.009 ? (
-                      <div className="font-bold text-destructive text-xs">
-                        Bs. {(debt.balanceBs || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                    ) : (
-                      <div className="text-muted-foreground text-xs">Bs. 0.00</div>
-                    )}
-                    <div className="text-[10px] text-muted-foreground">
-                      C: {(debt.totalPurchasedBs || 0).toFixed(2)} | P: {(debt.totalPaidBs || 0).toFixed(2)}
-                    </div>
-                  </TableCell>
-
-                  {/* Cuenta Dólares */}
-                  <TableCell className="px-4 py-3 text-right font-mono">
-                    {(debt.balanceUsd || 0) > 0.009 ? (
-                      <div className="font-bold text-destructive text-xs">
-                        $ {(debt.balanceUsd || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                    ) : (
-                      <div className="text-muted-foreground text-xs">$ 0.00</div>
-                    )}
-                    <div className="text-[10px] text-muted-foreground">
-                      C: {(debt.totalPurchasedUsd || 0).toFixed(2)} | P: {(debt.totalPaidUsd || 0).toFixed(2)}
-                    </div>
-                  </TableCell>
-
-                  {/* Cuenta Euros */}
-                  <TableCell className="px-4 py-3 text-right font-mono">
-                    {(debt.balanceEur || 0) > 0.009 ? (
-                      <div className="font-bold text-destructive text-xs">
-                        € {(debt.balanceEur || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                    ) : (
-                      <div className="text-muted-foreground text-xs">€ 0.00</div>
-                    )}
-                    <div className="text-[10px] text-muted-foreground">
-                      C: {(debt.totalPurchasedEur || 0).toFixed(2)} | P: {(debt.totalPaidEur || 0).toFixed(2)}
-                    </div>
-                  </TableCell>
-
-                  {/* Estado Consolidado */}
-                  <TableCell className="px-4 py-3 text-center">
-                    {!hasPendingDebt(debt) ? (
-                      <Badge variant="success" className="gap-1">
-                        <CheckCircle2 className="h-3 w-3" />
-                        Solvente
-                      </Badge>
-                    ) : (
-                      <Badge variant="destructive">
-                        Con deuda
-                      </Badge>
-                    )}
-                  </TableCell>
-
-                  {/* Acciones */}
-                  <TableCell className="px-4 py-3">
-                    <div className="flex justify-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="success"
-                        onClick={() => handleOpenPaymentModal(debt)}
-                        className="gap-1 h-7 text-xs font-semibold cursor-pointer"
-                        title="Registrar pago a este proveedor"
-                      >
-                        <PlusCircle className="h-3.5 w-3.5" />
-                        Pagar
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void openStatement(debt)}
-                        className="gap-1 h-7 text-xs font-semibold cursor-pointer"
-                        title="Consultar estado de cuenta y órdenes"
-                      >
-                        <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-                        Estado
-                      </Button>
-                    </div>
-                  </TableCell>
+      {/* ========================================================
+          CONTENIDO PRINCIPAL: ÓRDENES DE PAGO UNIFICADAS O SALDOS
+         ======================================================== */}
+      {activeTab !== "SUPPLIERS" ? (
+        <Card className="overflow-hidden border-border shadow-2xs">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30">
+                  <TableHead className="px-4 py-3 text-xs font-semibold">
+                    Orden de Pago
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold">
+                    Origen
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold">
+                    Proveedor / Concepto
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold text-right">
+                    Deuda Total
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold text-right">
+                    Abonado
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold text-right">
+                    Saldo Pendiente
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold text-center">
+                    Estado
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold text-center">
+                    Acciones
+                  </TableHead>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        <TablePagination
-          currentPage={pagination.currentPage}
-          totalPages={pagination.totalPages}
-          pageSize={pagination.pageSize}
-          totalItems={pagination.totalItems}
-          onPageChange={pagination.onPageChange}
-          onPageSizeChange={pagination.onPageSizeChange}
-          pageSizeOptions={[10, 25, 50, 100]}
-          entityName="cuentas por pagar"
-        />
-      </Card>
-
-      {/* Modal: Registrar Pago Unificado con shadcn Dialog */}
-      <Dialog
-        open={!!paymentSupplier}
-        onOpenChange={(open) => {
-          if (!open) setPaymentSupplier(null);
-        }}
-      >
-        <DialogContent className="max-w-3xl md:max-w-4xl w-[95vw] max-h-[92vh] overflow-y-auto p-4 sm:p-6">
-          <DialogHeader>
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600">
-                <Banknote className="w-4 h-4" />
-              </div>
-              <div>
-                <DialogTitle className="font-bold text-foreground text-base">
-                  Registrar Pago a Proveedor
-                </DialogTitle>
-                <p className="text-xs text-muted-foreground">
-                  {paymentSupplier?.name} · RIF: {paymentSupplier?.rifOrId}
-                </p>
-              </div>
-            </div>
-          </DialogHeader>
-
-          {paymentSupplier && (
-            <form onSubmit={handlePayment} className="space-y-4">
-              {/* Información de Saldos Pendientes del Proveedor */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-muted/40 rounded-xl border border-border">
-                {/* Deuda en Bolívares */}
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/25 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 uppercase">
-                      Deuda en Bolívares
-                    </span>
-                    <Badge variant="success" className="text-[10px] font-mono py-0">Bs.</Badge>
-                  </div>
-                  <div className="text-xl font-black font-mono text-emerald-950 dark:text-emerald-200 mt-1">
-                    Bs. {effectiveDebtBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                  <span className="text-[10px] text-muted-foreground font-mono block mt-0.5">
-                    {modalBalanceBs > 0.01 ? `Facturado directo: Bs. ${modalBalanceBs.toFixed(2)}` : `Tasa ref: ${effectiveRateForBs.toFixed(2)} Bs./$`}
-                  </span>
-                </div>
-
-                {/* Deuda en Dólares */}
-                <div className="p-3 bg-blue-500/10 border border-blue-500/25 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-blue-800 dark:text-blue-300 uppercase">
-                      Deuda en Dólares
-                    </span>
-                    <Badge variant="indigo" className="text-[10px] font-mono py-0">USD</Badge>
-                  </div>
-                  <div className="text-xl font-black font-mono text-blue-950 dark:text-blue-200 mt-1">
-                    $ {effectiveDebtUsd.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                  <span className="text-[10px] text-muted-foreground font-mono block mt-0.5">
-                    {modalBalanceUsd > 0.01 ? `Facturado directo: $ ${modalBalanceUsd.toFixed(2)}` : "Consolidado total"}
-                  </span>
-                </div>
-
-                {/* Deuda en Euros */}
-                <div className="p-3 bg-purple-500/10 border border-purple-500/25 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-purple-800 dark:text-purple-300 uppercase">
-                      Deuda en Euros
-                    </span>
-                    <Badge variant="purple" className="text-[10px] font-mono py-0">EUR</Badge>
-                  </div>
-                  <div className="text-xl font-black font-mono text-purple-950 dark:text-purple-200 mt-1">
-                    € {effectiveDebtEur.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                  <span className="text-[10px] text-muted-foreground font-mono block mt-0.5">
-                    BCV: {bcvRates.EUR.toFixed(2)} Bs./€
-                  </span>
-                </div>
-              </div>
-
-              {/* Selector de Moneda y Tasa */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs uppercase">
-                    Moneda del Pago *
-                  </Label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {(["USD", "VED", "EUR"] as const).map((curr) => (
-                      <Button
-                        key={curr}
-                        type="button"
-                        size="sm"
-                        variant={transactionCurrency === curr ? "default" : "outline"}
-                        onClick={() => handleCurrencyChange(curr)}
-                        className={`text-xs font-bold ${
-                          transactionCurrency === curr
-                            ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                            : ""
-                        }`}
-                      >
-                        {curr === "VED" ? "Bs." : curr}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs uppercase">
-                    Tasa de Cambio (Bs./Divisa) *
-                  </Label>
-                  <Input
-                    type="number"
-                    step="0.0001"
-                    min="0.0001"
-                    required
-                    value={exchangeRate}
-                    onChange={(e) => setExchangeRate(e.target.value)}
-                    placeholder="Tasa BCV del día..."
-                    className="font-mono font-bold text-xs"
-                  />
-                  <span className="text-[10px] text-muted-foreground block font-mono">
-                    Oficial BCV: {bcvRates.USD.toFixed(2)} Bs./$ · {bcvRates.EUR.toFixed(2)} Bs./€
-                  </span>
-                </div>
-              </div>
-
-              {/* Monto pagado y desglose en tiempo real */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs uppercase font-bold text-foreground">
-                    Monto a Pagar ({transactionCurrency === "VED" ? "Bs." : transactionCurrency === "EUR" ? "€" : "$"}) *
-                  </Label>
-                  {effectiveDebtUsd > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => handleFillRemainingDebt(transactionCurrency)}
-                      className="text-xs text-primary hover:underline font-bold cursor-pointer"
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={8}
+                      className="py-12 text-center text-xs text-muted-foreground"
                     >
-                      Pagar saldo total ({transactionCurrency === "VED" ? `Bs. ${effectiveDebtBs.toFixed(2)}` : transactionCurrency === "EUR" ? `€ ${effectiveDebtEur.toFixed(2)}` : `$ ${effectiveDebtUsd.toFixed(2)}`})
-                    </button>
-                  )}
-                </div>
-
-                <Input
-                  required
-                  min="0.01"
-                  step="0.01"
-                  type="number"
-                  value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)}
-                  placeholder="0.00"
-                  className="text-base font-mono font-bold"
-                />
-
-                {parsedAmount > 0 && (
-                  <Card className="p-3 bg-muted/40 border-border grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-                    <div>
-                      <span className="text-[10px] font-semibold text-muted-foreground uppercase block">
-                        Monto en Bolívares (Bs.):
-                      </span>
-                      <strong className="text-sm font-bold font-mono text-emerald-800 dark:text-emerald-400 block">
-                        Bs. {dynamicEquivalentBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-semibold text-muted-foreground uppercase block">
-                        Amortización en USD:
-                      </span>
-                      <strong className="text-sm font-bold font-mono text-blue-800 dark:text-blue-400 block">
-                        $ {dynamicEquivalentUsd.toFixed(2)} USD
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-semibold text-muted-foreground uppercase block">
-                        Saldo Restante Estimado:
-                      </span>
-                      <strong className="text-sm font-bold font-mono text-foreground block">
-                        {transactionCurrency === "VED"
-                          ? `Bs. ${remainingBalanceAfterPayBs.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                          : `$ ${remainingBalanceAfterPayUsd.toFixed(2)} USD`}
-                      </strong>
-                    </div>
-                  </Card>
-                )}
-              </div>
-
-              {/* Método de Pago y Cuenta Origen */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs uppercase">
-                    Método de Pago *
-                  </Label>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
-                  >
-                    {paymentMethodsList.length > 0
-                      ? paymentMethodsList.map((pm) => (
-                          <option key={pm.code} value={pm.code}>
-                            {pm.name}
-                          </option>
-                        ))
-                      : PAYMENT_METHODS.map(([val, label]) => (
-                          <option key={val} value={val}>
-                            {label}
-                          </option>
-                        ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs uppercase">
-                    Cuenta Origen Institucional *
-                  </Label>
-                  <select
-                    value={sourceAccountId}
-                    onChange={(e) => setSourceAccountId(e.target.value)}
-                    className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring focus:outline-none cursor-pointer"
-                  >
-                    <option value="">-- Seleccionar cuenta origen --</option>
-                    {bankAccounts
-                      .filter((acc) => acc.isActive)
-                      .map((acc) => (
-                        <option key={acc.id} value={acc.id}>
-                          {acc.bankName} - {acc.currency} ({acc.type}) · {acc.accountNumber?.slice(-4) ?? "Caja"}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Referencia y Fecha */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs uppercase">
-                    Nº de Referencia / Comprobante
-                  </Label>
-                  <Input
-                    type="text"
-                    value={referenceNumber}
-                    onChange={(e) => setReferenceNumber(e.target.value)}
-                    placeholder="Ej. REF-98765432..."
-                    className="font-mono text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs uppercase">
-                    Fecha de Ejecución *
-                  </Label>
-                  <Input
-                    required
-                    type="date"
-                    value={paymentDate}
-                    onChange={(e) => setPaymentDate(e.target.value)}
-                    className="text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* Firmas de Control Interno y Auditoría */}
-              <div className="space-y-2 pt-2 border-t border-border">
-                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
-                  Control y Autorización de Tesorería
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div>
-                    <Label className="text-[10px] uppercase text-muted-foreground">
-                      Revisado por
-                    </Label>
-                    <Input
-                      type="text"
-                      value={reviewedBy}
-                      onChange={(e) => setReviewedBy(e.target.value)}
-                      placeholder="Analista Contable"
-                      className="text-xs h-8"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-[10px] uppercase text-muted-foreground">
-                      Autorizado por
-                    </Label>
-                    <Input
-                      type="text"
-                      value={authorizedBy}
-                      onChange={(e) => setAuthorizedBy(e.target.value)}
-                      placeholder="Jefe de Compras"
-                      className="text-xs h-8"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-[10px] uppercase text-muted-foreground">
-                      Aprobado por
-                    </Label>
-                    <Input
-                      type="text"
-                      value={approvedBy}
-                      onChange={(e) => setApprovedBy(e.target.value)}
-                      placeholder="Dirección / Finanzas"
-                      className="text-xs h-8"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Notas del Pago */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs uppercase">
-                    Notas y Observaciones
-                  </Label>
-                  <div className="flex items-center gap-1">
-                    {[
-                      { word: "Cancelación total", text: "Cancelación total de saldo comercial", theme: "bg-emerald-50 text-emerald-700 border-emerald-200/90 hover:bg-emerald-100/90" },
-                      { word: "Abono", text: "Abono parcial para amortizar cuenta comercial", theme: "bg-amber-50 text-amber-700 border-amber-200/90 hover:bg-amber-100/90" },
-                      { word: "Transferencia BCV", text: "Pago procesado según tasa oficial BCV del día", theme: "bg-blue-50 text-blue-700 border-blue-200/90 hover:bg-blue-100/90" },
-                    ].map((badge) => (
-                      <button
-                        key={badge.word}
-                        type="button"
-                        onClick={() => {
-                          setNotes((prev) => {
-                            const trimmed = prev.trim();
-                            if (!trimmed) return badge.text;
-                            if (trimmed.includes(badge.text)) return trimmed;
-                            return `${trimmed} · ${badge.text}`;
-                          });
-                        }}
-                        className={`text-[10px] font-medium px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${badge.theme}`}
-                      >
-                        + {badge.word}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={2}
-                  placeholder="Detalles adicionales sobre el desembolso o factura asociada..."
-                  className="w-full text-xs bg-background border border-input rounded-lg p-2.5 text-foreground focus:ring-2 focus:ring-ring focus:outline-none"
-                />
-              </div>
-
-              {/* Botones de acción */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPaymentSupplier(null)}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant="success"
-                  disabled={submitting || parsedAmount <= 0}
-                  className="gap-1.5 shadow-xs"
-                >
-                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Confirmar y Registrar Pago
-                </Button>
-              </div>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal: Estado de Cuenta Detallado con las 3 Cuentas */}
-      <Dialog
-        open={!!selectedSupplier}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedSupplier(null);
-            setStatement(null);
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex items-center justify-between pr-6">
-              <div>
-                <DialogTitle className="font-bold text-foreground text-lg">
-                  Estado de Cuenta Financiero
-                </DialogTitle>
-                <p className="text-xs text-muted-foreground">
-                  {selectedSupplier?.name} · RIF: {selectedSupplier?.rifOrId}
-                </p>
-              </div>
-              {statement && (
-                <UniversalPdfDownloadButton
-                  document={<SupplierDebtPdfDocument statement={statement} />}
-                  fileName={`Estado_Cuenta_${(selectedSupplier?.name || "Proveedor").replace(/[^a-zA-Z0-9_-]/g, "_")}`}
-                  buttonLabel="Descargar PDF"
-                  previewLabel="Vista Previa"
-                  dialogTitle={`Estado de Cuenta: ${selectedSupplier?.name}`}
-                />
-              )}
-            </div>
-          </DialogHeader>
-
-          {loadingStatement ? (
-            <div className="py-16 text-center text-muted-foreground">
-              <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-primary" />
-              Consultando órdenes y amortizaciones...
-            </div>
-          ) : statement ? (
-            <div className="space-y-4">
-              {/* Resumen Comercial de las 3 Cuentas */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                {/* Cuenta Bolívares */}
-                <Card className="p-3.5 bg-emerald-50/40 border-emerald-200 shadow-2xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-emerald-800 uppercase tracking-wider text-[11px]">
-                      Cuenta Bolívares (Bs.)
-                    </span>
-                    <Badge variant="success" className="text-[9px] py-0 px-1">Bs.</Badge>
-                  </div>
-                  <strong className="block text-lg font-bold font-mono text-emerald-950 mt-1">
-                    Saldo: Bs. {(statement.balanceBs ?? 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </strong>
-                  <div className="text-[10px] text-muted-foreground font-mono">
-                    Comprado: Bs. {(statement.totalPurchasedBs ?? 0).toFixed(2)} · Pagado: Bs. {(statement.totalPaidBs ?? 0).toFixed(2)}
-                  </div>
-                </Card>
-
-                {/* Cuenta Dólares */}
-                <Card className="p-3.5 bg-blue-50/40 border-blue-200 shadow-2xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-blue-800 uppercase tracking-wider text-[11px]">
-                      Cuenta Dólares (USD)
-                    </span>
-                    <Badge variant="indigo" className="text-[9px] py-0 px-1">USD</Badge>
-                  </div>
-                  <strong className="block text-lg font-bold font-mono text-blue-950 mt-1">
-                    Saldo: $ {(statement.balanceUsd ?? 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </strong>
-                  <div className="text-[10px] text-muted-foreground font-mono">
-                    Comprado: $ {(statement.totalPurchasedUsd ?? 0).toFixed(2)} · Pagado: $ {(statement.totalPaidUsd ?? 0).toFixed(2)}
-                  </div>
-                </Card>
-
-                {/* Cuenta Euros */}
-                <Card className="p-3.5 bg-purple-50/40 border-purple-200 shadow-2xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-purple-800 uppercase tracking-wider text-[11px]">
-                      Cuenta Euros (EUR)
-                    </span>
-                    <Badge variant="purple" className="text-[9px] py-0 px-1">EUR</Badge>
-                  </div>
-                  <strong className="block text-lg font-bold font-mono text-purple-950 mt-1">
-                    Saldo: € {(statement.balanceEur ?? 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </strong>
-                  <div className="text-[10px] text-muted-foreground font-mono">
-                    Comprado: € {(statement.totalPurchasedEur ?? 0).toFixed(2)} · Pagado: € {(statement.totalPaidEur ?? 0).toFixed(2)}
-                  </div>
-                </Card>
-              </div>
-
-              {/* Desglose de Órdenes */}
-              <div className="space-y-3">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                  <Receipt className="w-4 h-4 text-emerald-600" />
-                  Órdenes de Compra y Amortizaciones Registradas
-                </CardTitle>
-
-                {statement.orders.length === 0 ? (
-                  <div className="p-8 text-center bg-muted/40 rounded-xl text-xs text-muted-foreground">
-                    No hay órdenes registradas para este proveedor.
-                  </div>
+                      <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-primary" />
+                      Cargando órdenes de pago y tesorería...
+                    </TableCell>
+                  </TableRow>
+                ) : filteredOrders.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={8}
+                      className="py-12 text-center text-xs text-muted-foreground"
+                    >
+                      No hay órdenes de pago que coincidan con los filtros actuales.
+                    </TableCell>
+                  </TableRow>
                 ) : (
-                  statement.orders.map((order) => {
-                    const curr = String(order.orderCurrency || (typeof order.currency === "string" ? order.currency : order.currency?.code) || "USD");
-                    const totalAmt = order.totalAgreed ?? order.totalUsd;
-                    const paidAmt = order.paidAgreed ?? order.paidUsd;
-                    const balanceAmt = order.balanceAgreed ?? order.balanceUsd;
+                  ordersPagination.paginatedItems.map((po) => {
+                    const st =
+                      STATUS_BADGES[po.status] || STATUS_BADGES.PENDIENTE_APROBACION;
+                    const sym = currencySymbol(po.debtCurrency);
+                    const total = Number(po.totalDebtAmount || 0);
+                    const paid = Number(po.paidAmount || 0);
+                    const rem = Number(po.remainingBalance || 0);
+                    const isPurchase = po.sourceType === "PURCHASE_ORDER";
+                    const originCode = isPurchase
+                      ? po.purchaseOrder?.orderNumber ||
+                        `ORD-${po.purchaseOrderId}`
+                      : po.serviceOrder?.serviceOrderNumber ||
+                        `OS-${po.serviceOrderId}`;
+                    const originHref = isPurchase
+                      ? `/purchasing/orders/${po.purchaseOrderId}`
+                      : `/admin/financial/payments/${po.serviceOrderId}`;
+                    const canPayNow =
+                      po.status === "APROBADA" ||
+                      po.status === "PAGADA_PARCIALMENTE";
 
                     return (
-                      <Card
-                        key={order.id}
-                        className="p-4 text-xs shadow-2xs space-y-2.5"
+                      <TableRow
+                        key={String(po.id)}
+                        className="hover:bg-muted/40 transition-colors text-xs"
                       >
-                        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 font-semibold text-foreground pb-2 border-b border-border">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-primary font-bold">
-                              Orden #{order.orderNumber}
-                            </span>
-                            <Badge variant="outline" className="text-[10px] font-mono">
-                              {curr}
-                            </Badge>
-                            <span className="text-[11px] text-muted-foreground font-normal">
-                              (
-                              {order.createdAt
-                                ? new Date(order.createdAt).toLocaleDateString()
-                                : "-"}
-                              )
-                            </span>
+                        <TableCell className="px-4 py-3 whitespace-nowrap">
+                          <Link
+                            href={`/purchasing/debts/${po.id}`}
+                            className="font-mono font-bold text-primary hover:underline"
+                          >
+                            {po.paymentOrderNumber}
+                          </Link>
+                          <div className="text-[10px] text-muted-foreground font-mono">
+                            {new Date(po.createdAt).toLocaleDateString("es-VE")}
                           </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-muted-foreground font-mono">
-                              Total: {curr} {Number(totalAmt).toFixed(2)}
-                            </span>
-                            <span className="text-emerald-700 font-mono">
-                              Abonado: {curr} {Number(paidAmt).toFixed(2)}
-                            </span>
-                            <span
-                              className={`font-mono font-bold ${
-                                Number(balanceAmt) > 0.009
-                                  ? "text-destructive"
-                                  : "text-emerald-600"
-                              }`}
-                            >
-                              Saldo: {curr} {Number(balanceAmt).toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
+                        </TableCell>
 
-                        {/* Pagos / Abonos vinculados */}
-                        {order.payments && order.payments.length > 0 ? (
-                          <div className="space-y-1.5 pl-2 border-l-2 border-emerald-500/30">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase block">
-                              Amortizaciones Aplicadas:
-                            </span>
-                            {order.payments.map((p) => (
-                              <div
-                                key={p.id}
-                                className="flex items-center justify-between text-[11px] text-muted-foreground font-mono bg-muted/20 px-2 py-1 rounded"
-                              >
-                                <span>
-                                  {p.paymentDate
-                                    ? new Date(p.paymentDate).toLocaleDateString()
-                                    : "Fecha N/A"}{" "}
-                                  · {p.paymentMethod || "PAGO"}{" "}
-                                  {p.referenceNumber && `· Ref: ${p.referenceNumber}`}
-                                </span>
-                                <strong className="text-foreground">
-                                  {p.transactionCurrency || "USD"}{" "}
-                                  {Number(p.amountPaid ?? p.amount ?? 0).toFixed(2)}
-                                  {p.amortizedAmountUsd && (
-                                    <span className="text-emerald-700 ml-1.5 font-normal">
-                                      (Amortiza ${Number(p.amortizedAmountUsd).toFixed(2)} USD)
-                                    </span>
-                                  )}
-                                </strong>
-                              </div>
-                            ))}
+                        <TableCell className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex flex-col items-start gap-1">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[10px] gap-1 px-1.5 py-0",
+                                isPurchase
+                                  ? "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20"
+                                  : "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20"
+                              )}
+                            >
+                              {isPurchase ? (
+                                <ShoppingCart className="w-2.5 h-2.5" />
+                              ) : (
+                                <Wallet className="w-2.5 h-2.5" />
+                              )}
+                              <span>{isPurchase ? "Compra" : "Servicio"}</span>
+                            </Badge>
+                            <Link
+                              href={originHref}
+                              className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground hover:text-primary hover:underline"
+                            >
+                              <span>{originCode}</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </Link>
                           </div>
-                        ) : (
-                          <div className="text-[11px] text-muted-foreground italic">
-                            Sin abonos registrados para esta orden.
+                        </TableCell>
+
+                        <TableCell className="px-4 py-3 max-w-xs">
+                          <div className="font-semibold text-foreground truncate">
+                            {po.beneficiaryName}
                           </div>
-                        )}
-                      </Card>
+                          <div className="text-[11px] text-muted-foreground truncate">
+                            {po.concept}
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="px-4 py-3 text-right font-mono font-medium text-foreground whitespace-nowrap">
+                          {sym}{" "}
+                          {total.toLocaleString("es-VE", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </TableCell>
+
+                        <TableCell className="px-4 py-3 text-right font-mono text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                          {sym}{" "}
+                          {paid.toLocaleString("es-VE", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </TableCell>
+
+                        <TableCell className="px-4 py-3 text-right font-mono font-bold whitespace-nowrap">
+                          <span
+                            className={
+                              rem > 0.009
+                                ? "text-foreground"
+                                : "text-muted-foreground"
+                            }
+                          >
+                            {sym}{" "}
+                            {rem.toLocaleString("es-VE", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        </TableCell>
+
+                        <TableCell className="px-4 py-3 text-center whitespace-nowrap">
+                          <Badge
+                            variant="outline"
+                            className={cn("text-[11px]", st.className)}
+                          >
+                            {st.label}
+                          </Badge>
+                        </TableCell>
+
+                        <TableCell className="px-4 py-3 text-center whitespace-nowrap">
+                          <Button
+                            asChild
+                            size="sm"
+                            variant={canPayNow ? "default" : "outline"}
+                            className={cn(
+                              "h-7 text-xs gap-1.5 cursor-pointer",
+                              canPayNow &&
+                                "bg-emerald-600 hover:bg-emerald-700 text-white"
+                            )}
+                          >
+                            <Link href={`/purchasing/debts/${po.id}`}>
+                              {canPayNow ? (
+                                <>
+                                  <CreditCard className="w-3 h-3" />
+                                  <span>Pagar</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="w-3 h-3" />
+                                  <span>Gestionar</span>
+                                </>
+                              )}
+                            </Link>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
                     );
                   })
                 )}
+              </TableBody>
+            </Table>
+          </div>
+          <TablePagination
+            currentPage={ordersPagination.currentPage}
+            totalPages={ordersPagination.totalPages}
+            pageSize={ordersPagination.pageSize}
+            totalItems={ordersPagination.totalItems}
+            onPageChange={ordersPagination.onPageChange}
+            onPageSizeChange={ordersPagination.onPageSizeChange}
+            pageSizeOptions={[10, 25, 50]}
+            entityName="órdenes de pago"
+          />
+        </Card>
+      ) : (
+        /* Pestaña: Saldos Consolidados por Proveedor */
+        <Card className="overflow-hidden border-border shadow-2xs">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30">
+                  <TableHead className="px-4 py-3 text-xs font-semibold">
+                    Proveedor / RIF
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold text-right">
+                    Saldo USD
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold text-right">
+                    Saldo Bs.
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold text-right">
+                    Saldo EUR
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold text-center">
+                    Estado
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-xs font-semibold text-center">
+                    Acciones
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredSuppliers.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="py-12 text-center text-xs text-muted-foreground"
+                    >
+                      No se encontraron proveedores.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  suppliersPagination.paginatedItems.map((debt) => (
+                    <TableRow
+                      key={debt.id}
+                      className="hover:bg-muted/40 transition-colors text-xs"
+                    >
+                      <TableCell className="px-4 py-3">
+                        <div className="flex items-center gap-2 font-semibold text-foreground">
+                          <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <span>{debt.name}</span>
+                        </div>
+                        <div className="ml-6 font-mono text-[10px] text-muted-foreground">
+                          {debt.rifOrId}
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right font-mono">
+                        <div
+                          className={
+                            (debt.balanceUsd || 0) > 0.009
+                              ? "font-bold text-rose-600 dark:text-rose-400"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          $ {(debt.balanceUsd || 0).toFixed(2)}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">
+                          C: {(debt.totalPurchasedUsd || 0).toFixed(2)} · P:{" "}
+                          {(debt.totalPaidUsd || 0).toFixed(2)}
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right font-mono">
+                        <div
+                          className={
+                            (debt.balanceBs || 0) > 0.009
+                              ? "font-bold text-rose-600 dark:text-rose-400"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          Bs. {(debt.balanceBs || 0).toFixed(2)}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">
+                          C: {(debt.totalPurchasedBs || 0).toFixed(2)} · P:{" "}
+                          {(debt.totalPaidBs || 0).toFixed(2)}
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right font-mono">
+                        <div
+                          className={
+                            (debt.balanceEur || 0) > 0.009
+                              ? "font-bold text-rose-600 dark:text-rose-400"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          € {(debt.balanceEur || 0).toFixed(2)}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">
+                          C: {(debt.totalPurchasedEur || 0).toFixed(2)} · P:{" "}
+                          {(debt.totalPaidEur || 0).toFixed(2)}
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-center">
+                        {!hasSupplierDebt(debt) ? (
+                          <Badge
+                            variant="outline"
+                            className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-[11px]"
+                          >
+                            Solvente
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20 text-[11px]"
+                          >
+                            Con Saldo
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-center">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void openSupplierStatement(debt)}
+                          className="h-7 text-xs gap-1.5 cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Estado de Cuenta</span>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          <TablePagination
+            currentPage={suppliersPagination.currentPage}
+            totalPages={suppliersPagination.totalPages}
+            pageSize={suppliersPagination.pageSize}
+            totalItems={suppliersPagination.totalItems}
+            onPageChange={suppliersPagination.onPageChange}
+            onPageSizeChange={suppliersPagination.onPageSizeChange}
+            pageSizeOptions={[10, 25, 50]}
+            entityName="proveedores"
+          />
+        </Card>
+      )}
+
+      {/* ========================================================
+          MODAL: NUEVA ORDEN DE PAGO (DESDE OC O OS APROBADA)
+         ======================================================== */}
+      <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <FileCheck2 className="w-5 h-5 text-primary" />
+              Nueva Orden de Pago
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Seleccione una Orden de Compra enviada o una Orden de Servicio aprobada para emitir su Orden de Pago en Tesorería.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreatePaymentOrder} className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-border pb-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={
+                  createSourceTab === "PURCHASE_ORDER" ? "default" : "outline"
+                }
+                onClick={() => {
+                  setCreateSourceTab("PURCHASE_ORDER");
+                  setSelectedSource(null);
+                }}
+                className="h-8 text-xs gap-1.5 cursor-pointer"
+              >
+                <ShoppingCart className="w-3.5 h-3.5" />
+                <span>
+                  Órdenes de Compra ({eligibleSources.purchaseOrders.length})
+                </span>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={
+                  createSourceTab === "SERVICE_ORDER" ? "default" : "outline"
+                }
+                onClick={() => {
+                  setCreateSourceTab("SERVICE_ORDER");
+                  setSelectedSource(null);
+                }}
+                className="h-8 text-xs gap-1.5 cursor-pointer"
+              >
+                <Wallet className="w-3.5 h-3.5" />
+                <span>
+                  Órdenes de Servicio ({eligibleSources.serviceOrders.length})
+                </span>
+              </Button>
+            </div>
+
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="text"
+                value={sourceSearch}
+                onChange={(e) => setSourceSearch(e.target.value)}
+                placeholder="Filtrar por número, proveedor o concepto..."
+                className="pl-8 h-9 text-xs"
+              />
+            </div>
+
+            <div className="max-h-64 overflow-y-auto space-y-2 border border-border rounded-xl p-2 bg-muted/20">
+              {loadingSources ? (
+                <div className="py-10 text-center text-xs text-muted-foreground">
+                  <Loader2 className="w-5 h-5 animate-spin mx-auto mb-1.5 text-primary" />
+                  Buscando documentos pendientes...
+                </div>
+              ) : modalSourcesList.length === 0 ? (
+                <div className="py-10 text-center text-xs text-muted-foreground">
+                  No hay{" "}
+                  {createSourceTab === "PURCHASE_ORDER"
+                    ? "órdenes de compra"
+                    : "órdenes de servicio"}{" "}
+                  disponibles sin Orden de Pago activa.
+                </div>
+              ) : (
+                modalSourcesList.map((item) => {
+                  const isSelected =
+                    selectedSource?.id === item.id &&
+                    selectedSource?.sourceType === item.sourceType;
+                  const sym = currencySymbol(item.debtCurrency);
+                  return (
+                    <button
+                      key={`${item.sourceType}-${item.id}`}
+                      type="button"
+                      onClick={() => setSelectedSource(item)}
+                      className={cn(
+                        "w-full text-left p-3 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-3",
+                        isSelected
+                          ? "bg-primary/10 border-primary ring-1 ring-primary/30"
+                          : "bg-background border-border hover:border-primary/40"
+                      )}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-xs text-foreground">
+                            {item.code}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] font-mono py-0"
+                          >
+                            {item.debtCurrency}
+                          </Badge>
+                        </div>
+                        <div className="text-xs font-medium text-foreground truncate mt-0.5">
+                          {item.beneficiaryName}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground truncate">
+                          {item.concept}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="font-mono font-bold text-xs text-foreground">
+                          {sym}{" "}
+                          {item.remainingBalance.toLocaleString("es-VE", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">
+                          Saldo pendiente
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold uppercase">
+                Instrucciones / Notas para Aprobación (Opcional)
+              </Label>
+              <Textarea
+                rows={2}
+                value={opNotes}
+                onChange={(e) => setOpNotes(e.target.value)}
+                placeholder="Ej: Prioridad semanal, verificar cuenta destino..."
+                className="text-xs"
+              />
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setCreateModalOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!selectedSource || creatingOp}
+                className="gap-1.5"
+              >
+                {creatingOp && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Generar Orden de Pago</span>
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ========================================================
+          MODAL: ESTADO DE CUENTA POR PROVEEDOR
+         ======================================================== */}
+      <Dialog
+        open={Boolean(selectedSupplier)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedSupplier(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl max-h-[88vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-primary" />
+              Estado de Cuenta · {selectedSupplier?.name}
+            </DialogTitle>
+            <DialogDescription className="text-xs font-mono">
+              RIF / Cédula: {selectedSupplier?.rifOrId}
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingStatement ? (
+            <div className="py-12 text-center text-xs text-muted-foreground">
+              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-primary" />
+              Cargando estado de cuenta...
+            </div>
+          ) : statement ? (
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <UniversalPdfDownloadButton
+                  document={<SupplierDebtPdfDocument statement={statement} />}
+                  fileName={`Estado_Cuenta_${(selectedSupplier?.name || "Proveedor").replace(/\s+/g, "_")}`}
+                  buttonLabel="Descargar PDF"
+                  previewLabel="Vista Previa"
+                  dialogTitle={`Estado de Cuenta - ${selectedSupplier?.name}`}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <Card className="p-3 border-border shadow-none">
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                    Saldo USD
+                  </div>
+                  <div className="text-lg font-bold font-mono text-foreground mt-0.5">
+                    $ {(statement.balanceUsd || 0).toFixed(2)}
+                  </div>
+                </Card>
+                <Card className="p-3 border-border shadow-none">
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                    Saldo Bolívares
+                  </div>
+                  <div className="text-lg font-bold font-mono text-foreground mt-0.5">
+                    Bs. {(statement.balanceBs || 0).toFixed(2)}
+                  </div>
+                </Card>
+                <Card className="p-3 border-border shadow-none">
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                    Saldo Euros
+                  </div>
+                  <div className="text-lg font-bold font-mono text-foreground mt-0.5">
+                    € {(statement.balanceEur || 0).toFixed(2)}
+                  </div>
+                </Card>
+              </div>
+
+              <div className="border border-border rounded-xl overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/30">
+                      <TableHead className="px-3 py-2 text-xs">Orden</TableHead>
+                      <TableHead className="px-3 py-2 text-xs text-right">
+                        Total
+                      </TableHead>
+                      <TableHead className="px-3 py-2 text-xs text-right">
+                        Pagado
+                      </TableHead>
+                      <TableHead className="px-3 py-2 text-xs text-right">
+                        Saldo
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {statement.orders.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={4}
+                          className="py-6 text-center text-xs text-muted-foreground"
+                        >
+                          Sin órdenes registradas.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      statement.orders.map((ord) => {
+                        const sym = currencySymbol(ord.orderCurrency);
+                        return (
+                          <TableRow key={ord.id} className="text-xs">
+                            <TableCell className="px-3 py-2 font-mono">
+                              <Link
+                                href={`/purchasing/orders/${ord.id}`}
+                                className="text-primary hover:underline inline-flex items-center gap-1"
+                              >
+                                <span>{ord.orderNumber}</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </Link>
+                            </TableCell>
+                            <TableCell className="px-3 py-2 text-right font-mono">
+                              {sym} {(ord.totalAgreed ?? ord.totalUsd).toFixed(2)}
+                            </TableCell>
+                            <TableCell className="px-3 py-2 text-right font-mono text-emerald-600 dark:text-emerald-400">
+                              {sym} {(ord.paidAgreed ?? ord.paidUsd).toFixed(2)}
+                            </TableCell>
+                            <TableCell className="px-3 py-2 text-right font-mono font-bold">
+                              {sym}{" "}
+                              {(ord.balanceAgreed ?? ord.balanceUsd).toFixed(2)}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
               </div>
             </div>
           ) : null}

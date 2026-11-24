@@ -5,7 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import { ProductService, ProductDetail } from "@/services/product.service";
 import { CurrencyService, CurrencyItem } from "@/services/currency.service";
 import { InventoryClientService } from "@/services/inventory.service";
+import { AuthService } from "@/services/auth.service";
 import { toast } from "@/utils/toast";
+import { cn } from "@/lib/utils";
 import {
   Card,
   CardHeader,
@@ -22,6 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -47,7 +50,11 @@ import {
   Pencil,
   AlertCircle,
   CheckCircle2,
+  Ban,
+  RotateCcw,
 } from "lucide-react";
+
+const PRODUCT_STATUS_ROLES = ["ADMINISTRADOR", "COMPRAS", "ALMACENISTA"];
 
 export default function ProductDetailPage() {
   const params = useParams();
@@ -77,6 +84,15 @@ export default function ProductDetailPage() {
   const [editMinStockAlert, setEditMinStockAlert] = useState<number | "">(5);
   const [editIsReagent, setEditIsReagent] = useState(false);
   const [editIsTaxExempt, setEditIsTaxExempt] = useState(false);
+  const [editIsActive, setEditIsActive] = useState(true);
+
+  const [canManageStatus] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const roles = AuthService.getCurrentUser()?.roles ?? [];
+    return roles.some((role) => PRODUCT_STATUS_ROLES.includes(role));
+  });
+  const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   useEffect(() => {
     if (!productId) return;
@@ -114,6 +130,7 @@ export default function ProductDetailPage() {
     setEditMinStockAlert(product.minStockAlert ?? 5);
     setEditIsReagent(Boolean(product.isReagent));
     setEditIsTaxExempt(Boolean(product.isTaxExempt));
+    setEditIsActive(product.isActive !== false);
 
     setIsEditDialogOpen(true);
 
@@ -172,6 +189,7 @@ export default function ProductDetailPage() {
         minStockAlert: editMinStockAlert === "" ? 0 : Number(editMinStockAlert),
         isReagent: editIsReagent,
         isTaxExempt: editIsTaxExempt,
+        isActive: editIsActive,
       });
 
       // Recargar datos actualizados
@@ -184,6 +202,37 @@ export default function ProductDetailPage() {
       toast.error(msg);
     } finally {
       setSavingEdit(false);
+    }
+  };
+
+  const handleConfirmToggleStatus = async () => {
+    if (!product) return;
+    const nextIsActive = product.isActive === false;
+    setUpdatingStatus(true);
+    try {
+      const updated = await ProductService.updateProductStatus(
+        product.id,
+        nextIsActive
+      );
+      setProduct(updated);
+      setIsStatusDialogOpen(false);
+      toast.success(
+        nextIsActive
+          ? `Insumo "${product.name}" reactivado exitosamente.`
+          : `Insumo "${product.name}" deshabilitado. Ya no generará alertas de stock.`
+      );
+    } catch (err: unknown) {
+      const error = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Error al cambiar el estado del insumo."
+      );
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
@@ -236,7 +285,8 @@ export default function ProductDetailPage() {
 
   const totalPurchasePacks =
     hasDistinctPackage ? (totalUnits / conversionFactor).toFixed(2) : null;
-  const isBelowMinStock = totalUnits <= product.minStockAlert;
+  const isProductActive = product.isActive !== false;
+  const isBelowMinStock = isProductActive && totalUnits <= product.minStockAlert;
   const batches =
     (product.stockBatches && product.stockBatches.length > 0
       ? product.stockBatches
@@ -289,7 +339,14 @@ export default function ProductDetailPage() {
                   Insumo General
                 </Badge>
               )}
-              {isBelowMinStock ? (
+              {!isProductActive ? (
+                <Badge
+                  variant="secondary"
+                  className="gap-1 text-xs bg-slate-500/15 text-slate-700 dark:text-slate-300 border border-slate-500/30"
+                >
+                  <Ban className="w-3 h-3" /> Deshabilitado
+                </Badge>
+              ) : isBelowMinStock ? (
                 <Badge variant="destructive" className="gap-1 text-xs">
                   <AlertTriangle className="w-3 h-3" /> Reponer Existencias
                 </Badge>
@@ -305,7 +362,32 @@ export default function ProductDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {canManageStatus && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsStatusDialogOpen(true)}
+              className={cn(
+                "cursor-pointer shadow-xs gap-1.5",
+                isProductActive
+                  ? "hover:text-rose-600 hover:border-rose-500/40 hover:bg-rose-500/10"
+                  : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+              )}
+            >
+              {isProductActive ? (
+                <>
+                  <Ban className="w-3.5 h-3.5" />
+                  Deshabilitar
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Reactivar Insumo
+                </>
+              )}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -315,18 +397,52 @@ export default function ProductDetailPage() {
             <Pencil className="w-3.5 h-3.5 text-primary" />
             Editar Insumo & Conversión
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              router.push(`/inventory/adjustments?productId=${product.id}`)
-            }
-            className="cursor-pointer shadow-xs"
-          >
-            Ajustar Inventario
-          </Button>
+          {(isProductActive || totalUnits > 0) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                router.push(`/inventory/adjustments?productId=${product.id}`)
+              }
+              className="cursor-pointer shadow-xs"
+            >
+              Ajustar Inventario
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Banner de Producto Deshabilitado */}
+      {!isProductActive && (
+        <div className="p-4 rounded-xl bg-slate-500/10 border border-slate-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-slate-500/15 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0 mt-0.5">
+              <Ban className="w-4 h-4" />
+            </div>
+            <div className="space-y-0.5 text-xs">
+              <p className="font-bold text-foreground">
+                Insumo deshabilitado (Solo consulta e historial)
+              </p>
+              <p className="text-muted-foreground leading-relaxed">
+                Este producto no genera alertas ni notificaciones de stock
+                mínimo/vencimiento y no está disponible para nuevas compras o
+                solicitudes. Todo su historial y Kardex permanecen intactos.
+              </p>
+            </div>
+          </div>
+          {canManageStatus && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setIsStatusDialogOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shrink-0 cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reactivar Insumo
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Grid Resumen Métricas */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -355,7 +471,14 @@ export default function ProductDetailPage() {
               Estado de Inventario
             </span>
             <div className="pt-1">
-              {isBelowMinStock ? (
+              {!isProductActive ? (
+                <Badge
+                  variant="secondary"
+                  className="gap-1 text-xs font-bold bg-slate-500/15 text-slate-700 dark:text-slate-300 border border-slate-500/30"
+                >
+                  <Ban className="w-3.5 h-3.5" /> Deshabilitado
+                </Badge>
+              ) : isBelowMinStock ? (
                 <Badge variant="destructive" className="gap-1 text-xs font-bold">
                   <AlertTriangle className="w-3.5 h-3.5" /> Reponer Existencias
                 </Badge>
@@ -366,7 +489,9 @@ export default function ProductDetailPage() {
               )}
             </div>
             <span className="text-[11px] text-muted-foreground block">
-              Alerta mínima: {product.minStockAlert} {product.baseUnit?.abbreviation || "UND"}
+              {!isProductActive
+                ? "Alertas de reposición pausadas"
+                : `Alerta mínima: ${product.minStockAlert} ${product.baseUnit?.abbreviation || "UND"}`}
             </span>
           </CardContent>
         </Card>
@@ -830,6 +955,38 @@ export default function ProductDetailPage() {
               />
             </div>
 
+            <div
+              className={cn(
+                "flex items-center justify-between p-3 rounded-lg border transition-colors",
+                editIsActive
+                  ? "border-emerald-500/30 bg-emerald-500/5"
+                  : "border-slate-500/30 bg-slate-500/10"
+              )}
+            >
+              <div className="pr-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-foreground">
+                    Estado Operativo en Inventario
+                  </span>
+                  <Badge
+                    variant={editIsActive ? "success" : "secondary"}
+                    className="text-[10px]"
+                  >
+                    {editIsActive ? "Activo" : "Deshabilitado"}
+                  </Badge>
+                </div>
+                <span className="text-[11px] text-muted-foreground block mt-0.5">
+                  {editIsActive
+                    ? "Habilitado para solicitudes, compras y alertas de stock mínimo."
+                    : "Deshabilitado: pausa notificaciones/alertas y conserva el historial."}
+                </span>
+              </div>
+              <Checkbox
+                checked={editIsActive}
+                onCheckedChange={(val) => setEditIsActive(Boolean(val))}
+              />
+            </div>
+
             <div className="space-y-1.5">
               <Label className="text-xs uppercase tracking-wider">
                 Descripción / Notas Técnicas
@@ -864,6 +1021,105 @@ export default function ProductDetailPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Confirmación de Deshabilitar / Reactivar */}
+      <Dialog
+        open={isStatusDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !updatingStatus) setIsStatusDialogOpen(false);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+              {isProductActive ? (
+                <>
+                  <Ban className="w-5 h-5 text-rose-600" />
+                  Deshabilitar Insumo
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-5 h-5 text-emerald-600" />
+                  Reactivar Insumo
+                </>
+              )}
+            </DialogTitle>
+            <DialogDescription className="text-xs pt-1">
+              {product.sku} &bull;{" "}
+              <span className="font-semibold text-foreground">
+                {product.name}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 text-xs text-muted-foreground py-1">
+            {isProductActive ? (
+              <>
+                <p className="leading-relaxed">
+                  Al deshabilitar este insumo dejará de emitir alertas de stock
+                  crítico o vencimiento y no podrá seleccionarse en nuevas
+                  compras ni solicitudes. Su historial y Kardex permanecerán
+                  intactos y podrás reactivarlo cuando lo necesites.
+                </p>
+                {totalUnits > 0 && (
+                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-semibold block">
+                        Existencia actual: {totalUnits}{" "}
+                        {product.baseUnit?.abbreviation || "UND"}
+                      </span>
+                      <span>
+                        Sus lotes físicos seguirán visibles aquí y podrán
+                        ajustarse o darse de baja por merma si fuera necesario.
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="leading-relaxed">
+                Al reactivar este insumo volverá a estar disponible en el
+                catálogo operativo, compras y solicitudes, y reanudará el
+                monitoreo de alertas de stock mínimo.
+              </p>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsStatusDialogOpen(false)}
+              disabled={updatingStatus}
+              className="cursor-pointer"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={isProductActive ? "destructive" : "default"}
+              onClick={() => void handleConfirmToggleStatus()}
+              disabled={updatingStatus}
+              className={cn(
+                "gap-1.5 cursor-pointer",
+                !isProductActive && "bg-emerald-600 hover:bg-emerald-700 text-white"
+              )}
+            >
+              {updatingStatus && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {isProductActive
+                ? updatingStatus
+                  ? "Deshabilitando..."
+                  : "Deshabilitar Insumo"
+                : updatingStatus
+                  ? "Reactivando..."
+                  : "Reactivar Insumo"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -79,7 +79,16 @@ export const getProducts = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { search, q, categoryId, isReagent, isLabReagent, labAreaId } = req.query;
+    const {
+      search,
+      q,
+      categoryId,
+      isReagent,
+      isLabReagent,
+      labAreaId,
+      includeInactive,
+      isActive,
+    } = req.query;
 
     const filter: ProductFilterDTO = {};
     const rawSearch =
@@ -115,6 +124,12 @@ export const getProducts = async (
       if (!isNaN(parsedAreaId) && parsedAreaId > 0) {
         filter.labAreaId = parsedAreaId;
       }
+    }
+    if (includeInactive === 'true') {
+      filter.includeInactive = true;
+    }
+    if (isActive === 'true' || isActive === 'false') {
+      filter.isActive = isActive === 'true';
     }
 
     const products = await ProductService.listProducts(filter);
@@ -234,6 +249,7 @@ export const updateProduct = async (
       calibratorsPerRun,
       allowedLabAreaIds,
       compatibleExamIds,
+      isActive,
     } = req.body;
 
     const updateData: UpdateProductDTO = {};
@@ -292,12 +308,53 @@ export const updateProduct = async (
         ? compatibleExamIds.map((item: any) => Number(item))
         : [];
     }
+    if (isActive !== undefined) {
+      updateData.isActive = Boolean(isActive);
+    }
 
     const updated = await ProductService.updateProduct(BigInt(id), updateData);
 
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Insumo actualizado exitosamente',
+      data: serializeBigInt(updated),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateProductStatus = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!id) {
+      res
+        .status(400)
+        .json({ status: 'BAD_REQUEST', message: 'ID no proporcionado' });
+      return;
+    }
+
+    const { isActive } = req.body;
+    if (typeof isActive !== 'boolean') {
+      res.status(400).json({
+        status: 'BAD_REQUEST',
+        message: 'El campo isActive (booleano) es obligatorio',
+      });
+      return;
+    }
+
+    const updated = await ProductService.setProductStatus(BigInt(id), isActive);
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: isActive
+        ? 'Insumo reactivado exitosamente'
+        : 'Insumo deshabilitado exitosamente',
       data: serializeBigInt(updated),
     });
   } catch (error) {

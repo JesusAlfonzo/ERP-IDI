@@ -256,7 +256,7 @@ export class InventoryService {
     const futureDate = new Date();
     futureDate.setDate(today.getDate() + daysThreshold);
 
-    // 1. Lotes vencidos o por vencer
+    // 1. Lotes vencidos o por vencer (solo de productos activos)
     const expiringBatches = await prisma.stockBatch.findMany({
       where: {
         currentQuantity: { gt: 0 },
@@ -264,6 +264,7 @@ export class InventoryService {
         expirationDate: {
           lte: futureDate,
         },
+        product: { isActive: true },
       },
       include: {
         product: {
@@ -529,6 +530,22 @@ export class InventoryService {
           }
 
           const trimmedLot = item.newBatch.lotNumber.trim().toUpperCase();
+
+          const targetProduct = await tx.product.findUnique({
+            where: { id: BigInt(item.newBatch.productId) },
+          });
+
+          if (!targetProduct) {
+            throw new Error(
+              `Producto con ID ${item.newBatch.productId} no encontrado`
+            );
+          }
+
+          if (!targetProduct.isActive) {
+            throw new Error(
+              `El producto "${targetProduct.name}" está deshabilitado y no admite ingresos de nuevos lotes.`
+            );
+          }
 
           const existingBatch = await tx.stockBatch.findFirst({
             where: {

@@ -275,6 +275,26 @@ export class RequestService {
       throw new Error('Debe solicitar al menos un producto');
     }
 
+    const uniqueProductIds = Array.from(
+      new Set(data.items.map((it) => it.productId))
+    );
+    const dbProducts = await prisma.product.findMany({
+      where: { id: { in: uniqueProductIds } },
+      select: { id: true, name: true, isActive: true },
+    });
+    const productMap = new Map(dbProducts.map((p) => [p.id.toString(), p]));
+    for (const item of data.items) {
+      const prod = productMap.get(item.productId.toString());
+      if (!prod) {
+        throw new Error(`Producto con ID ${item.productId} no encontrado`);
+      }
+      if (!prod.isActive) {
+        throw new Error(
+          `El producto "${prod.name}" está deshabilitado y no puede solicitarse.`
+        );
+      }
+    }
+
     const currentYear = new Date().getFullYear();
     const latest = await prisma.request.findFirst({
       where: {
@@ -449,6 +469,26 @@ export class RequestService {
         );
         if (hasInvalidItem) {
           throw new Error('Todos los renglones deben tener un insumo válido y cantidad mayor a cero');
+        }
+
+        const uniqueIds = Array.from(
+          new Set(data.items.map((it) => BigInt(it.productId)))
+        );
+        const foundProducts = await tx.product.findMany({
+          where: { id: { in: uniqueIds } },
+          select: { id: true, name: true, isActive: true },
+        });
+        const prodMap = new Map(foundProducts.map((p) => [p.id.toString(), p]));
+        for (const it of data.items) {
+          const prod = prodMap.get(BigInt(it.productId).toString());
+          if (!prod) {
+            throw new Error(`Producto con ID ${it.productId} no encontrado`);
+          }
+          if (!prod.isActive) {
+            throw new Error(
+              `El producto "${prod.name}" está deshabilitado y no puede incluirse en solicitudes.`
+            );
+          }
         }
 
         await tx.requestItem.deleteMany({

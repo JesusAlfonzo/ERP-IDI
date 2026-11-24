@@ -87,6 +87,7 @@ export class ReportService {
         currentQuantity: { gt: 0 },
         status: { in: [BatchStatus.DISPONIBLE, BatchStatus.EN_CUARENTENA] },
         expirationDate: { not: null, lte: day90 },
+        product: { isActive: true },
       },
       include: {
         product: { select: { id: true, name: true, sku: true } },

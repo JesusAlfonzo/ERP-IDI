@@ -123,6 +123,12 @@ export class StockAdjustmentService {
             );
           }
 
+          if (!product.isActive) {
+            throw new Error(
+              `El producto "${product.name}" está deshabilitado y no admite ingresos de nuevos lotes.`
+            );
+          }
+
           updatedBatch = await tx.stockBatch.create({
             data: {
               productId: item.newBatch.productId,

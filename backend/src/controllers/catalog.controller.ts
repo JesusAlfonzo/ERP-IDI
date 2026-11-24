@@ -482,11 +482,13 @@ export const getCatalogProducts = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { search, categoryId, isReagent } = req.query;
+    const { search, categoryId, isReagent, includeInactive, isActive } = req.query;
     const filter: {
       search?: string;
       categoryId?: number;
       isReagent?: boolean;
+      includeInactive?: boolean;
+      isActive?: boolean;
     } = {};
 
     if (typeof search === 'string' && search.trim() !== '') {
@@ -494,6 +496,10 @@ export const getCatalogProducts = async (
     }
     if (categoryId) filter.categoryId = Number(categoryId);
     if (isReagent !== undefined) filter.isReagent = isReagent === 'true';
+    if (includeInactive === 'true') filter.includeInactive = true;
+    if (isActive === 'true' || isActive === 'false') {
+      filter.isActive = isActive === 'true';
+    }
 
     const products = await CatalogService.getCatalog(filter);
 

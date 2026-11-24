@@ -308,10 +308,16 @@ export class CatalogService {
     search?: string;
     categoryId?: number;
     isReagent?: boolean;
+    includeInactive?: boolean;
+    isActive?: boolean;
   }) {
     const products = await prisma.product.findMany({
       where: {
-        isActive: true,
+        ...(filter?.isActive !== undefined
+          ? { isActive: filter.isActive }
+          : filter?.includeInactive
+            ? {}
+            : { isActive: true }),
         ...(filter?.categoryId !== undefined
           ? { categoryId: filter.categoryId }
           : {}),

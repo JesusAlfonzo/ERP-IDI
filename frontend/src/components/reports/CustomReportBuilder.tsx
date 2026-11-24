@@ -445,7 +445,7 @@ export function CustomReportBuilder() {
           UserService.getUsers().catch(() => []),
           PurchasingClientService.getSuppliers().catch(() => []),
           InventoryMasterService.getDepartments(true).catch(() => []),
-          InventoryClientService.getProducts().catch(() => []),
+          InventoryClientService.getProducts({ includeInactive: true }).catch(() => []),
           InventoryClientService.getCategories().catch(() => []),
         ]);
         if (isMounted) {
@@ -1513,6 +1513,7 @@ export function CustomReportBuilder() {
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
+                    {p.isActive === false ? " (Deshabilitado)" : ""}
                   </option>
                 ))}
               </select>

@@ -7,6 +7,7 @@ import {
   getProductById,
   createProduct,
   updateProduct,
+  updateProductStatus,
 } from '../controllers/product.controller.js';
 import { authenticateJWT } from '../middlewares/auth.middleware.js';
 import { requireRoles } from '../middlewares/role.middleware.js';
@@ -35,6 +36,11 @@ router.put(
   '/:id',
   requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ALMACENISTA']),
   updateProduct
+);
+router.patch(
+  '/:id/status',
+  requireRoles(['ADMINISTRADOR', 'COMPRAS', 'ALMACENISTA']),
+  updateProductStatus
 );
 router.patch(
   '/:id',

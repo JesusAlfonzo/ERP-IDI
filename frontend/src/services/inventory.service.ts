@@ -35,6 +35,9 @@ export const InventoryClientService = {
       params.append("categoryId", String(filters.categoryId));
     if (filters?.isReagent !== undefined)
       params.append("isReagent", String(filters.isReagent));
+    if (filters?.includeInactive) params.append("includeInactive", "true");
+    if (filters?.isActive !== undefined)
+      params.append("isActive", String(filters.isActive));
     if (filters?.page) params.append("page", String(filters.page));
     if (filters?.limit) params.append("limit", String(filters.limit));
 
@@ -67,6 +70,9 @@ export const InventoryClientService = {
       params.append("categoryId", String(filters.categoryId));
     if (filters?.isReagent !== undefined)
       params.append("isReagent", String(filters.isReagent));
+    if (filters?.includeInactive) params.append("includeInactive", "true");
+    if (filters?.isActive !== undefined)
+      params.append("isActive", String(filters.isActive));
     if (filters?.page) params.append("page", String(filters.page));
     if (filters?.limit) params.append("limit", String(filters.limit));
 

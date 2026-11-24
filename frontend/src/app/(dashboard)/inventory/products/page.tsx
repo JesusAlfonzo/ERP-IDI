@@ -7,14 +7,16 @@ import {
   useMemo,
   Suspense,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { InventoryClientService } from "@/services/inventory.service";
+import { ProductService } from "@/services/product.service";
 import { AuthService } from "@/services/auth.service";
 import { usePagination } from "@/hooks/use-pagination";
 import { TablePagination } from "@/components/common/TablePagination";
-import type { Product, Category, Brand, Unit, StockBatch } from "@/types/inventory";
+import type { Product, Category, StockBatch } from "@/types/inventory";
 import { cn } from "@/lib/utils";
+import { toast } from "@/utils/toast";
 
 import {
   Package,
@@ -25,7 +27,6 @@ import {
   Layers,
   X,
   CheckCircle2,
-  AlertCircle,
   AlertTriangle,
   AlertOctagon,
   Boxes,
@@ -33,6 +34,9 @@ import {
   MapPin,
   ExternalLink,
   SlidersHorizontal,
+  Ban,
+  RotateCcw,
+  Loader2,
 } from "lucide-react";
 
 import { Card, CardTitle } from "@/components/ui/card";
@@ -47,18 +51,43 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
-type ActiveTab = "todos" | "disponibles" | "bajo_stock" | "agotados" | "reactivos";
+type ActiveTab =
+  | "activos"
+  | "disponibles"
+  | "bajo_stock"
+  | "agotados"
+  | "reactivos"
+  | "deshabilitados";
 
-export default function ProductsPage() {
+const PRODUCT_STATUS_ROLES = ["ADMINISTRADOR", "COMPRAS", "ALMACENISTA"];
+
+function ProductsPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [canManageStatus] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const roles = AuthService.getCurrentUser()?.roles ?? [];
+    return roles.some((role) => PRODUCT_STATUS_ROLES.includes(role));
+  });
 
   // Filtros
-  const [activeTab, setActiveTab] = useState<ActiveTab>("todos");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("activos");
+  const [lowStockCriticalOnly, setLowStockCriticalOnly] = useState(
+    () => searchParams.get("lowStockOnly") === "true"
+  );
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
 
@@ -66,6 +95,11 @@ export default function ProductsPage() {
   const [selectedProductForDetail, setSelectedProductForDetail] =
     useState<Product | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+  // Modal de Confirmación de Deshabilitar / Reactivar
+  const [statusTargetProduct, setStatusTargetProduct] =
+    useState<Product | null>(null);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -76,7 +110,9 @@ export default function ProductsPage() {
           brands: [],
           units: [],
         })),
-        InventoryClientService.getCatalog().catch(() => []),
+        InventoryClientService.getCatalog({ includeInactive: true }).catch(
+          () => []
+        ),
       ]);
 
       setCategories(catalogsData.categories || []);
@@ -103,38 +139,57 @@ export default function ProductsPage() {
     };
   }, [router, loadData]);
 
-  // Métricas rápidas para KPIs y Tabs
-  const totalProducts = products.length;
+  // Separación de activos vs deshabilitados para mantener KPIs y alertas limpios
+  const activeProducts = useMemo(
+    () => products.filter((p) => p.isActive !== false),
+    [products]
+  );
+  const inactiveProducts = useMemo(
+    () => products.filter((p) => p.isActive === false),
+    [products]
+  );
+
+  // Métricas rápidas para KPIs y Tabs (solo insumos activos)
+  const totalActiveProducts = activeProducts.length;
+  const inactiveCount = inactiveProducts.length;
   const availableCount = useMemo(
     () =>
-      products.filter(
+      activeProducts.filter(
         (p) => Number(p.totalStock ?? 0) > Number(p.minStockAlert ?? 0)
       ).length,
-    [products]
+    [activeProducts]
   );
   const lowStockCount = useMemo(
     () =>
-      products.filter(
+      activeProducts.filter(
         (p) =>
           Number(p.totalStock ?? 0) > 0 &&
           Number(p.totalStock ?? 0) <= Number(p.minStockAlert ?? 0)
       ).length,
-    [products]
+    [activeProducts]
   );
   const depletedCount = useMemo(
-    () => products.filter((p) => Number(p.totalStock ?? 0) <= 0).length,
-    [products]
+    () => activeProducts.filter((p) => Number(p.totalStock ?? 0) <= 0).length,
+    [activeProducts]
   );
   const reagentsCount = useMemo(
-    () => products.filter((p) => Boolean(p.isReagent)).length,
-    [products]
+    () => activeProducts.filter((p) => Boolean(p.isReagent)).length,
+    [activeProducts]
   );
 
   // Filtrado reactivo en memoria (0ms lag)
   const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
+    const baseList =
+      activeTab === "deshabilitados" ? inactiveProducts : activeProducts;
+
+    return baseList.filter((p) => {
       const total = Number(p.totalStock ?? 0);
       const minAlert = Number(p.minStockAlert ?? 0);
+
+      // Filtro directo desde notificación (?lowStockOnly=true)
+      if (lowStockCriticalOnly && activeTab !== "deshabilitados") {
+        if (!(total <= minAlert)) return false;
+      }
 
       // Pestaña
       if (activeTab === "disponibles" && !(total > minAlert)) return false;
@@ -163,21 +218,97 @@ export default function ProductsPage() {
 
       return true;
     });
-  }, [products, activeTab, categoryFilter, search]);
+  }, [
+    activeProducts,
+    inactiveProducts,
+    activeTab,
+    lowStockCriticalOnly,
+    categoryFilter,
+    search,
+  ]);
 
   const pagination = usePagination(filteredProducts, { initialPageSize: 10 });
+  const { resetPage } = pagination;
 
-  const hasActiveFilters = Boolean(search.trim() || categoryFilter);
+  useEffect(() => {
+    resetPage();
+  }, [activeTab, lowStockCriticalOnly, categoryFilter, search, resetPage]);
+
+  const hasActiveFilters = Boolean(
+    search.trim() || categoryFilter || lowStockCriticalOnly
+  );
 
   const handleClearFilters = () => {
     setSearch("");
     setCategoryFilter("");
+    setLowStockCriticalOnly(false);
+  };
+
+  const handleSelectTab = (tab: ActiveTab) => {
+    setActiveTab(tab);
+    if (lowStockCriticalOnly) {
+      setLowStockCriticalOnly(false);
+    }
+  };
+
+  const handleConfirmToggleStatus = async () => {
+    if (!statusTargetProduct) return;
+    const nextIsActive = statusTargetProduct.isActive === false;
+    setUpdatingStatus(true);
+    try {
+      await ProductService.updateProductStatus(
+        statusTargetProduct.id,
+        nextIsActive
+      );
+
+      setProducts((prev) =>
+        prev.map((item) =>
+          String(item.id) === String(statusTargetProduct.id)
+            ? { ...item, isActive: nextIsActive }
+            : item
+        )
+      );
+
+      setSelectedProductForDetail((prev) =>
+        prev && String(prev.id) === String(statusTargetProduct.id)
+          ? { ...prev, isActive: nextIsActive }
+          : prev
+      );
+
+      toast.success(
+        nextIsActive
+          ? `Insumo "${statusTargetProduct.name}" reactivado correctamente.`
+          : `Insumo "${statusTargetProduct.name}" deshabilitado. Ya no generará alertas de stock.`
+      );
+      setStatusTargetProduct(null);
+    } catch (err: unknown) {
+      const error = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          "No se pudo actualizar el estado del insumo."
+      );
+    } finally {
+      setUpdatingStatus(false);
+    }
   };
 
   const getStockBadge = (
     totalStock: number = 0,
-    minStockAlert: number = 0
+    minStockAlert: number = 0,
+    isActive: boolean = true
   ) => {
+    if (!isActive) {
+      return {
+        label: "Deshabilitado",
+        variant: "secondary" as const,
+        className:
+          "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20",
+      };
+    }
     if (totalStock <= 0) {
       return {
         label: "Agotado",
@@ -289,17 +420,19 @@ export default function ProductsPage() {
           4 TARJETAS KPI ESTANDARIZADAS
          ======================================================== */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* KPI 1: Total Insumos */}
+        {/* KPI 1: Insumos Activos */}
         <Card className="p-4 border-border shadow-2xs hover:border-primary/40 transition-all flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-              Total Insumos
+              Insumos Activos
             </span>
             <div className="text-2xl font-bold font-mono text-foreground">
-              {totalProducts}
+              {totalActiveProducts}
             </div>
             <span className="text-[11px] text-muted-foreground block">
-              Ítems catalogados en sistema
+              {inactiveCount > 0
+                ? `${inactiveCount} deshabilitado(s) en archivo`
+                : "Ítems activos en catálogo"}
             </span>
           </div>
           <div className="w-11 h-11 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 flex items-center justify-center shrink-0">
@@ -370,26 +503,30 @@ export default function ProductsPage() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-border text-xs">
           <button
             type="button"
-            onClick={() => setActiveTab("todos")}
+            onClick={() => handleSelectTab("activos")}
             className={cn(
               "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
-              activeTab === "todos"
+              activeTab === "activos" && !lowStockCriticalOnly
                 ? "bg-primary text-primary-foreground shadow-2xs"
                 : "text-muted-foreground hover:text-foreground hover:bg-muted"
             )}
           >
-            <span>Todos</span>
+            <span>Activos</span>
             <Badge
-              variant={activeTab === "todos" ? "secondary" : "outline"}
+              variant={
+                activeTab === "activos" && !lowStockCriticalOnly
+                  ? "secondary"
+                  : "outline"
+              }
               className="text-[10px] px-1.5 py-0 font-mono"
             >
-              {totalProducts}
+              {totalActiveProducts}
             </Badge>
           </button>
 
           <button
             type="button"
-            onClick={() => setActiveTab("disponibles")}
+            onClick={() => handleSelectTab("disponibles")}
             className={cn(
               "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
               activeTab === "disponibles"
@@ -408,7 +545,7 @@ export default function ProductsPage() {
 
           <button
             type="button"
-            onClick={() => setActiveTab("bajo_stock")}
+            onClick={() => handleSelectTab("bajo_stock")}
             className={cn(
               "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
               activeTab === "bajo_stock"
@@ -427,7 +564,7 @@ export default function ProductsPage() {
 
           <button
             type="button"
-            onClick={() => setActiveTab("agotados")}
+            onClick={() => handleSelectTab("agotados")}
             className={cn(
               "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
               activeTab === "agotados"
@@ -446,7 +583,7 @@ export default function ProductsPage() {
 
           <button
             type="button"
-            onClick={() => setActiveTab("reactivos")}
+            onClick={() => handleSelectTab("reactivos")}
             className={cn(
               "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
               activeTab === "reactivos"
@@ -463,7 +600,46 @@ export default function ProductsPage() {
               {reagentsCount}
             </Badge>
           </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectTab("deshabilitados")}
+            className={cn(
+              "px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0 ml-auto",
+              activeTab === "deshabilitados"
+                ? "bg-slate-700 text-white shadow-2xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <Ban className="w-3.5 h-3.5" />
+            <span>Deshabilitados</span>
+            <Badge
+              variant={activeTab === "deshabilitados" ? "secondary" : "outline"}
+              className="text-[10px] px-1.5 py-0 font-mono"
+            >
+              {inactiveCount}
+            </Badge>
+          </button>
         </div>
+
+        {lowStockCriticalOnly && activeTab !== "deshabilitados" && (
+          <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-300">
+            <span className="flex items-center gap-2 font-medium">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              Mostrando únicamente insumos activos en stock crítico (bajo mínimo o agotados).
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setLowStockCriticalOnly(false)}
+              className="h-7 text-xs gap-1 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+              Quitar filtro
+            </Button>
+          </div>
+        )}
 
         {/* Barra de Búsqueda y Filtros */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
@@ -575,7 +751,12 @@ export default function ProductsPage() {
                 pagination.paginatedItems.map((p, index) => {
                   const totalStock = Number(p.totalStock ?? 0);
                   const minAlert = Number(p.minStockAlert ?? 0);
-                  const badge = getStockBadge(totalStock, minAlert);
+                  const isProductActive = p.isActive !== false;
+                  const badge = getStockBadge(
+                    totalStock,
+                    minAlert,
+                    isProductActive
+                  );
                   const unitAbbr =
                     p.baseUnit?.abbreviation || p.baseUnit?.name || "UND";
                   const batchesCount = p.batches?.length ?? 0;
@@ -583,7 +764,10 @@ export default function ProductsPage() {
                   return (
                     <TableRow
                       key={`${p.id}-${index}`}
-                      className="hover:bg-muted/40 transition-colors"
+                      className={cn(
+                        "hover:bg-muted/40 transition-colors",
+                        !isProductActive && "opacity-75 bg-muted/20"
+                      )}
                     >
                       {/* SKU */}
                       <TableCell className="py-3 px-4 font-mono font-bold text-xs text-foreground whitespace-nowrap">
@@ -679,6 +863,32 @@ export default function ProductsPage() {
                               <ExternalLink className="w-3.5 h-3.5" />
                             </Link>
                           </Button>
+
+                          {canManageStatus &&
+                            (isProductActive ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => setStatusTargetProduct(p)}
+                                className="h-7 w-7 text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 cursor-pointer"
+                                title="Deshabilitar insumo"
+                              >
+                                <Ban className="w-3.5 h-3.5" />
+                              </Button>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setStatusTargetProduct(p)}
+                                className="h-7 text-xs font-semibold gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 cursor-pointer shadow-2xs"
+                                title="Reactivar insumo"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Reactivar</span>
+                              </Button>
+                            ))}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -728,6 +938,14 @@ export default function ProductsPage() {
                       Insumo General
                     </Badge>
                   )}
+                  {selectedProductForDetail.isActive === false && (
+                    <Badge
+                      variant="outline"
+                      className="bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/30 gap-1 text-xs"
+                    >
+                      <Ban className="w-3 h-3" /> Deshabilitado
+                    </Badge>
+                  )}
                 </div>
                 <h2 className="text-lg font-bold text-foreground leading-tight truncate">
                   {selectedProductForDetail.name}
@@ -737,20 +955,52 @@ export default function ProductsPage() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 text-xs font-semibold shadow-2xs"
-                >
-                  <Link
-                    href={`/inventory/adjustments/new?productId=${selectedProductForDetail.id}`}
+              <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                {canManageStatus && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setStatusTargetProduct(selectedProductForDetail)
+                    }
+                    className={cn(
+                      "gap-1.5 text-xs font-semibold shadow-2xs cursor-pointer",
+                      selectedProductForDetail.isActive === false
+                        ? "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+                        : "hover:text-rose-600 hover:border-rose-500/40 hover:bg-rose-500/10"
+                    )}
                   >
-                    <SlidersHorizontal className="w-3.5 h-3.5 text-primary" />
-                    <span>Ajustar Stock</span>
-                  </Link>
-                </Button>
+                    {selectedProductForDetail.isActive === false ? (
+                      <>
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Reactivar</span>
+                      </>
+                    ) : (
+                      <>
+                        <Ban className="w-3.5 h-3.5" />
+                        <span>Deshabilitar</span>
+                      </>
+                    )}
+                  </Button>
+                )}
+
+                {(selectedProductForDetail.isActive !== false ||
+                  Number(selectedProductForDetail.totalStock ?? 0) > 0) && (
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-xs font-semibold shadow-2xs"
+                  >
+                    <Link
+                      href={`/inventory/adjustments/new?productId=${selectedProductForDetail.id}`}
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-primary" />
+                      <span>Ajustar Stock</span>
+                    </Link>
+                  </Button>
+                )}
 
                 <Button
                   asChild
@@ -806,7 +1056,11 @@ export default function ProductsPage() {
                       const minAlert = Number(
                         selectedProductForDetail.minStockAlert ?? 0
                       );
-                      const b = getStockBadge(total, minAlert);
+                      const b = getStockBadge(
+                        total,
+                        minAlert,
+                        selectedProductForDetail.isActive !== false
+                      );
                       return (
                         <Badge
                           variant="outline"
@@ -1043,6 +1297,153 @@ export default function ProductsPage() {
           </div>
         </div>
       )}
+
+      {/* ========================================================
+          MODAL DE CONFIRMACIÓN: DESHABILITAR / REACTIVAR INSUMO
+         ======================================================== */}
+      <Dialog
+        open={Boolean(statusTargetProduct)}
+        onOpenChange={(open) => {
+          if (!open && !updatingStatus) setStatusTargetProduct(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          {statusTargetProduct && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+                  {statusTargetProduct.isActive === false ? (
+                    <>
+                      <RotateCcw className="w-5 h-5 text-emerald-600" />
+                      Reactivar Insumo
+                    </>
+                  ) : (
+                    <>
+                      <Ban className="w-5 h-5 text-rose-600" />
+                      Deshabilitar Insumo
+                    </>
+                  )}
+                </DialogTitle>
+                <DialogDescription className="text-xs pt-1">
+                  {statusTargetProduct.sku || `#${statusTargetProduct.id}`} &bull;{" "}
+                  <span className="font-semibold text-foreground">
+                    {statusTargetProduct.name}
+                  </span>
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-3 text-xs text-muted-foreground py-1">
+                {statusTargetProduct.isActive === false ? (
+                  <p className="leading-relaxed">
+                    Al reactivar este insumo volverá a aparecer en el catálogo
+                    operativo, podrá seleccionarse en nuevas compras y
+                    solicitudes, y se reanudará el monitoreo de alertas de stock
+                    mínimo.
+                  </p>
+                ) : (
+                  <>
+                    <p className="leading-relaxed">
+                      Al deshabilitar este insumo:
+                    </p>
+                    <ul className="list-disc pl-4 space-y-1 text-foreground/90">
+                      <li>
+                        Dejará de generar notificaciones y alertas de stock
+                        crítico o vencimiento.
+                      </li>
+                      <li>
+                        No aparecerá disponible para nuevas compras, preórdenes
+                        ni solicitudes internas.
+                      </li>
+                      <li>
+                        Su historial, Kardex y registros previos se conservarán
+                        intactos, y podrás reactivarlo cuando lo necesites desde
+                        la pestaña <strong>Deshabilitados</strong>.
+                      </li>
+                    </ul>
+
+                    {Number(statusTargetProduct.totalStock ?? 0) > 0 && (
+                      <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div className="space-y-0.5">
+                          <span className="font-semibold block">
+                            Este producto aún registra existencias físicas
+                          </span>
+                          <span>
+                            Saldo actual:{" "}
+                            <strong className="font-mono">
+                              {Number(statusTargetProduct.totalStock ?? 0)}{" "}
+                              {statusTargetProduct.baseUnit?.abbreviation ||
+                                "UND"}
+                            </strong>
+                            . Sus lotes permanecerán visibles en su ficha y
+                            podrás descargarlos por ajuste o merma si lo
+                            requieres.
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setStatusTargetProduct(null)}
+                  disabled={updatingStatus}
+                  className="cursor-pointer"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={
+                    statusTargetProduct.isActive === false
+                      ? "default"
+                      : "destructive"
+                  }
+                  onClick={() => void handleConfirmToggleStatus()}
+                  disabled={updatingStatus}
+                  className={cn(
+                    "gap-1.5 cursor-pointer",
+                    statusTargetProduct.isActive === false &&
+                      "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  )}
+                >
+                  {updatingStatus && (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  )}
+                  {statusTargetProduct.isActive === false
+                    ? updatingStatus
+                      ? "Reactivando..."
+                      : "Reactivar Insumo"
+                    : updatingStatus
+                      ? "Deshabilitando..."
+                      : "Deshabilitar Insumo"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-16 text-center text-muted-foreground text-xs">
+          <RefreshCw className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
+          Cargando inventario de insumos...
+        </div>
+      }
+    >
+      <ProductsPageContent />
+    </Suspense>
   );
 }

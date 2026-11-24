@@ -172,6 +172,26 @@ export class PurchaseRequisitionService {
       throw new Error('La preorden debe incluir al menos un ítem');
     }
 
+    const uniqueProductIds = Array.from(
+      new Set(data.items.map((it) => it.productId))
+    );
+    const dbProducts = await prisma.product.findMany({
+      where: { id: { in: uniqueProductIds } },
+      select: { id: true, name: true, isActive: true },
+    });
+    const productMap = new Map(dbProducts.map((p) => [p.id.toString(), p]));
+    for (const item of data.items) {
+      const prod = productMap.get(item.productId.toString());
+      if (!prod) {
+        throw new Error(`Producto con ID ${item.productId} no encontrado`);
+      }
+      if (!prod.isActive) {
+        throw new Error(
+          `El producto "${prod.name}" está deshabilitado y no puede incluirse en nuevas preórdenes de compra.`
+        );
+      }
+    }
+
     return prisma.$transaction(async (tx) => {
       const currentYear = new Date().getFullYear();
       const latest = await tx.purchaseRequisition.findFirst({

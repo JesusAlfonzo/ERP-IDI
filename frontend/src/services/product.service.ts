@@ -51,6 +51,7 @@ export interface UpdateProductPayload {
   minStockAlert?: number;
   isReagent?: boolean;
   isTaxExempt?: boolean;
+  isActive?: boolean;
 }
 
 export const ProductService = {
@@ -64,6 +65,14 @@ export const ProductService = {
     payload: UpdateProductPayload
   ): Promise<ProductDetail> => {
     const res = await apiClient.put(`/products/${id}`, payload);
+    return res.data?.data ?? res.data;
+  },
+
+  updateProductStatus: async (
+    id: string | number,
+    isActive: boolean
+  ): Promise<ProductDetail> => {
+    const res = await apiClient.patch(`/products/${id}/status`, { isActive });
     return res.data?.data ?? res.data;
   },
 };

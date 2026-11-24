@@ -41,6 +41,7 @@ export interface UpdateProductDTO {
   calibratorsPerRun?: number | null;
   allowedLabAreaIds?: number[];
   compatibleExamIds?: number[];
+  isActive?: boolean;
 }
 
 export interface ProductFilterDTO {
@@ -49,6 +50,8 @@ export interface ProductFilterDTO {
   isReagent?: boolean;
   isLabReagent?: boolean;
   labAreaId?: number;
+  includeInactive?: boolean;
+  isActive?: boolean;
 }
 
 export class ProductService {
@@ -83,7 +86,11 @@ export class ProductService {
     return prisma.product
       .findMany({
         where: {
-          isActive: true,
+          ...(filter?.isActive !== undefined
+            ? { isActive: filter.isActive }
+            : filter?.includeInactive
+              ? {}
+              : { isActive: true }),
           ...(filter?.categoryId !== undefined
             ? { categoryId: filter.categoryId }
             : {}),
@@ -343,6 +350,7 @@ export class ProductService {
           ...(data.calibratorsPerRun !== undefined
             ? { calibratorsPerRun: data.calibratorsPerRun }
             : {}),
+          ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
         },
       });
 
@@ -370,7 +378,7 @@ export class ProductService {
         }
       }
 
-      return tx.product.findUnique({
+      const updated = await tx.product.findUnique({
         where: { id },
         include: {
           category: true,
@@ -379,8 +387,66 @@ export class ProductService {
           purchaseUnit: true,
           allowedLabAreas: { include: { labArea: true } },
           compatibleExams: { include: { labExam: true } },
+          stockBatches: {
+            include: {
+              location: true,
+            },
+            orderBy: [{ expirationDate: 'asc' }, { createdAt: 'desc' }],
+          },
         },
       });
+
+      if (!updated) {
+        throw new Error('Producto no encontrado');
+      }
+
+      const totalStock = updated.stockBatches
+        .filter((b) => b.status === BatchStatus.DISPONIBLE)
+        .reduce((acc, b) => acc + Number(b.currentQuantity), 0);
+
+      return {
+        ...updated,
+        totalStock,
+        batches: updated.stockBatches,
+      };
     });
+  }
+
+  static async setProductStatus(id: bigint, isActive: boolean) {
+    const existing = await prisma.product.findUnique({ where: { id } });
+    if (!existing) {
+      const error: any = new Error('Producto no encontrado');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const updated = await prisma.product.update({
+      where: { id },
+      data: { isActive },
+      include: {
+        category: true,
+        brand: true,
+        baseUnit: true,
+        purchaseUnit: true,
+        allowedLabAreas: { include: { labArea: true } },
+        compatibleExams: { include: { labExam: true } },
+        stockBatches: {
+          include: {
+            location: true,
+          },
+          orderBy: [{ expirationDate: 'asc' }, { createdAt: 'desc' }],
+        },
+      },
+    });
+
+    const totalStock = updated.stockBatches
+      .filter((b) => b.status === BatchStatus.DISPONIBLE)
+      .reduce((acc, b) => acc + Number(b.currentQuantity), 0);
+
+    return {
+      ...updated,
+      totalStock,
+      batches: updated.stockBatches,
+    };
   }
 }

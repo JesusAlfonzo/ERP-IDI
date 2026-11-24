@@ -311,6 +311,12 @@ export class OrderService {
         throw new Error(`Producto con ID ${item.productId} no encontrado`);
       }
 
+      if (!product.isActive) {
+        throw new Error(
+          `El producto "${product.name}" está deshabilitado y no puede incluirse en nuevas órdenes de compra.`
+        );
+      }
+
       let multiplier = 1.0;
       if (product.baseUnitId !== item.unitId) {
         multiplier =

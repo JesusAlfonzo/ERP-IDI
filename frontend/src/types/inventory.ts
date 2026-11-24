@@ -69,6 +69,8 @@ export interface ProductFilters {
   search?: string;
   categoryId?: number;
   isReagent?: boolean;
+  includeInactive?: boolean;
+  isActive?: boolean;
   status?: string;
   page?: number;
   limit?: number;

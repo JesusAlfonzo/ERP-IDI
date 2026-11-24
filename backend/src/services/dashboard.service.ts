@@ -293,6 +293,7 @@ export class DashboardService {
             status: BatchStatus.DISPONIBLE,
             currentQuantity: { gt: 0 },
             expirationDate: { lte: sixtyDays },
+            product: { isActive: true },
           },
         }),
       ]);
@@ -675,6 +676,7 @@ export class DashboardService {
             status: BatchStatus.DISPONIBLE,
             currentQuantity: { gt: 0 },
             expirationDate: { lte: ninetyDaysAhead },
+            product: { isActive: true },
           },
           include: {
             product: { include: { baseUnit: true } },

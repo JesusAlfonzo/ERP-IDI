@@ -26,7 +26,7 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Redireccionar rutas de reportes de costos y trazabilidad hacia el generador de reportes

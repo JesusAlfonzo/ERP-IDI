@@ -105,7 +105,7 @@ export default function AdjudicateRequisitionPage() {
     try {
       const [req, sups, currs, rates] = await Promise.all([
         PurchasingClientService.getRequisitionById(requisitionId).catch(() => null),
-        PurchasingClientService.getSuppliers().catch(() => []),
+        PurchasingClientService.getSuppliers({ type: "VENTAS" }).catch(() => []),
         PurchasingClientService.getCurrencies().catch(() => []),
         CurrencyService.getCurrentRates().catch(() => null),
       ]);

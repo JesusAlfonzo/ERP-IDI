@@ -4,8 +4,15 @@ import { useEffect, useState, useCallback, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { PurchasingClientService } from "@/services/purchasing.service";
 import { AuthService } from "@/services/auth.service";
-import type { SupplierDetail } from "@/types/purchasing";
+import type { SupplierDetail, SupplierType } from "@/types/purchasing";
 import axios from "axios";
+import { cn } from "@/lib/utils";
+import { RifInput } from "@/components/common/RifInput";
+import { PhoneInput } from "@/components/common/PhoneInput";
+import {
+  validatePhoneValue,
+  validateRifValue,
+} from "@/utils/venezuela-formatters";
 import {
   Card,
   CardHeader,
@@ -53,7 +60,29 @@ import {
   ExternalLink,
   ShieldCheck,
   ShieldAlert,
+  Wrench,
+  ShoppingBag,
+  Layers,
+  Wallet,
 } from "lucide-react";
+
+const SUPPLIER_TYPE_META: Record<
+  SupplierType,
+  { label: string; className: string }
+> = {
+  VENTAS: {
+    label: "Ventas / Insumos",
+    className: "bg-blue-50 text-blue-700 border-blue-200",
+  },
+  SERVICIOS: {
+    label: "Servicios",
+    className: "bg-purple-50 text-purple-700 border-purple-200",
+  },
+  AMBOS: {
+    label: "Mixto (Ventas y Servicios)",
+    className: "bg-teal-50 text-teal-700 border-teal-200",
+  },
+};
 
 export default function SupplierDetailPage() {
   const params = useParams();
@@ -69,6 +98,7 @@ export default function SupplierDetailPage() {
   const [editForm, setEditForm] = useState({
     rifOrId: "",
     name: "",
+    supplierType: "VENTAS" as SupplierType,
     contactName: "",
     phone: "",
     email: "",
@@ -89,6 +119,7 @@ export default function SupplierDetailPage() {
       setEditForm({
         rifOrId: data.rifOrId || data.rif || "",
         name: data.name,
+        supplierType: data.supplierType || "VENTAS",
         contactName: data.contactName || "",
         phone: data.phone || "",
         email: data.email || "",
@@ -125,6 +156,7 @@ export default function SupplierDetailPage() {
         setEditForm({
           rifOrId: data.rifOrId || data.rif || "",
           name: data.name,
+          supplierType: data.supplierType || "VENTAS",
           contactName: data.contactName || "",
           phone: data.phone || "",
           email: data.email || "",
@@ -164,11 +196,30 @@ export default function SupplierDetailPage() {
       return;
     }
 
+    const rifCheck = validateRifValue(editForm.rifOrId);
+    if (!rifCheck.valid) {
+      setEditFeedback({
+        status: "error",
+        message: rifCheck.error || "Formato de RIF/Cédula inválido.",
+      });
+      return;
+    }
+
+    const phoneCheck = validatePhoneValue(editForm.phone);
+    if (!phoneCheck.valid) {
+      setEditFeedback({
+        status: "error",
+        message: phoneCheck.error || "Formato de teléfono inválido.",
+      });
+      return;
+    }
+
     setEditSubmitting(true);
     try {
       await PurchasingClientService.updateSupplier(supplier.id, {
         rifOrId: editForm.rifOrId.trim(),
         name: editForm.name.trim(),
+        supplierType: editForm.supplierType,
         contactName: editForm.contactName.trim() || null,
         phone: editForm.phone.trim() || null,
         email: editForm.email.trim() || null,
@@ -248,7 +299,12 @@ export default function SupplierDetailPage() {
   }
 
   const orders = supplier.orders ?? [];
+  const serviceOrders = supplier.directPayments ?? [];
+  const supplierType: SupplierType = supplier.supplierType || "VENTAS";
+  const typeMeta = SUPPLIER_TYPE_META[supplierType];
   const totalOrders = supplier._count?.orders ?? orders.length;
+  const totalServiceOrders =
+    supplier._count?.directPayments ?? serviceOrders.length;
   const totalPurchasedUsd = orders.reduce((sum, ord) => {
     const val = Number(ord.totalAmountUsd ?? ord.total ?? 0);
     return sum + (isNaN(val) ? 0 : val);
@@ -269,12 +325,25 @@ export default function SupplierDetailPage() {
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 flex-wrap">
               <h1 className="text-xl font-bold text-slate-900">
                 {supplier.name}
               </h1>
               <Badge variant="outline" className="font-mono text-xs font-semibold">
                 {supplier.rifOrId || supplier.rif || "SIN RIF"}
+              </Badge>
+              <Badge
+                variant="outline"
+                className={cn("gap-1 text-xs font-semibold", typeMeta.className)}
+              >
+                {supplierType === "SERVICIOS" ? (
+                  <Wrench className="w-3 h-3" />
+                ) : supplierType === "AMBOS" ? (
+                  <Layers className="w-3 h-3" />
+                ) : (
+                  <ShoppingBag className="w-3 h-3" />
+                )}
+                {typeMeta.label}
               </Badge>
               {supplier.isActive !== false ? (
                 <Badge variant="outline" className="gap-1 bg-emerald-50 text-emerald-700 border-emerald-200">
@@ -588,6 +657,115 @@ export default function SupplierDetailPage() {
         </CardContent>
       </Card>
 
+      {/* Sub-tabla: Órdenes de Servicio Asociadas */}
+      {(supplierType !== "VENTAS" || serviceOrders.length > 0) && (
+        <Card className="shadow-xs overflow-hidden">
+          <CardHeader className="p-4 border-b border-border bg-muted/20 flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Wallet className="w-5 h-5 text-purple-600" />
+              <CardTitle className="font-bold text-slate-800 text-sm">
+                Órdenes de Servicio Asociadas (Historial Reciente)
+              </CardTitle>
+            </div>
+            <span className="text-xs text-muted-foreground font-medium">
+              {totalServiceOrders}{" "}
+              {totalServiceOrders === 1
+                ? "orden de servicio"
+                : "órdenes de servicio"}
+            </span>
+          </CardHeader>
+
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40">
+                  <TableHead className="py-3 px-4 font-semibold">
+                    N° Orden de Servicio
+                  </TableHead>
+                  <TableHead className="py-3 px-4 font-semibold">
+                    Concepto
+                  </TableHead>
+                  <TableHead className="py-3 px-4 font-semibold">
+                    Fecha
+                  </TableHead>
+                  <TableHead className="py-3 px-4 text-center font-semibold">
+                    Estado
+                  </TableHead>
+                  <TableHead className="py-3 px-4 text-right font-semibold">
+                    Monto
+                  </TableHead>
+                  <TableHead className="py-3 px-4 text-center font-semibold">
+                    Acciones
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {serviceOrders.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="py-10 text-center text-muted-foreground"
+                    >
+                      <Wrench className="w-7 h-7 mx-auto text-muted-foreground/40 mb-2" />
+                      No se han registrado órdenes de servicio para este
+                      proveedor.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  serviceOrders.map((so) => (
+                    <TableRow
+                      key={so.id}
+                      className="hover:bg-muted/50 transition-colors"
+                    >
+                      <TableCell className="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
+                        {so.serviceOrderNumber || `#${so.id}`}
+                      </TableCell>
+                      <TableCell className="py-3 px-4 max-w-xs truncate text-slate-700">
+                        {so.concept}
+                      </TableCell>
+                      <TableCell className="py-3 px-4 text-muted-foreground whitespace-nowrap">
+                        {so.createdAt
+                          ? new Date(so.createdAt).toLocaleDateString("es-VE", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                            })
+                          : "-"}
+                      </TableCell>
+                      <TableCell className="py-3 px-4 text-center whitespace-nowrap">
+                        <Badge variant="outline" className="text-[11px]">
+                          {so.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="py-3 px-4 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
+                        {so.transactionCurrency === "VED"
+                          ? `Bs. ${Number(so.amountPaid || 0).toFixed(2)}`
+                          : so.transactionCurrency === "EUR"
+                            ? `€${Number(so.amountPaid || 0).toFixed(2)}`
+                            : `$${Number(so.amountPaid || 0).toFixed(2)}`}
+                      </TableCell>
+                      <TableCell className="py-3 px-4 text-center whitespace-nowrap">
+                        <Button
+                          variant="link"
+                          size="sm"
+                          onClick={() =>
+                            router.push(`/admin/financial/payments/${so.id}`)
+                          }
+                          className="gap-1 text-primary cursor-pointer p-0 h-auto"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          Ver Orden
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Modal: Editar Proveedor */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
         <DialogContent className="max-w-lg">
@@ -612,24 +790,61 @@ export default function SupplierDetailPage() {
           )}
 
           <form onSubmit={handleUpdateSupplier} className="space-y-3">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-1 space-y-1">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold uppercase tracking-wider">
+                Tipo de Proveedor *
+              </Label>
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    {
+                      value: "VENTAS",
+                      label: "Ventas / Insumos",
+                      icon: ShoppingBag,
+                    },
+                    { value: "SERVICIOS", label: "Servicios", icon: Wrench },
+                    { value: "AMBOS", label: "Ambos (Mixto)", icon: Layers },
+                  ] as const
+                ).map((opt) => {
+                  const Icon = opt.icon;
+                  const active = editForm.supplierType === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() =>
+                        setEditForm({ ...editForm, supplierType: opt.value })
+                      }
+                      className={cn(
+                        "px-2 py-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                        active
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-input bg-background text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
                 <Label className="text-xs font-semibold uppercase tracking-wider">
-                  RIF / ID Fiscal *
+                  RIF / Cédula *
                 </Label>
-                <Input
-                  type="text"
+                <RifInput
                   value={editForm.rifOrId}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, rifOrId: e.target.value })
+                  onChange={(val) =>
+                    setEditForm({ ...editForm, rifOrId: val })
                   }
-                  placeholder="J-12345678-9"
-                  className="font-mono text-xs"
                   required
                 />
               </div>
 
-              <div className="col-span-2 space-y-1">
+              <div className="space-y-1">
                 <Label className="text-xs font-semibold uppercase tracking-wider">
                   Razón Social *
                 </Label>
@@ -640,13 +855,13 @@ export default function SupplierDetailPage() {
                     setEditForm({ ...editForm, name: e.target.value })
                   }
                   placeholder="Nombre comercial o empresa"
-                  className="text-xs"
+                  className="text-xs h-9"
                   required
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold uppercase tracking-wider">
                   Persona de Contacto
@@ -658,7 +873,7 @@ export default function SupplierDetailPage() {
                     setEditForm({ ...editForm, contactName: e.target.value })
                   }
                   placeholder="Representante"
-                  className="text-xs"
+                  className="text-xs h-9"
                 />
               </div>
 
@@ -666,14 +881,9 @@ export default function SupplierDetailPage() {
                 <Label className="text-xs font-semibold uppercase tracking-wider">
                   Teléfono
                 </Label>
-                <Input
-                  type="text"
+                <PhoneInput
                   value={editForm.phone}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, phone: e.target.value })
-                  }
-                  placeholder="0212-... / 0414-..."
-                  className="text-xs"
+                  onChange={(val) => setEditForm({ ...editForm, phone: val })}
                 />
               </div>
             </div>

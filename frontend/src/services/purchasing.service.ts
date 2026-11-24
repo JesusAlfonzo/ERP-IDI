@@ -314,10 +314,14 @@ export const PurchasingClientService = {
   getSuppliers: async (options?: {
     search?: string;
     includeInactive?: boolean;
+    type?: "VENTAS" | "SERVICIOS" | "AMBOS";
+    exactType?: "VENTAS" | "SERVICIOS" | "AMBOS";
   }): Promise<Supplier[]> => {
     const params = new URLSearchParams();
     if (options?.search) params.append("search", options.search);
     if (options?.includeInactive) params.append("includeInactive", "true");
+    if (options?.type) params.append("type", options.type);
+    if (options?.exactType) params.append("exactType", options.exactType);
     const qs = params.toString();
     const res = await apiClient.get<ApiResponse<Supplier[]>>(
       `/suppliers${qs ? `?${qs}` : ""}`,

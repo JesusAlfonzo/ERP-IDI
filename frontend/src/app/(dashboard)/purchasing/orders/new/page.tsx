@@ -107,7 +107,7 @@ export default function NewPurchaseOrderPage() {
     void (async () => {
       try {
         const [sups, cats, prods, currs, rates] = await Promise.all([
-          PurchasingClientService.getSuppliers().catch(() => []),
+          PurchasingClientService.getSuppliers({ type: "VENTAS" }).catch(() => []),
           InventoryClientService.getCategories().catch(() => []),
           InventoryClientService.getProducts().catch(() => []),
           PurchasingClientService.getCurrencies().catch(() => []),

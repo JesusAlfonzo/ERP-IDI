@@ -119,7 +119,7 @@ export default function EditPurchaseOrderPage() {
       try {
         const [orderData, sups, cats, prods, currs, rates] = await Promise.all([
           PurchasingClientService.getOrderById(orderId),
-          PurchasingClientService.getSuppliers().catch(() => []),
+          PurchasingClientService.getSuppliers({ type: "VENTAS" }).catch(() => []),
           InventoryClientService.getCategories().catch(() => []),
           InventoryClientService.getProducts().catch(() => []),
           PurchasingClientService.getCurrencies().catch(() => []),

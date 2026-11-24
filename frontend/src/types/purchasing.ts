@@ -149,11 +149,14 @@ export interface DirectPayment {
   updatedAt?: string;
 }
 
+export type SupplierType = "VENTAS" | "SERVICIOS" | "AMBOS";
+
 export interface Supplier {
   id: number;
   rifOrId?: string;
   rif?: string;
   name: string;
+  supplierType?: SupplierType;
   contactName?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -176,16 +179,31 @@ export interface SupplierOrderSummary {
   createdAt: string;
 }
 
+export interface SupplierServiceOrderSummary {
+  id: string | number;
+  serviceOrderNumber?: string | null;
+  paymentOrderNumber?: string | null;
+  concept: string;
+  status: string;
+  amountPaid: number | string;
+  transactionCurrency: string;
+  equivalentAmountUsd?: number | string;
+  createdAt: string;
+}
+
 export interface SupplierDetail extends Supplier {
   orders?: SupplierOrderSummary[];
+  directPayments?: SupplierServiceOrderSummary[];
   _count?: {
     orders: number;
+    directPayments?: number;
   };
 }
 
 export interface CreateSupplierPayload {
   rifOrId: string;
   name: string;
+  supplierType?: SupplierType;
   contactName?: string;
   phone?: string;
   email?: string;
@@ -195,6 +213,7 @@ export interface CreateSupplierPayload {
 export interface UpdateSupplierPayload {
   rifOrId?: string;
   name?: string;
+  supplierType?: SupplierType;
   contactName?: string | null;
   phone?: string | null;
   email?: string | null;

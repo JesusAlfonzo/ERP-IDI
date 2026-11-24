@@ -84,6 +84,7 @@ export const createDirectPayment = async (
       concept,
       beneficiary,
       supplierId,
+      newSupplier,
       departmentId,
       estimatedDate,
       supportUrl,
@@ -112,6 +113,7 @@ export const createDirectPayment = async (
       concept,
       beneficiary,
       supplierId: supplierId ? Number(supplierId) : null,
+      newSupplier: newSupplier && typeof newSupplier === 'object' ? newSupplier : null,
       departmentId: departmentId ? Number(departmentId) : null,
       estimatedDate: estimatedDate ? new Date(estimatedDate) : null,
       supportUrl,
@@ -137,9 +139,22 @@ export const createDirectPayment = async (
       message: 'Orden de servicio creada exitosamente',
       data: serializeBigInt(payment),
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
+    if (error?.statusCode === 409 || error?.status === 'CONFLICT') {
+      res.status(409).json({
+        status: 'CONFLICT',
+        message: error.message,
+        ...(error.existingSupplier
+          ? { existingSupplier: serializeBigInt(error.existingSupplier) }
+          : {}),
+      });
+      return;
+    }
     if (error instanceof Error) {
-      res.status(400).json({ status: 'BAD_REQUEST', message: error.message });
+      res.status((error as any).statusCode || 400).json({
+        status: 'BAD_REQUEST',
+        message: error.message,
+      });
       return;
     }
     next(error);
@@ -164,9 +179,22 @@ export const submitServiceOrder = async (
       message: 'Orden de servicio enviada a aprobación',
       data: serializeBigInt(updated),
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
+    if (error?.statusCode === 409 || error?.status === 'CONFLICT') {
+      res.status(409).json({
+        status: 'CONFLICT',
+        message: error.message,
+        ...(error.existingSupplier
+          ? { existingSupplier: serializeBigInt(error.existingSupplier) }
+          : {}),
+      });
+      return;
+    }
     if (error instanceof Error) {
-      res.status(400).json({ status: 'BAD_REQUEST', message: error.message });
+      res.status((error as any).statusCode || 400).json({
+        status: 'BAD_REQUEST',
+        message: error.message,
+      });
       return;
     }
     next(error);
@@ -197,9 +225,22 @@ export const approveServiceOrder = async (
       message: 'Orden de servicio aprobada exitosamente',
       data: serializeBigInt(updated),
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
+    if (error?.statusCode === 409 || error?.status === 'CONFLICT') {
+      res.status(409).json({
+        status: 'CONFLICT',
+        message: error.message,
+        ...(error.existingSupplier
+          ? { existingSupplier: serializeBigInt(error.existingSupplier) }
+          : {}),
+      });
+      return;
+    }
     if (error instanceof Error) {
-      res.status(400).json({ status: 'BAD_REQUEST', message: error.message });
+      res.status((error as any).statusCode || 400).json({
+        status: 'BAD_REQUEST',
+        message: error.message,
+      });
       return;
     }
     next(error);
@@ -230,9 +271,22 @@ export const rejectServiceOrder = async (
       message: 'Orden de servicio rechazada',
       data: serializeBigInt(updated),
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
+    if (error?.statusCode === 409 || error?.status === 'CONFLICT') {
+      res.status(409).json({
+        status: 'CONFLICT',
+        message: error.message,
+        ...(error.existingSupplier
+          ? { existingSupplier: serializeBigInt(error.existingSupplier) }
+          : {}),
+      });
+      return;
+    }
     if (error instanceof Error) {
-      res.status(400).json({ status: 'BAD_REQUEST', message: error.message });
+      res.status((error as any).statusCode || 400).json({
+        status: 'BAD_REQUEST',
+        message: error.message,
+      });
       return;
     }
     next(error);
@@ -263,9 +317,22 @@ export const generatePaymentOrder = async (
       message: 'Orden de pago generada exitosamente',
       data: serializeBigInt(updated),
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
+    if (error?.statusCode === 409 || error?.status === 'CONFLICT') {
+      res.status(409).json({
+        status: 'CONFLICT',
+        message: error.message,
+        ...(error.existingSupplier
+          ? { existingSupplier: serializeBigInt(error.existingSupplier) }
+          : {}),
+      });
+      return;
+    }
     if (error instanceof Error) {
-      res.status(400).json({ status: 'BAD_REQUEST', message: error.message });
+      res.status((error as any).statusCode || 400).json({
+        status: 'BAD_REQUEST',
+        message: error.message,
+      });
       return;
     }
     next(error);
@@ -325,9 +392,22 @@ export const registerServicePayment = async (
       message: 'Pago registrado y orden de servicio cerrada exitosamente',
       data: serializeBigInt(updated),
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
+    if (error?.statusCode === 409 || error?.status === 'CONFLICT') {
+      res.status(409).json({
+        status: 'CONFLICT',
+        message: error.message,
+        ...(error.existingSupplier
+          ? { existingSupplier: serializeBigInt(error.existingSupplier) }
+          : {}),
+      });
+      return;
+    }
     if (error instanceof Error) {
-      res.status(400).json({ status: 'BAD_REQUEST', message: error.message });
+      res.status((error as any).statusCode || 400).json({
+        status: 'BAD_REQUEST',
+        message: error.message,
+      });
       return;
     }
     next(error);
@@ -358,9 +438,22 @@ export const cancelServiceOrder = async (
       message: 'Orden de servicio cancelada',
       data: serializeBigInt(updated),
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
+    if (error?.statusCode === 409 || error?.status === 'CONFLICT') {
+      res.status(409).json({
+        status: 'CONFLICT',
+        message: error.message,
+        ...(error.existingSupplier
+          ? { existingSupplier: serializeBigInt(error.existingSupplier) }
+          : {}),
+      });
+      return;
+    }
     if (error instanceof Error) {
-      res.status(400).json({ status: 'BAD_REQUEST', message: error.message });
+      res.status((error as any).statusCode || 400).json({
+        status: 'BAD_REQUEST',
+        message: error.message,
+      });
       return;
     }
     next(error);
@@ -396,9 +489,22 @@ export const deleteDirectPayment = async (
       status: 'SUCCESS',
       message: 'Orden de servicio eliminada exitosamente',
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
+    if (error?.statusCode === 409 || error?.status === 'CONFLICT') {
+      res.status(409).json({
+        status: 'CONFLICT',
+        message: error.message,
+        ...(error.existingSupplier
+          ? { existingSupplier: serializeBigInt(error.existingSupplier) }
+          : {}),
+      });
+      return;
+    }
     if (error instanceof Error) {
-      res.status(400).json({ status: 'BAD_REQUEST', message: error.message });
+      res.status((error as any).statusCode || 400).json({
+        status: 'BAD_REQUEST',
+        message: error.message,
+      });
       return;
     }
     next(error);

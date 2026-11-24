@@ -14,6 +14,13 @@ import {
   SearchableSelect,
   type SearchableOption,
 } from "@/components/common/SearchableSelect";
+import { RifInput } from "@/components/common/RifInput";
+import { PhoneInput } from "@/components/common/PhoneInput";
+import {
+  validatePhoneValue,
+  validateRifValue,
+} from "@/utils/venezuela-formatters";
+import { cn } from "@/lib/utils";
 import {
   Wallet,
   Building2,
@@ -25,6 +32,13 @@ import {
   FileText,
   Link2,
   X,
+  Plus,
+  Wrench,
+  User,
+  Mail,
+  MapPin,
+  CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,25 +49,57 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { toast } from "@/utils/toast";
 
+type SupplierMode = "EXISTING" | "NEW";
+
+const SUPPLIER_TYPE_LABELS: Record<string, string> = {
+  VENTAS: "Ventas / Insumos",
+  SERVICIOS: "Servicios",
+  AMBOS: "Mixto (Ventas y Servicios)",
+};
+
 export default function NewServiceOrderPage() {
   const router = useRouter();
 
   // Maestros
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([]);
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
-  const [bcvRates, setBcvRates] = useState<{ USD: number; EUR: number; VED: number }>({
+  const [bcvRates, setBcvRates] = useState<{
+    USD: number;
+    EUR: number;
+    VED: number;
+  }>({
     USD: 75.0,
     EUR: 81.5,
     VED: 1.0,
   });
   const [loadingInitial, setLoadingInitial] = useState(true);
 
-  // Formulario de Solicitud de Orden de Servicio
-  const [selectedSupplierId, setSelectedSupplierId] = useState<string | number>("");
-  const [beneficiary, setBeneficiary] = useState("");
+  // Modo de selección de proveedor
+  const [supplierMode, setSupplierMode] = useState<SupplierMode>("EXISTING");
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string | number>(
+    ""
+  );
+
+  // Formulario estructurado para Nuevo Proveedor de Servicio (auto-guardado)
+  const [newSupplierForm, setNewSupplierForm] = useState({
+    rifOrId: "",
+    name: "",
+    contactName: "",
+    phone: "",
+    email: "",
+    address: "",
+  });
+  const [conflictSupplier, setConflictSupplier] = useState<Supplier | null>(
+    null
+  );
+  const [linkingExisting, setLinkingExisting] = useState(false);
+
+  // Resto del formulario de Orden de Servicio
   const [departmentId, setDepartmentId] = useState<string>("");
   const [concept, setConcept] = useState("");
-  const [transactionCurrency, setTransactionCurrency] = useState<"USD" | "VED" | "EUR">("USD");
+  const [transactionCurrency, setTransactionCurrency] = useState<
+    "USD" | "VED" | "EUR"
+  >("USD");
   const [amountPaid, setAmountPaid] = useState("");
   const [exchangeRate, setExchangeRate] = useState("");
   const [estimatedDate, setEstimatedDate] = useState(() =>
@@ -69,13 +115,15 @@ export default function NewServiceOrderPage() {
     void (async () => {
       try {
         const [sups, deps, ratesData] = await Promise.all([
-          PurchasingClientService.getSuppliers().catch(() => []),
+          PurchasingClientService.getSuppliers({ includeInactive: true }).catch(
+            () => []
+          ),
           InventoryMasterService.getDepartments(true).catch(() => []),
           CurrencyService.getCurrentRates().catch(() => null),
         ]);
 
         if (!ignore) {
-          setSuppliers(sups);
+          setAllSuppliers(sups);
           setDepartments(deps);
           if (ratesData) {
             setBcvRates({
@@ -97,23 +145,106 @@ export default function NewServiceOrderPage() {
     };
   }, []);
 
+  // Solo proveedores activos de tipo SERVICIOS o AMBOS en el selector principal
+  const serviceSuppliers = useMemo(() => {
+    return allSuppliers.filter(
+      (s) =>
+        s.isActive !== false &&
+        (s.supplierType === "SERVICIOS" || s.supplierType === "AMBOS")
+    );
+  }, [allSuppliers]);
+
   const supplierOptions = useMemo<SearchableOption<Supplier>[]>(() => {
-    return suppliers.map((s) => ({
+    return serviceSuppliers.map((s) => ({
       value: s.id,
       label: s.name,
-      sublabel: [s.rifOrId || s.rif, s.contactName, s.phone]
+      sublabel: [
+        s.rifOrId || s.rif,
+        s.supplierType === "AMBOS" ? "Mixto" : "Servicios",
+        s.contactName,
+        s.phone,
+      ]
         .filter(Boolean)
         .join(" · "),
       searchTerms: [
         s.name,
         s.rifOrId || s.rif || "",
         s.contactName || "",
+        s.phone || "",
         s.email || "",
       ],
       badgeText: s.rifOrId || s.rif,
       data: s,
     }));
-  }, [suppliers]);
+  }, [serviceSuppliers]);
+
+  const selectedSupplierObj = useMemo(
+    () =>
+      allSuppliers.find((s) => String(s.id) === String(selectedSupplierId)) ||
+      null,
+    [allSuppliers, selectedSupplierId]
+  );
+
+  // Detección instantánea en memoria cuando el usuario escribe un RIF ya registrado
+  const detectedExistingByRif = useMemo(() => {
+    if (supplierMode !== "NEW") return null;
+    const targetRif = newSupplierForm.rifOrId.trim().toUpperCase();
+    if (!targetRif) return null;
+    return (
+      allSuppliers.find(
+        (s) => (s.rifOrId || s.rif || "").trim().toUpperCase() === targetRif
+      ) || null
+    );
+  }, [supplierMode, newSupplierForm.rifOrId, allSuppliers]);
+
+  const matchedExistingSupplier = detectedExistingByRif || conflictSupplier;
+
+  const handleLinkExistingSupplier = async (sup: Supplier) => {
+    setLinkingExisting(true);
+    setFeedback(null);
+    try {
+      const needsPromotion =
+        sup.supplierType === "VENTAS" || !sup.supplierType || sup.isActive === false;
+      let resolvedSup = sup;
+
+      if (needsPromotion) {
+        const nextType =
+          sup.supplierType === "VENTAS" || !sup.supplierType
+            ? "AMBOS"
+            : sup.supplierType;
+        resolvedSup = await PurchasingClientService.updateSupplier(sup.id, {
+          supplierType: nextType,
+          isActive: true,
+        });
+        setAllSuppliers((prev) =>
+          prev.map((item) => (item.id === resolvedSup.id ? resolvedSup : item))
+        );
+        toast.success(
+          `"${resolvedSup.name}" ahora está habilitado también como Proveedor de Servicios (Mixto) y vinculado a esta orden.`
+        );
+      } else {
+        toast.success(
+          `Proveedor "${resolvedSup.name}" vinculado a esta orden de servicio.`
+        );
+      }
+
+      setSelectedSupplierId(resolvedSup.id);
+      setSupplierMode("EXISTING");
+      setConflictSupplier(null);
+    } catch (err: unknown) {
+      let msg = "No se pudo vincular el proveedor existente.";
+      if (err && typeof err === "object" && "response" in err) {
+        const resErr = err as { response?: { data?: { message?: string } } };
+        if (resErr.response?.data?.message) msg = resErr.response.data.message;
+      } else if (err instanceof Error) {
+        msg = err.message;
+      }
+      toast.error(msg);
+      setFeedback(msg);
+    } finally {
+      setLinkingExisting(false);
+    }
+  };
 
   const handleCurrencyChange = (curr: "USD" | "VED" | "EUR") => {
     setTransactionCurrency(curr);
@@ -148,9 +279,36 @@ export default function NewServiceOrderPage() {
       return;
     }
 
-    if (!selectedSupplierId && !beneficiary.trim()) {
-      setFeedback("Seleccione un proveedor registrado o indique el beneficiario con su RIF.");
-      return;
+    if (supplierMode === "EXISTING") {
+      if (!selectedSupplierId) {
+        setFeedback(
+          "Seleccione un proveedor de servicio registrado o cambie a 'Nuevo Proveedor de Servicio'."
+        );
+        return;
+      }
+    } else {
+      const rifCheck = validateRifValue(newSupplierForm.rifOrId);
+      if (!rifCheck.valid) {
+        setFeedback(rifCheck.error || "El RIF/Cédula del proveedor es inválido.");
+        return;
+      }
+      if (!newSupplierForm.name.trim()) {
+        setFeedback(
+          "La Razón Social o Nombre del prestador de servicio es obligatoria."
+        );
+        return;
+      }
+      const phoneCheck = validatePhoneValue(newSupplierForm.phone);
+      if (!phoneCheck.valid) {
+        setFeedback(phoneCheck.error || "El número de teléfono es inválido.");
+        return;
+      }
+      if (matchedExistingSupplier) {
+        setFeedback(
+          `El RIF ${matchedExistingSupplier.rifOrId || matchedExistingSupplier.rif} ya está registrado (${matchedExistingSupplier.name}). Use el botón "Vincular proveedor" para asociarlo sin duplicarlo.`
+        );
+        return;
+      }
     }
 
     const parsedAmt = parseFloat(amountPaid);
@@ -163,8 +321,20 @@ export default function NewServiceOrderPage() {
     try {
       const created = await BankAccountService.createDirectPayment({
         concept: concept.trim(),
-        supplierId: selectedSupplierId ? Number(selectedSupplierId) : null,
-        beneficiary: beneficiary.trim() || undefined,
+        supplierId:
+          supplierMode === "EXISTING" ? Number(selectedSupplierId) : null,
+        newSupplier:
+          supplierMode === "NEW"
+            ? {
+                rifOrId: newSupplierForm.rifOrId.trim(),
+                name: newSupplierForm.name.trim(),
+                contactName: newSupplierForm.contactName.trim() || null,
+                phone: newSupplierForm.phone.trim() || null,
+                email: newSupplierForm.email.trim() || null,
+                address: newSupplierForm.address.trim() || null,
+                supplierType: "SERVICIOS",
+              }
+            : null,
         departmentId: departmentId ? Number(departmentId) : null,
         amountPaid: parsedAmt,
         transactionCurrency,
@@ -179,14 +349,27 @@ export default function NewServiceOrderPage() {
       });
 
       toast.success(
-        `Orden de servicio ${created.serviceOrderNumber || `#${created.id}`} creada en estado Borrador.`
+        supplierMode === "NEW"
+          ? `Orden de servicio ${created.serviceOrderNumber || `#${created.id}`} creada y proveedor registrado automáticamente en el catálogo.`
+          : `Orden de servicio ${created.serviceOrderNumber || `#${created.id}`} creada en estado Borrador.`
       );
       router.push(`/admin/financial/payments/${created.id}`);
     } catch (err: unknown) {
       let msg = "Error al crear la orden de servicio.";
       if (err && typeof err === "object" && "response" in err) {
-        const resErr = err as { response?: { data?: { message?: string } } };
+        const resErr = err as {
+          response?: {
+            status?: number;
+            data?: { message?: string; existingSupplier?: Supplier };
+          };
+        };
         if (resErr.response?.data?.message) msg = resErr.response.data.message;
+        if (
+          resErr.response?.status === 409 &&
+          resErr.response?.data?.existingSupplier
+        ) {
+          setConflictSupplier(resErr.response.data.existingSupplier);
+        }
       } else if (err instanceof Error) {
         msg = err.message;
       }
@@ -290,74 +473,295 @@ export default function NewServiceOrderPage() {
 
       <form id="service-order-form" onSubmit={handleSubmit} className="space-y-6">
         {/* ========================================================
-            SECCIÓN 1: PROVEEDOR Y ÁREA SOLICITANTE
+            SECCIÓN 1: PROVEEDOR DE SERVICIO Y ÁREA SOLICITANTE
            ======================================================== */}
         <Card className="p-5 border-border shadow-2xs space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border">
-            <Building2 className="w-4 h-4 text-primary" />
-            <CardTitle className="text-sm font-bold text-foreground">
-              1. Proveedor y Área Solicitante
-            </CardTitle>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase font-semibold">
-                Proveedor Registrado (Recomendado)
-              </Label>
-              <SearchableSelect
-                options={supplierOptions}
-                value={selectedSupplierId}
-                onChange={(val, opt) => {
-                  setSelectedSupplierId(val);
-                  if (opt?.data) {
-                    const rif = opt.data.rifOrId || opt.data.rif;
-                    setBeneficiary(rif ? `${opt.data.name} (${rif})` : opt.data.name);
-                  }
-                }}
-                placeholder="Buscar proveedor por nombre o RIF..."
-                emptyMessage="No se encontraron proveedores"
-              />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-primary" />
+              <CardTitle className="text-sm font-bold text-foreground">
+                1. Proveedor de Servicio y Área Solicitante
+              </CardTitle>
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase font-semibold">
-                Área / Departamento Solicitante
-              </Label>
-              <select
-                value={departmentId}
-                onChange={(e) => setDepartmentId(e.target.value)}
-                className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
+            {/* Selector de modo: Registrado vs Nuevo Proveedor */}
+            <div className="inline-flex items-center rounded-lg border border-border bg-muted/40 p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setSupplierMode("EXISTING");
+                  setConflictSupplier(null);
+                  setFeedback(null);
+                }}
+                className={cn(
+                  "px-3 py-1.5 rounded-md font-semibold transition-all cursor-pointer flex items-center gap-1.5",
+                  supplierMode === "EXISTING"
+                    ? "bg-background text-foreground shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
               >
-                <option value="">-- Seleccione un departamento --</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.code} - {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="md:col-span-2 space-y-1.5">
-              <Label className="text-xs uppercase font-semibold">
-                Beneficiario / Razón Social y RIF {!selectedSupplierId && "*"}
-              </Label>
-              <Input
-                type="text"
-                value={beneficiary}
-                onChange={(e) => {
-                  setBeneficiary(e.target.value);
-                  if (selectedSupplierId) setSelectedSupplierId("");
+                <Wrench className="w-3.5 h-3.5" />
+                <span>Proveedor Registrado ({serviceSuppliers.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSupplierMode("NEW");
+                  setSelectedSupplierId("");
+                  setFeedback(null);
                 }}
-                placeholder="Ej: Servicios Técnicos ABC C.A. (J-12345678-9)"
-                className="text-xs h-9"
-                required={!selectedSupplierId}
-              />
-              <span className="text-[11px] text-muted-foreground block">
-                Si el proveedor no está registrado en el catálogo, incluya su RIF o cédula fiscal.
-              </span>
+                className={cn(
+                  "px-3 py-1.5 rounded-md font-semibold transition-all cursor-pointer flex items-center gap-1.5",
+                  supplierMode === "NEW"
+                    ? "bg-primary text-primary-foreground shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Nuevo Proveedor de Servicio</span>
+              </button>
             </div>
           </div>
+
+          {supplierMode === "EXISTING" ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase font-semibold">
+                  Proveedor de Servicio Registrado *
+                </Label>
+                <SearchableSelect
+                  options={supplierOptions}
+                  value={selectedSupplierId}
+                  onChange={(val) => setSelectedSupplierId(val)}
+                  placeholder="Buscar proveedor de servicio por nombre o RIF..."
+                  emptyMessage="No hay proveedores de servicio registrados. Use 'Nuevo Proveedor de Servicio'."
+                />
+                {selectedSupplierObj && (
+                  <div className="p-2.5 rounded-lg bg-muted/30 border border-border text-[11px] flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground">
+                    <span className="font-mono font-semibold text-foreground">
+                      {selectedSupplierObj.rifOrId || selectedSupplierObj.rif}
+                    </span>
+                    {selectedSupplierObj.phone && (
+                      <span>Tel: {selectedSupplierObj.phone}</span>
+                    )}
+                    {selectedSupplierObj.contactName && (
+                      <span>Contacto: {selectedSupplierObj.contactName}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase font-semibold">
+                  Área / Departamento Solicitante
+                </Label>
+                <select
+                  value={departmentId}
+                  onChange={(e) => setDepartmentId(e.target.value)}
+                  className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
+                >
+                  <option value="">-- Seleccione un departamento --</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.code} - {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/20 text-xs text-purple-900 dark:text-purple-200 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-purple-600 dark:text-purple-400" />
+                <span>
+                  Al crear la orden, este proveedor se{" "}
+                  <strong>guardará automáticamente en el sistema</strong> bajo
+                  la categoría <strong>Proveedor de Servicios</strong>. Solo
+                  RIF/Cédula y Razón Social son obligatorios; el resto puedes
+                  completarlo ahora o editarlo luego en el módulo de
+                  Proveedores.
+                </span>
+              </div>
+
+              {/* Aviso inteligente si el RIF ya existe en el catálogo */}
+              {matchedExistingSupplier && (
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs space-y-2.5">
+                  <div className="flex items-start gap-2.5 text-amber-900 dark:text-amber-200">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                    <div className="space-y-0.5">
+                      <p className="font-bold">
+                        Este RIF/Cédula ya está registrado en el sistema
+                      </p>
+                      <p className="text-[11px] leading-relaxed">
+                        <strong>{matchedExistingSupplier.name}</strong> (
+                        <span className="font-mono">
+                          {matchedExistingSupplier.rifOrId ||
+                            matchedExistingSupplier.rif}
+                        </span>
+                        ) · Clasificación actual:{" "}
+                        <strong>
+                          {SUPPLIER_TYPE_LABELS[
+                            matchedExistingSupplier.supplierType || "VENTAS"
+                          ] || "Ventas / Insumos"}
+                        </strong>
+                        {matchedExistingSupplier.isActive === false
+                          ? " (Inactivo)"
+                          : ""}
+                        .
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pl-6">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={linkingExisting}
+                      onClick={() =>
+                        void handleLinkExistingSupplier(matchedExistingSupplier)
+                      }
+                      className="h-8 text-xs font-semibold gap-1.5 bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+                    >
+                      {linkingExisting ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                      )}
+                      {matchedExistingSupplier.supplierType === "VENTAS" ||
+                      !matchedExistingSupplier.supplierType
+                        ? "Vincular y habilitar también para Servicios (Mixto)"
+                        : "Vincular este proveedor a la orden"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs uppercase font-semibold">
+                    RIF / Cédula *
+                  </Label>
+                  <RifInput
+                    value={newSupplierForm.rifOrId}
+                    onChange={(val) => {
+                      setNewSupplierForm({ ...newSupplierForm, rifOrId: val });
+                      setConflictSupplier(null);
+                    }}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs uppercase font-semibold">
+                    Razón Social / Nombre del Prestador *
+                  </Label>
+                  <Input
+                    type="text"
+                    value={newSupplierForm.name}
+                    onChange={(e) =>
+                      setNewSupplierForm({
+                        ...newSupplierForm,
+                        name: e.target.value,
+                      })
+                    }
+                    placeholder="Ej: Servicios Técnicos ABC C.A. o Juan Pérez"
+                    className="text-xs h-9"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs uppercase font-semibold">
+                    Teléfono (Opcional)
+                  </Label>
+                  <PhoneInput
+                    value={newSupplierForm.phone}
+                    onChange={(val) =>
+                      setNewSupplierForm({ ...newSupplierForm, phone: val })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs uppercase font-semibold">
+                    Persona de Contacto (Opcional)
+                  </Label>
+                  <div className="relative">
+                    <User className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      value={newSupplierForm.contactName}
+                      onChange={(e) =>
+                        setNewSupplierForm({
+                          ...newSupplierForm,
+                          contactName: e.target.value,
+                        })
+                      }
+                      placeholder="Nombre del técnico o representante"
+                      className="pl-8 text-xs h-9"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs uppercase font-semibold">
+                    Correo Electrónico (Opcional)
+                  </Label>
+                  <div className="relative">
+                    <Mail className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="email"
+                      value={newSupplierForm.email}
+                      onChange={(e) =>
+                        setNewSupplierForm({
+                          ...newSupplierForm,
+                          email: e.target.value,
+                        })
+                      }
+                      placeholder="servicios@empresa.com"
+                      className="pl-8 text-xs h-9"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs uppercase font-semibold">
+                    Área / Departamento Solicitante
+                  </Label>
+                  <select
+                    value={departmentId}
+                    onChange={(e) => setDepartmentId(e.target.value)}
+                    className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
+                  >
+                    <option value="">-- Seleccione un departamento --</option>
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.code} - {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="md:col-span-2 space-y-1.5">
+                  <Label className="text-xs uppercase font-semibold flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+                    Dirección Fiscal / Ubicación (Opcional)
+                  </Label>
+                  <Input
+                    type="text"
+                    value={newSupplierForm.address}
+                    onChange={(e) =>
+                      setNewSupplierForm({
+                        ...newSupplierForm,
+                        address: e.target.value,
+                      })
+                    }
+                    placeholder="Dirección fiscal, oficina o ciudad..."
+                    className="text-xs h-9"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* ========================================================
@@ -388,11 +792,15 @@ export default function NewServiceOrderPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <div className="space-y-1.5">
-                <Label className="text-xs uppercase font-semibold">Moneda *</Label>
+                <Label className="text-xs uppercase font-semibold">
+                  Moneda *
+                </Label>
                 <select
                   value={transactionCurrency}
                   onChange={(e) =>
-                    handleCurrencyChange(e.target.value as "USD" | "VED" | "EUR")
+                    handleCurrencyChange(
+                      e.target.value as "USD" | "VED" | "EUR"
+                    )
                   }
                   className="w-full h-9 bg-background border border-input rounded-lg px-3 py-1 text-xs text-foreground focus:ring-2 focus:ring-ring font-medium cursor-pointer"
                 >
@@ -404,7 +812,13 @@ export default function NewServiceOrderPage() {
 
               <div className="space-y-1.5">
                 <Label className="text-xs uppercase font-semibold">
-                  Monto ({transactionCurrency === "VED" ? "Bs." : transactionCurrency === "EUR" ? "€" : "$"}) *
+                  Monto (
+                  {transactionCurrency === "VED"
+                    ? "Bs."
+                    : transactionCurrency === "EUR"
+                      ? "€"
+                      : "$"}
+                  ) *
                 </Label>
                 <Input
                   type="number"
@@ -439,7 +853,8 @@ export default function NewServiceOrderPage() {
                   className="font-mono text-xs h-9"
                 />
                 <span className="text-[10px] text-muted-foreground font-mono block">
-                  BCV: {bcvRates.USD.toFixed(2)} Bs./$ · {bcvRates.EUR.toFixed(2)} Bs./€
+                  BCV: {bcvRates.USD.toFixed(2)} Bs./$ ·{" "}
+                  {bcvRates.EUR.toFixed(2)} Bs./€
                 </span>
               </div>
 

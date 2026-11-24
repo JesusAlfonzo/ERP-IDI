@@ -1,11 +1,29 @@
 import type { Request, Response, NextFunction } from 'express';
 import { SupplierService } from '../services/supplier.service.js';
-import { PaymentMethod } from '@prisma/client';
+import { PaymentMethod, SupplierType } from '@prisma/client';
 import { serializeBigInt } from '../utils/serializer.js';
 
 const isPurchasingOrAdmin = (roles: string[] = []): boolean => {
   return roles.includes('ADMINISTRADOR') || roles.includes('COMPRAS');
 };
+
+const canManageSuppliers = (roles: string[] = []): boolean => {
+  return (
+    roles.includes('ADMINISTRADOR') ||
+    roles.includes('COMPRAS') ||
+    roles.includes('ADMINISTRACION') ||
+    roles.includes('COORDINADOR')
+  );
+};
+
+function parseSupplierType(raw: unknown): SupplierType | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const upper = raw.trim().toUpperCase();
+  if (Object.values(SupplierType).includes(upper as SupplierType)) {
+    return upper as SupplierType;
+  }
+  return undefined;
+}
 
 export const getSupplierDebts = async (
   req: Request,
@@ -169,10 +187,12 @@ export const getSuppliers = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { search, includeInactive } = req.query;
+    const { search, includeInactive, type, exactType } = req.query;
     const suppliers = await SupplierService.listSuppliers(
       typeof search === 'string' ? search.trim() : undefined,
-      includeInactive === 'true' || includeInactive === '1'
+      includeInactive === 'true' || includeInactive === '1',
+      parseSupplierType(type),
+      parseSupplierType(exactType)
     );
 
     res.status(200).json({
@@ -224,7 +244,7 @@ export const createSupplier = async (
 ): Promise<void> => {
   try {
     const userRoles = req.user?.roles ?? [];
-    if (!isPurchasingOrAdmin(userRoles)) {
+    if (!canManageSuppliers(userRoles)) {
       res.status(403).json({
         status: 'FORBIDDEN',
         message:
@@ -233,7 +253,16 @@ export const createSupplier = async (
       return;
     }
 
-    const { rifOrId, rif, name, contactName, phone, email, address } = req.body;
+    const {
+      rifOrId,
+      rif,
+      name,
+      supplierType,
+      contactName,
+      phone,
+      email,
+      address,
+    } = req.body;
     const finalRif = rifOrId ?? rif;
 
     if (!finalRif || !name) {
@@ -247,6 +276,7 @@ export const createSupplier = async (
     const supplier = await SupplierService.createSupplier({
       rifOrId: String(finalRif),
       name: String(name),
+      supplierType: parseSupplierType(supplierType),
       contactName: contactName ? String(contactName) : null,
       phone: phone ? String(phone) : null,
       email: email ? String(email) : null,
@@ -258,7 +288,17 @@ export const createSupplier = async (
       message: 'Proveedor registrado exitosamente',
       data: supplier,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.statusCode === 409 || error.status === 'CONFLICT') {
+      res.status(409).json({
+        status: 'CONFLICT',
+        message: error.message,
+        ...(error.existingSupplier
+          ? { existingSupplier: serializeBigInt(error.existingSupplier) }
+          : {}),
+      });
+      return;
+    }
     next(error);
   }
 };
@@ -270,7 +310,7 @@ export const updateSupplier = async (
 ): Promise<void> => {
   try {
     const userRoles = req.user?.roles ?? [];
-    if (!isPurchasingOrAdmin(userRoles)) {
+    if (!canManageSuppliers(userRoles)) {
       res.status(403).json({
         status: 'FORBIDDEN',
         message: 'No posee privilegios para modificar datos de proveedores.',
@@ -279,13 +319,25 @@ export const updateSupplier = async (
     }
 
     const { id } = req.params;
-    const { rifOrId, rif, name, contactName, phone, email, address, isActive } =
-      req.body;
+    const {
+      rifOrId,
+      rif,
+      name,
+      supplierType,
+      contactName,
+      phone,
+      email,
+      address,
+      isActive,
+    } = req.body;
     const finalRif = rifOrId ?? rif;
 
     const supplier = await SupplierService.updateSupplier(Number(id), {
       ...(finalRif !== undefined ? { rifOrId: String(finalRif) } : {}),
       ...(name !== undefined ? { name: String(name) } : {}),
+      ...(supplierType !== undefined
+        ? { supplierType: parseSupplierType(supplierType) }
+        : {}),
       ...(contactName !== undefined
         ? { contactName: contactName ? String(contactName) : null }
         : {}),

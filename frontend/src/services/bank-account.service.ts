@@ -50,10 +50,22 @@ export interface RegisterOrderPaymentPayload {
   approvedBy?: string | null;
 }
 
+export interface InlineNewServiceSupplierPayload {
+  rifOrId: string;
+  name: string;
+  contactName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  supplierType?: "VENTAS" | "SERVICIOS" | "AMBOS";
+  promoteIfExists?: boolean;
+}
+
 export interface CreateDirectPaymentPayload {
   concept: string;
   beneficiary?: string;
   supplierId?: number | null;
+  newSupplier?: InlineNewServiceSupplierPayload | null;
   departmentId?: number | null;
   estimatedDate?: string | null;
   supportUrl?: string | null;

@@ -1,11 +1,21 @@
 import { prisma } from '../config/prisma.js';
-import { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
+import {
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  SupplierType,
+} from '@prisma/client';
 import { serializeBigInt } from '../utils/serializer.js';
 import { PurchaseFinanceService } from './purchase-finance.service.js';
+import {
+  normalizeAndValidatePhone,
+  normalizeAndValidateRif,
+} from '../utils/venezuela-formatters.js';
 
 export interface CreateSupplierDTO {
   rifOrId: string;
   name: string;
+  supplierType?: SupplierType;
   contactName?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -15,6 +25,7 @@ export interface CreateSupplierDTO {
 export interface UpdateSupplierDTO {
   rifOrId?: string;
   name?: string;
+  supplierType?: SupplierType;
   contactName?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -367,16 +378,37 @@ export class SupplierService {
       registeredById: data.registeredById,
     });
   }
-  static async listSuppliers(search?: string, includeInactive = false) {
+  static async listSuppliers(
+    search?: string,
+    includeInactive = false,
+    type?: SupplierType,
+    exactType?: SupplierType
+  ) {
+    const typeFilter = exactType
+      ? { supplierType: exactType }
+      : type === SupplierType.VENTAS
+        ? { supplierType: { in: [SupplierType.VENTAS, SupplierType.AMBOS] } }
+        : type === SupplierType.SERVICIOS
+          ? {
+              supplierType: {
+                in: [SupplierType.SERVICIOS, SupplierType.AMBOS],
+              },
+            }
+          : type === SupplierType.AMBOS
+            ? { supplierType: SupplierType.AMBOS }
+            : {};
+
     return prisma.supplier.findMany({
       where: {
         ...(includeInactive ? {} : { isActive: true }),
+        ...typeFilter,
         ...(search
           ? {
               OR: [
                 { rifOrId: { contains: search, mode: 'insensitive' } },
                 { name: { contains: search, mode: 'insensitive' } },
                 { contactName: { contains: search, mode: 'insensitive' } },
+                { phone: { contains: search, mode: 'insensitive' } },
               ],
             }
           : {}),
@@ -390,7 +422,7 @@ export class SupplierService {
       where: { id },
       include: {
         _count: {
-          select: { orders: true },
+          select: { orders: true, directPayments: true },
         },
         orders: {
           take: 10,
@@ -405,6 +437,21 @@ export class SupplierService {
             totalAmountUsd: true,
             totalAmountBs: true,
             currency: true,
+            createdAt: true,
+          },
+        },
+        directPayments: {
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            serviceOrderNumber: true,
+            paymentOrderNumber: true,
+            concept: true,
+            status: true,
+            amountPaid: true,
+            transactionCurrency: true,
+            equivalentAmountUsd: true,
             createdAt: true,
           },
         },
@@ -425,24 +472,38 @@ export class SupplierService {
   }
 
   static async createSupplier(data: CreateSupplierDTO) {
+    const cleanRif = normalizeAndValidateRif(data.rifOrId);
+    const cleanPhone = normalizeAndValidatePhone(data.phone);
+
     const existing = await prisma.supplier.findUnique({
-      where: { rifOrId: data.rifOrId.trim().toUpperCase() },
+      where: { rifOrId: cleanRif },
     });
 
     if (existing) {
-      throw new Error(
-        'Ya existe un proveedor registrado con este RIF o identificación'
+      const error: any = new Error(
+        `Ya existe un proveedor registrado con el RIF/ID ${cleanRif} (${existing.name})`
       );
+      error.statusCode = 409;
+      error.status = 'CONFLICT';
+      error.existingSupplier = existing;
+      throw error;
     }
+
+    const resolvedType =
+      data.supplierType &&
+      Object.values(SupplierType).includes(data.supplierType)
+        ? data.supplierType
+        : SupplierType.VENTAS;
 
     return prisma.supplier.create({
       data: {
-        rifOrId: data.rifOrId.trim().toUpperCase(),
+        rifOrId: cleanRif,
         name: data.name.trim(),
-        contactName: data.contactName ?? null,
-        phone: data.phone ?? null,
+        supplierType: resolvedType,
+        contactName: data.contactName ? data.contactName.trim() : null,
+        phone: cleanPhone,
         email: data.email ? data.email.trim().toLowerCase() : null,
-        address: data.address ?? null,
+        address: data.address ? data.address.trim() : null,
       },
     });
   }
@@ -457,8 +518,9 @@ export class SupplierService {
       throw error;
     }
 
+    let cleanRif: string | undefined;
     if (data.rifOrId !== undefined) {
-      const cleanRif = data.rifOrId.trim().toUpperCase();
+      cleanRif = normalizeAndValidateRif(data.rifOrId);
       const duplicate = await prisma.supplier.findFirst({
         where: {
           rifOrId: cleanRif,
@@ -476,15 +538,25 @@ export class SupplierService {
       }
     }
 
+    const cleanPhone =
+      data.phone !== undefined ? normalizeAndValidatePhone(data.phone) : undefined;
+
+    const resolvedType =
+      data.supplierType !== undefined &&
+      Object.values(SupplierType).includes(data.supplierType)
+        ? data.supplierType
+        : undefined;
+
     const updated = await prisma.supplier.update({
       where: { id },
       data: {
-        ...(data.rifOrId !== undefined ? { rifOrId: data.rifOrId.trim().toUpperCase() } : {}),
+        ...(cleanRif !== undefined ? { rifOrId: cleanRif } : {}),
         ...(data.name !== undefined ? { name: data.name.trim() } : {}),
+        ...(resolvedType !== undefined ? { supplierType: resolvedType } : {}),
         ...(data.contactName !== undefined
           ? { contactName: data.contactName ? data.contactName.trim() : null }
           : {}),
-        ...(data.phone !== undefined ? { phone: data.phone ? data.phone.trim() : null } : {}),
+        ...(cleanPhone !== undefined ? { phone: cleanPhone } : {}),
         ...(data.email !== undefined
           ? { email: data.email ? data.email.trim().toLowerCase() : null }
           : {}),
@@ -493,7 +565,7 @@ export class SupplierService {
       },
       include: {
         _count: {
-          select: { orders: true },
+          select: { orders: true, directPayments: true },
         },
       },
     });
@@ -509,7 +581,7 @@ export class SupplierService {
       where: { id },
       include: {
         _count: {
-          select: { orders: true },
+          select: { orders: true, directPayments: true, paymentOrders: true },
         },
       },
     });
@@ -524,6 +596,18 @@ export class SupplierService {
     if (supplier._count.orders > 0) {
       const error: any = new Error(
         'No se puede eliminar el proveedor porque tiene órdenes de compra en el historial. Inactívelo en su lugar.'
+      );
+      error.statusCode = 409;
+      error.status = 'CONFLICT';
+      throw error;
+    }
+
+    if (
+      supplier._count.directPayments > 0 ||
+      supplier._count.paymentOrders > 0
+    ) {
+      const error: any = new Error(
+        'No se puede eliminar el proveedor porque tiene órdenes de servicio o pago en el historial. Inactívelo en su lugar.'
       );
       error.statusCode = 409;
       error.status = 'CONFLICT';

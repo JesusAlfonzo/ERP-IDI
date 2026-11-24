@@ -11,6 +11,12 @@ datasource db {
 // 1. ENUMS
 // ==========================================
 
+enum SupplierType {
+  VENTAS
+  SERVICIOS
+  AMBOS
+}
+
 enum LocationType {
   ALMACEN_GENERAL
   LABORATORIO
@@ -473,20 +479,22 @@ model Unit {
 }
 
 model Supplier {
-  id          Int      @id @default(autoincrement())
-  rifOrId     String   @unique @map("rif_or_id")
-  name        String
-  contactName String?  @map("contact_name")
-  phone       String?
-  email       String?
-  address     String?  @db.Text
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id           Int          @id @default(autoincrement())
+  rifOrId      String       @unique @map("rif_or_id")
+  name         String
+  supplierType SupplierType @default(VENTAS) @map("supplier_type")
+  contactName  String?      @map("contact_name")
+  phone        String?
+  email        String?
+  address      String?      @db.Text
+  isActive     Boolean      @default(true) @map("is_active")
+  createdAt    DateTime     @default(now()) @map("created_at")
 
   orders         Order[]
   directPayments DirectPayment[]
   paymentOrders  PaymentOrder[]
 
+  @@index([supplierType])
   @@map("suppliers")
 }
 

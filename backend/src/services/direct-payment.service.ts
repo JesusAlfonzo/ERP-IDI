@@ -3,17 +3,34 @@ import {
   PaymentOrderStatus,
   Prisma,
   ServiceOrderStatus,
+  SupplierType,
 } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import {
   generateNextPaymentOrderNumber,
   normalizeCurrency,
 } from './treasury.service.js';
+import {
+  normalizeAndValidatePhone,
+  normalizeAndValidateRif,
+} from '../utils/venezuela-formatters.js';
+
+export interface InlineNewServiceSupplierDTO {
+  rifOrId: string;
+  name: string;
+  contactName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  supplierType?: SupplierType;
+  promoteIfExists?: boolean;
+}
 
 export interface CreateDirectPaymentDTO {
   concept: string;
   beneficiary?: string;
   supplierId?: number | null;
+  newSupplier?: InlineNewServiceSupplierDTO | null;
   departmentId?: number | null;
   estimatedDate?: Date | null;
   supportUrl?: string | null;
@@ -63,9 +80,11 @@ const DIRECT_PAYMENT_INCLUDE = {
       id: true,
       name: true,
       rifOrId: true,
+      supplierType: true,
       contactName: true,
       phone: true,
       email: true,
+      address: true,
     },
   },
   department: {
@@ -257,6 +276,16 @@ export class DirectPaymentService {
 
     let resolvedBeneficiary = (data.beneficiary || '').trim();
     let resolvedSupplierId: number | null = null;
+    let validatedNewSupplier: {
+      rifOrId: string;
+      name: string;
+      contactName: string | null;
+      phone: string | null;
+      email: string | null;
+      address: string | null;
+      supplierType: SupplierType;
+      promoteIfExists: boolean;
+    } | null = null;
 
     if (data.supplierId) {
       const supplier = await prisma.supplier.findUnique({
@@ -269,12 +298,52 @@ export class DirectPaymentService {
       if (!resolvedBeneficiary) {
         resolvedBeneficiary = `${supplier.name} (${supplier.rifOrId})`;
       }
+    } else if (data.newSupplier) {
+      const ns = data.newSupplier;
+      if (!ns.name || !ns.name.trim()) {
+        throw new Error(
+          'La razón social o nombre del proveedor de servicio es obligatoria'
+        );
+      }
+      const cleanRif = normalizeAndValidateRif(ns.rifOrId);
+      const cleanPhone = normalizeAndValidatePhone(ns.phone);
+      const cleanName = ns.name.trim();
+      const targetType =
+        ns.supplierType && Object.values(SupplierType).includes(ns.supplierType)
+          ? ns.supplierType
+          : SupplierType.SERVICIOS;
+
+      const existing = await prisma.supplier.findUnique({
+        where: { rifOrId: cleanRif },
+      });
+
+      if (existing && !ns.promoteIfExists) {
+        const error: any = new Error(
+          `El RIF/ID ${cleanRif} ya pertenece al proveedor "${existing.name}" (${existing.supplierType}). Puede vincularlo directamente a esta orden.`
+        );
+        error.statusCode = 409;
+        error.status = 'CONFLICT';
+        error.existingSupplier = existing;
+        throw error;
+      }
+
+      validatedNewSupplier = {
+        rifOrId: cleanRif,
+        name: cleanName,
+        contactName: ns.contactName ? ns.contactName.trim() : null,
+        phone: cleanPhone,
+        email: ns.email ? ns.email.trim().toLowerCase() : null,
+        address: ns.address ? ns.address.trim() : null,
+        supplierType: targetType,
+        promoteIfExists: Boolean(ns.promoteIfExists),
+      };
+      resolvedBeneficiary = `${existing ? existing.name : cleanName} (${cleanRif})`;
     } else {
       if (!resolvedBeneficiary) {
         throw new Error('El beneficiario o proveedor del servicio es obligatorio');
       }
 
-      const rifPattern = /[JVEGPjvegp]-?\d{6,9}(-?\d)?/i;
+      const rifPattern = /[JVEGPCjvegpc]-?\d{6,9}(-?\d)?/i;
       const hasRif = rifPattern.test(resolvedBeneficiary);
 
       if (!hasRif) {
@@ -329,6 +398,53 @@ export class DirectPaymentService {
     const isImmediate = Boolean(data.immediateSettlement);
 
     return prisma.$transaction(async (tx) => {
+      if (validatedNewSupplier) {
+        const existing = await tx.supplier.findUnique({
+          where: { rifOrId: validatedNewSupplier.rifOrId },
+        });
+        if (existing) {
+          const updatedSup = await tx.supplier.update({
+            where: { id: existing.id },
+            data: {
+              supplierType:
+                existing.supplierType === SupplierType.VENTAS
+                  ? SupplierType.AMBOS
+                  : existing.supplierType,
+              isActive: true,
+              ...(!existing.contactName && validatedNewSupplier.contactName
+                ? { contactName: validatedNewSupplier.contactName }
+                : {}),
+              ...(!existing.phone && validatedNewSupplier.phone
+                ? { phone: validatedNewSupplier.phone }
+                : {}),
+              ...(!existing.email && validatedNewSupplier.email
+                ? { email: validatedNewSupplier.email }
+                : {}),
+              ...(!existing.address && validatedNewSupplier.address
+                ? { address: validatedNewSupplier.address }
+                : {}),
+            },
+          });
+          resolvedSupplierId = updatedSup.id;
+          resolvedBeneficiary = `${updatedSup.name} (${updatedSup.rifOrId})`;
+        } else {
+          const createdSup = await tx.supplier.create({
+            data: {
+              rifOrId: validatedNewSupplier.rifOrId,
+              name: validatedNewSupplier.name,
+              supplierType: validatedNewSupplier.supplierType,
+              contactName: validatedNewSupplier.contactName,
+              phone: validatedNewSupplier.phone,
+              email: validatedNewSupplier.email,
+              address: validatedNewSupplier.address,
+              isActive: true,
+            },
+          });
+          resolvedSupplierId = createdSup.id;
+          resolvedBeneficiary = `${createdSup.name} (${createdSup.rifOrId})`;
+        }
+      }
+
       const currentYear = new Date().getFullYear();
       const latest = await tx.directPayment.findFirst({
         where: { serviceOrderNumber: { startsWith: `OS-${currentYear}-` } },

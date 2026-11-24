@@ -18,10 +18,14 @@ export const ProviderService = {
   getProviders: async (params?: {
     search?: string;
     includeInactive?: boolean;
+    type?: "VENTAS" | "SERVICIOS" | "AMBOS";
+    exactType?: "VENTAS" | "SERVICIOS" | "AMBOS";
   }): Promise<Provider[]> => {
     const query = new URLSearchParams();
     if (params?.search) query.append("search", params.search);
     if (params?.includeInactive) query.append("includeInactive", "true");
+    if (params?.type) query.append("type", params.type);
+    if (params?.exactType) query.append("exactType", params.exactType);
     const qs = query.toString();
 
     const res = await apiClient.get<ApiResponse<Provider[]>>(

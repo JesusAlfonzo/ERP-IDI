@@ -7,9 +7,15 @@ import { PurchasingClientService } from "@/services/purchasing.service";
 import { AuthService } from "@/services/auth.service";
 import { usePagination } from "@/hooks/use-pagination";
 import { TablePagination } from "@/components/common/TablePagination";
-import type { Supplier } from "@/types/purchasing";
+import type { Supplier, SupplierType } from "@/types/purchasing";
 import { cn } from "@/lib/utils";
 import { toast } from "@/utils/toast";
+import { RifInput } from "@/components/common/RifInput";
+import { PhoneInput } from "@/components/common/PhoneInput";
+import {
+  validatePhoneValue,
+  validateRifValue,
+} from "@/utils/venezuela-formatters";
 import {
   Building2,
   Plus,
@@ -29,6 +35,9 @@ import {
   X,
   Ban,
   Save,
+  Wrench,
+  ShoppingBag,
+  Layers,
 } from "lucide-react";
 
 import {
@@ -57,12 +66,38 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 type ActiveTab = "todos" | "activos" | "inactivos";
+type TypeFilter = "TODOS" | SupplierType;
+
+const SUPPLIER_TYPE_META: Record<
+  SupplierType,
+  { label: string; shortLabel: string; className: string }
+> = {
+  VENTAS: {
+    label: "Ventas / Insumos",
+    shortLabel: "Ventas",
+    className:
+      "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20",
+  },
+  SERVICIOS: {
+    label: "Servicios",
+    shortLabel: "Servicios",
+    className:
+      "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20",
+  },
+  AMBOS: {
+    label: "Mixto (Ventas y Servicios)",
+    shortLabel: "Mixto",
+    className:
+      "bg-teal-500/10 text-teal-700 dark:text-teal-400 border-teal-500/20",
+  },
+};
 
 export default function SuppliersPage() {
   const router = useRouter();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveTab>("todos");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("TODOS");
   const [search, setSearch] = useState("");
   const [isAdmin] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -76,6 +111,7 @@ export default function SuppliersPage() {
   const [createForm, setCreateForm] = useState({
     rifOrId: "",
     name: "",
+    supplierType: "VENTAS" as SupplierType,
     contactName: "",
     phone: "",
     email: "",
@@ -92,6 +128,7 @@ export default function SuppliersPage() {
   const [editForm, setEditForm] = useState({
     rifOrId: "",
     name: "",
+    supplierType: "VENTAS" as SupplierType,
     contactName: "",
     phone: "",
     email: "",
@@ -138,14 +175,24 @@ export default function SuppliersPage() {
   const metrics = useMemo(() => {
     let activeCount = 0;
     let inactiveCount = 0;
+    let ventasCount = 0;
+    let serviciosCount = 0;
+    let ambosCount = 0;
     suppliers.forEach((s) => {
       if (s.isActive !== false) activeCount++;
       else inactiveCount++;
+      const t = s.supplierType || "VENTAS";
+      if (t === "SERVICIOS") serviciosCount++;
+      else if (t === "AMBOS") ambosCount++;
+      else ventasCount++;
     });
     return {
       total: suppliers.length,
       activeCount,
       inactiveCount,
+      ventasCount,
+      serviciosCount,
+      ambosCount,
     };
   }, [suppliers]);
 
@@ -155,6 +202,9 @@ export default function SuppliersPage() {
       const isSupActive = s.isActive !== false;
       if (activeTab === "activos" && !isSupActive) return false;
       if (activeTab === "inactivos" && isSupActive) return false;
+
+      const sType: SupplierType = s.supplierType || "VENTAS";
+      if (typeFilter !== "TODOS" && sType !== typeFilter) return false;
 
       if (search.trim()) {
         const term = search.toLowerCase().trim();
@@ -176,7 +226,7 @@ export default function SuppliersPage() {
 
       return true;
     });
-  }, [suppliers, activeTab, search]);
+  }, [suppliers, activeTab, typeFilter, search]);
 
   // Paginación
   const pagination = usePagination(filteredSuppliers, { initialPageSize: 10 });
@@ -184,17 +234,37 @@ export default function SuppliersPage() {
 
   useEffect(() => {
     resetPage();
-  }, [activeTab, search, resetPage]);
+  }, [activeTab, typeFilter, search, resetPage]);
 
   const handleCreateSupplier = async (e: FormEvent) => {
     e.preventDefault();
     setCreateFeedback(null);
+
+    const rifCheck = validateRifValue(createForm.rifOrId);
+    if (!rifCheck.valid) {
+      setCreateFeedback({
+        status: "error",
+        message: rifCheck.error || "Formato de RIF/Cédula inválido.",
+      });
+      return;
+    }
+
+    const phoneCheck = validatePhoneValue(createForm.phone);
+    if (!phoneCheck.valid) {
+      setCreateFeedback({
+        status: "error",
+        message: phoneCheck.error || "Formato de teléfono inválido.",
+      });
+      return;
+    }
+
     setCreateSubmitting(true);
 
     try {
       await PurchasingClientService.createSupplier({
         rifOrId: createForm.rifOrId.trim(),
         name: createForm.name.trim(),
+        supplierType: createForm.supplierType,
         contactName: createForm.contactName.trim() || undefined,
         phone: createForm.phone.trim() || undefined,
         email: createForm.email.trim() || undefined,
@@ -205,6 +275,7 @@ export default function SuppliersPage() {
       setCreateForm({
         rifOrId: "",
         name: "",
+        supplierType: "VENTAS",
         contactName: "",
         phone: "",
         email: "",
@@ -214,13 +285,15 @@ export default function SuppliersPage() {
       setCreateFeedback(null);
       await loadSuppliers();
     } catch (err: unknown) {
-      setCreateFeedback({
-        status: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "Error al registrar el proveedor. Verifique que el RIF no esté duplicado.",
-      });
+      let msg =
+        "Error al registrar el proveedor. Verifique que el RIF no esté duplicado.";
+      if (err && typeof err === "object" && "response" in err) {
+        const resErr = err as { response?: { data?: { message?: string } } };
+        if (resErr.response?.data?.message) msg = resErr.response.data.message;
+      } else if (err instanceof Error) {
+        msg = err.message;
+      }
+      setCreateFeedback({ status: "error", message: msg });
     } finally {
       setCreateSubmitting(false);
     }
@@ -231,6 +304,7 @@ export default function SuppliersPage() {
     setEditForm({
       rifOrId: sup.rifOrId || sup.rif || "",
       name: sup.name,
+      supplierType: sup.supplierType || "VENTAS",
       contactName: sup.contactName || "",
       phone: sup.phone || "",
       email: sup.email || "",
@@ -244,16 +318,36 @@ export default function SuppliersPage() {
     e.preventDefault();
     if (!editingSupplier) return;
     setEditFeedback(null);
+
+    const rifCheck = validateRifValue(editForm.rifOrId);
+    if (!rifCheck.valid) {
+      setEditFeedback({
+        status: "error",
+        message: rifCheck.error || "Formato de RIF/Cédula inválido.",
+      });
+      return;
+    }
+
+    const phoneCheck = validatePhoneValue(editForm.phone);
+    if (!phoneCheck.valid) {
+      setEditFeedback({
+        status: "error",
+        message: phoneCheck.error || "Formato de teléfono inválido.",
+      });
+      return;
+    }
+
     setEditSubmitting(true);
 
     try {
       await PurchasingClientService.updateSupplier(editingSupplier.id, {
         rifOrId: editForm.rifOrId.trim(),
         name: editForm.name.trim(),
-        contactName: editForm.contactName.trim() || undefined,
-        phone: editForm.phone.trim() || undefined,
-        email: editForm.email.trim() || undefined,
-        address: editForm.address.trim() || undefined,
+        supplierType: editForm.supplierType,
+        contactName: editForm.contactName.trim() || null,
+        phone: editForm.phone.trim() || null,
+        email: editForm.email.trim() || null,
+        address: editForm.address.trim() || null,
         isActive: editForm.isActive,
       });
 
@@ -262,13 +356,14 @@ export default function SuppliersPage() {
       setEditFeedback(null);
       await loadSuppliers();
     } catch (err: unknown) {
-      setEditFeedback({
-        status: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "Error al actualizar los datos del proveedor.",
-      });
+      let msg = "Error al actualizar los datos del proveedor.";
+      if (err && typeof err === "object" && "response" in err) {
+        const resErr = err as { response?: { data?: { message?: string } } };
+        if (resErr.response?.data?.message) msg = resErr.response.data.message;
+      } else if (err instanceof Error) {
+        msg = err.message;
+      }
+      setEditFeedback({ status: "error", message: msg });
     } finally {
       setEditSubmitting(false);
     }
@@ -367,7 +462,8 @@ export default function SuppliersPage() {
               {metrics.total}
             </div>
             <span className="text-[11px] text-muted-foreground block">
-              Registrados en catálogo
+              {metrics.ventasCount} ventas · {metrics.serviciosCount} servicios
+              {metrics.ambosCount > 0 ? ` · ${metrics.ambosCount} mixto` : ""}
             </span>
           </div>
           <div className="w-11 h-11 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
@@ -495,19 +591,42 @@ export default function SuppliersPage() {
             )}
           </div>
 
-          {search && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setSearch("")}
-              className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-9 cursor-pointer"
-              title="Limpiar búsqueda"
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              aria-label="Filtrar por tipo de proveedor"
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as TypeFilter)}
+              className="h-9 bg-background border border-input rounded-md px-2.5 text-xs font-semibold text-foreground focus:ring-2 focus:ring-ring cursor-pointer"
             >
-              <X className="w-3.5 h-3.5" />
-              <span>Limpiar</span>
-            </Button>
-          )}
+              <option value="TODOS">Todos los tipos ({metrics.total})</option>
+              <option value="VENTAS">
+                Ventas / Insumos ({metrics.ventasCount})
+              </option>
+              <option value="SERVICIOS">
+                Servicios ({metrics.serviciosCount})
+              </option>
+              <option value="AMBOS">
+                Mixto - Ambos ({metrics.ambosCount})
+              </option>
+            </select>
+
+            {(search || typeFilter !== "TODOS") && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearch("");
+                  setTypeFilter("TODOS");
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-9 cursor-pointer"
+                title="Limpiar filtros"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Limpiar</span>
+              </Button>
+            )}
+          </div>
         </div>
       </Card>
 
@@ -519,8 +638,9 @@ export default function SuppliersPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30">
-                <TableHead className="py-3 px-4 font-semibold text-xs">RIF</TableHead>
+                <TableHead className="py-3 px-4 font-semibold text-xs">RIF / ID</TableHead>
                 <TableHead className="py-3 px-4 font-semibold text-xs">Razón Social</TableHead>
+                <TableHead className="py-3 px-4 text-center font-semibold text-xs">Tipo</TableHead>
                 <TableHead className="py-3 px-4 font-semibold text-xs">Contacto</TableHead>
                 <TableHead className="py-3 px-4 font-semibold text-xs">Teléfono</TableHead>
                 <TableHead className="py-3 px-4 font-semibold text-xs">Correo</TableHead>
@@ -531,20 +651,22 @@ export default function SuppliersPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-12 text-center text-muted-foreground text-xs">
+                  <TableCell colSpan={8} className="py-12 text-center text-muted-foreground text-xs">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto text-primary mb-2" />
                     Cargando proveedores...
                   </TableCell>
                 </TableRow>
               ) : filteredSuppliers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-12 text-center text-muted-foreground text-xs">
+                  <TableCell colSpan={8} className="py-12 text-center text-muted-foreground text-xs">
                     No se encontraron proveedores registrados.
                   </TableCell>
                 </TableRow>
               ) : (
                 pagination.paginatedItems.map((sup) => {
                   const isSupActive = sup.isActive !== false;
+                  const sType: SupplierType = sup.supplierType || "VENTAS";
+                  const typeMeta = SUPPLIER_TYPE_META[sType];
                   return (
                     <TableRow
                       key={sup.id}
@@ -568,6 +690,21 @@ export default function SuppliersPage() {
                             {sup.address}
                           </div>
                         )}
+                      </TableCell>
+                      <TableCell className="py-3 px-4 text-center whitespace-nowrap">
+                        <Badge
+                          variant="outline"
+                          className={cn("text-[10px] gap-1 font-semibold", typeMeta.className)}
+                        >
+                          {sType === "SERVICIOS" ? (
+                            <Wrench className="w-2.5 h-2.5" />
+                          ) : sType === "AMBOS" ? (
+                            <Layers className="w-2.5 h-2.5" />
+                          ) : (
+                            <ShoppingBag className="w-2.5 h-2.5" />
+                          )}
+                          {typeMeta.shortLabel}
+                        </Badge>
                       </TableCell>
                       <TableCell className="py-3 px-4 text-muted-foreground whitespace-nowrap">
                         <span className="flex items-center gap-1.5">
@@ -687,26 +824,66 @@ export default function SuppliersPage() {
                 </Alert>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-1 space-y-1.5">
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Tipo de Proveedor *
+                </Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      {
+                        value: "VENTAS",
+                        label: "Ventas / Insumos",
+                        icon: ShoppingBag,
+                      },
+                      { value: "SERVICIOS", label: "Servicios", icon: Wrench },
+                      { value: "AMBOS", label: "Ambos (Mixto)", icon: Layers },
+                    ] as const
+                  ).map((opt) => {
+                    const Icon = opt.icon;
+                    const active = createForm.supplierType === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() =>
+                          setCreateForm({
+                            ...createForm,
+                            supplierType: opt.value,
+                          })
+                        }
+                        className={cn(
+                          "px-2.5 py-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                          active
+                            ? "border-primary bg-primary/10 text-primary shadow-2xs"
+                            : "border-input bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                        )}
+                      >
+                        <Icon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{opt.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
                   <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    RIF / ID *
+                    RIF / Cédula *
                   </Label>
-                  <Input
-                    type="text"
+                  <RifInput
                     value={createForm.rifOrId}
-                    onChange={(e) =>
-                      setCreateForm({ ...createForm, rifOrId: e.target.value })
+                    onChange={(val) =>
+                      setCreateForm({ ...createForm, rifOrId: val })
                     }
-                    placeholder="J-12345678-9"
-                    className="font-mono text-xs h-9"
                     required
                   />
                 </div>
 
-                <div className="sm:col-span-2 space-y-1.5">
+                <div className="space-y-1.5">
                   <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Razón Social *
+                    Razón Social / Nombre *
                   </Label>
                   <Input
                     type="text"
@@ -714,7 +891,7 @@ export default function SuppliersPage() {
                     onChange={(e) =>
                       setCreateForm({ ...createForm, name: e.target.value })
                     }
-                    placeholder="Nombre comercial o empresa"
+                    placeholder="Nombre comercial, empresa o persona"
                     className="text-xs h-9"
                     required
                   />
@@ -737,7 +914,7 @@ export default function SuppliersPage() {
                           contactName: e.target.value,
                         })
                       }
-                      placeholder="Representante de ventas"
+                      placeholder="Representante o contacto"
                       className="pl-8 text-xs h-9"
                     />
                   </div>
@@ -747,18 +924,12 @@ export default function SuppliersPage() {
                   <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Teléfono
                   </Label>
-                  <div className="relative">
-                    <Phone className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      type="text"
-                      value={createForm.phone}
-                      onChange={(e) =>
-                        setCreateForm({ ...createForm, phone: e.target.value })
-                      }
-                      placeholder="0212-0000000 / 0414-..."
-                      className="pl-8 text-xs h-9 font-mono"
-                    />
-                  </div>
+                  <PhoneInput
+                    value={createForm.phone}
+                    onChange={(val) =>
+                      setCreateForm({ ...createForm, phone: val })
+                    }
+                  />
                 </div>
               </div>
 
@@ -864,26 +1035,66 @@ export default function SuppliersPage() {
                 </Alert>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-1 space-y-1.5">
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Tipo de Proveedor *
+                </Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      {
+                        value: "VENTAS",
+                        label: "Ventas / Insumos",
+                        icon: ShoppingBag,
+                      },
+                      { value: "SERVICIOS", label: "Servicios", icon: Wrench },
+                      { value: "AMBOS", label: "Ambos (Mixto)", icon: Layers },
+                    ] as const
+                  ).map((opt) => {
+                    const Icon = opt.icon;
+                    const active = editForm.supplierType === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() =>
+                          setEditForm({
+                            ...editForm,
+                            supplierType: opt.value,
+                          })
+                        }
+                        className={cn(
+                          "px-2.5 py-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                          active
+                            ? "border-primary bg-primary/10 text-primary shadow-2xs"
+                            : "border-input bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                        )}
+                      >
+                        <Icon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{opt.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
                   <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    RIF / ID *
+                    RIF / Cédula *
                   </Label>
-                  <Input
-                    type="text"
+                  <RifInput
                     value={editForm.rifOrId}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, rifOrId: e.target.value })
+                    onChange={(val) =>
+                      setEditForm({ ...editForm, rifOrId: val })
                     }
-                    placeholder="J-12345678-9"
-                    className="font-mono text-xs h-9"
                     required
                   />
                 </div>
 
-                <div className="sm:col-span-2 space-y-1.5">
+                <div className="space-y-1.5">
                   <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Razón Social *
+                    Razón Social / Nombre *
                   </Label>
                   <Input
                     type="text"
@@ -921,18 +1132,12 @@ export default function SuppliersPage() {
                   <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Teléfono
                   </Label>
-                  <div className="relative">
-                    <Phone className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      type="text"
-                      value={editForm.phone}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, phone: e.target.value })
-                      }
-                      placeholder="0212-... / 0414-..."
-                      className="pl-8 text-xs h-9 font-mono"
-                    />
-                  </div>
+                  <PhoneInput
+                    value={editForm.phone}
+                    onChange={(val) =>
+                      setEditForm({ ...editForm, phone: val })
+                    }
+                  />
                 </div>
               </div>
 
@@ -1079,7 +1284,7 @@ export default function SuppliersPage() {
               )?
             </p>
             <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-800 dark:text-amber-300 text-[11px] leading-relaxed">
-              <strong>Aviso:</strong> Si el proveedor tiene Órdenes de Compra registradas, la eliminación será rechazada y deberá inactivarlo.
+              <strong>Aviso:</strong> Si el proveedor tiene Órdenes de Compra u Órdenes de Servicio registradas, la eliminación será rechazada y deberá inactivarlo.
             </div>
           </div>
 
